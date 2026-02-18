@@ -1,0 +1,61 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@src/*": [
+        "src/*"
+      ],
+      "@Redux/*": [
+        "src/redux/*"
+      ],
+      "@Actions/*": [
+        "src/redux/actions/*"
+      ],
+      "@Reducers/*": [
+        "src/redux/reducers/*"
+      ],
+      "@Sagas/*": [
+        "src/redux/sagas/*"
+      ],
+      "@Services/*": [
+        "src/redux/services/*"
+      ],
+      "@Pages/*": [
+        "src/pages/*"
+      ],
+      "@Routes/*": [
+        "src/routes/*"
+      ]
+    },
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "types": [
+      "vite/client"
+    ],
+    "skipLibCheck": true,
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": [
+    "src"
+  ]
+}
