@@ -3,15 +3,29 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        display: ["Oswald", "sans-serif"],
+        body: ["Barlow", "sans-serif"],
+      },
       colors: {
-        ink: "#05070A",        
-        ink2: "#0B0F14",      
-        line: "rgba(255,255,255,0.08)", 
-        snow: "#F5F7FA",       
-        mute: "rgba(245,247,250,0.72)", 
+        bg: "rgb(var(--color-bg) / <alpha-value>)",
+        panel: "rgb(var(--color-panel) / <alpha-value>)",
+        panel2: "rgb(var(--color-panel-2) / <alpha-value>)",
+        text: "rgb(var(--color-text) / <alpha-value>)",
+        muted: "rgb(var(--color-muted) / <alpha-value>)",
+        accent: "rgb(var(--color-accent) / <alpha-value>)",
+        accent2: "rgb(var(--color-accent-2) / <alpha-value>)",
+        line: "rgb(var(--color-line) / <alpha-value>)",
       },
       boxShadow: {
-        glow: "0 0 0 1px rgba(255,255,255,0.08), 0 12px 40px rgba(0,0,0,0.55)",
+        premium: "var(--shadow-premium)",
+        soft: "var(--shadow-soft)",
+      },
+      borderRadius: {
+        card: "1.25rem",
+      },
+      letterSpacing: {
+        tightest: "-0.03em",
       },
     },
   },
