@@ -45,24 +45,19 @@ const process = [
   },
 ];
 
-const gallery = [
-  "https://images.unsplash.com/photo-1549476464-37392f717541?q=80&w=1600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?q=80&w=1600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1532384748853-8f54a8f476e2?q=80&w=1600&auto=format&fit=crop",
+const maximusHighlights = [
+  "Squat, Bench Press, Deadlift focused programming",
+  "Meet-prep cycles and peaking blocks",
+  "Technique breakdown and competition standards",
+  "Supportive team culture for beginners to advanced lifters",
 ];
 
-const teamSpotlight = [
-  {
-    title: "Strength Coaching Floor",
-    image:
-      "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?q=80&w=1600&auto=format&fit=crop",
-  },
-  {
-    title: "Conditioning & Functional Zone",
-    image:
-      "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=1600&auto=format&fit=crop",
-  },
+const maximusGallery = [
+  "https://images.unsplash.com/photo-1574680096145-d05b474e2155?q=80&w=1600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1534367610401-9f5ed68180aa?q=80&w=1600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1596357395217-80de13130e92?q=80&w=1600&auto=format&fit=crop",
 ];
+
 
 export default function About() {
   const sectionPad = "px-6 lg:px-12 xl:px-20";
@@ -95,22 +90,7 @@ export default function About() {
       </section>
 
       <section className={sectionPad}>
-        <div className="mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-4">
-          {gallery.map((img, idx) => (
-            <div key={idx} className="relative overflow-hidden rounded-2xl bg-white/5" style={{ aspectRatio: "4 / 3" }}>
-              <img
-                src={img}
-                alt={`A&A Health Club gallery ${idx + 1}`}
-                loading="lazy"
-                className="absolute inset-0 h-full w-full object-cover object-center"
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className={sectionPad}>
-        <div className="mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {principles.map((p) => (
             <article key={p.title} className={`${card} bg-white/6`}>
               <h2 className="text-xl font-black text-white">{p.title}</h2>
@@ -120,8 +100,68 @@ export default function About() {
         </div>
       </section>
 
+      <section id="maximus-strength" className={sectionPad}>
+        <div className={`${card} bg-gradient-to-r from-white/10 via-white/6 to-white/10`}>
+          <div className="inline-flex rounded-full bg-black/35 px-4 py-2 text-xs font-semibold text-zinc-200">
+            Maximus Strength
+          </div>
+          <h2 className="mt-4 text-3xl sm:text-4xl font-black tracking-tight text-white">
+            Powerlifting Group at A&A Health Club
+          </h2>
+          <p className="mt-3 text-zinc-300 leading-relaxed max-w-4xl">
+            Maximus Strength is our dedicated powerlifting community for athletes focused on strength,
+            technique, and platform performance. The group trains with structured plans and a serious team mindset.
+          </p>
+
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {maximusHighlights.map((item) => (
+              <div key={item} className="rounded-xl bg-black/35 px-4 py-3 text-sm text-zinc-200">
+                {item}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <a
+              href="https://www.instagram.com/teammaximusstrength/"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-xl bg-white px-6 py-3 text-sm font-black text-black hover:bg-white/90 transition text-center"
+            >
+              Visit Instagram
+            </a>
+            <Link
+              to="/contact"
+              className="rounded-xl bg-white/10 px-6 py-3 text-sm font-semibold text-white hover:bg-white/15 transition text-center"
+            >
+              Join Maximus Strength
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <section className={sectionPad}>
-        <div className={`mx-auto w-full ${card} bg-black/35`}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {maximusGallery.map((img, idx) => (
+            <div
+              key={idx}
+              className="relative overflow-hidden rounded-2xl bg-white/5"
+              style={{ aspectRatio: "4 / 3" }}
+            >
+              <img
+                src={img}
+                alt={`Maximus Strength powerlifting ${idx + 1}`}
+                loading="lazy"
+                className="absolute inset-0 h-full w-full object-cover object-center"
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+
+      <section className={sectionPad}>
+        <div className={`${card} bg-black/35`}>
           <h2 className="text-3xl font-black text-white">How We Work</h2>
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             {process.map((p) => (
@@ -135,26 +175,8 @@ export default function About() {
         </div>
       </section>
 
-      <section className={sectionPad}>
-        <div className="mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-5">
-          {teamSpotlight.map((item) => (
-            <article key={item.title} className="rounded-3xl bg-black/35 p-5">
-              <div className="relative overflow-hidden rounded-2xl bg-white/5" style={{ aspectRatio: "16 / 10" }}>
-                <img
-                  src={item.image}
-                  alt={item.title}
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover object-center"
-                />
-              </div>
-              <h3 className="mt-4 text-xl font-black text-white">{item.title}</h3>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section className={`${sectionPad} pb-10`}>
-        <div className={`mx-auto w-full ${card} bg-gradient-to-r from-white/10 via-white/6 to-white/10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6`}>
+        <div className={`${card} bg-gradient-to-r from-white/10 via-white/6 to-white/10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6`}>
           <div>
             <h3 className="text-3xl font-black text-white">Ready to train with a serious system?</h3>
             <p className="mt-2 text-zinc-300">Book a trial session and get your personalized starting plan.</p>

@@ -1,48 +1,33 @@
 import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { getFacilitiesRequest } from "@src/redux/actions/facilities";
 
-const zones = [
-  {
-    title: "Strength Hall",
-    desc: "Competition racks, calibrated plates, platforms, and premium dumbbell range for progressive training.",
-    tag: "Power & Hypertrophy",
-  },
-  {
-    title: "Cardio Studio",
-    desc: "Treadmills, assault bikes, rowers, and guided endurance stations for high-performance conditioning.",
-    tag: "Endurance",
-  },
-  {
-    title: "Functional Arena",
-    desc: "Kettlebells, sleds, ropes, mobility tools, and movement lanes built for athletic training.",
-    tag: "Athletic Performance",
-  },
-  {
-    title: "Coaching Floor",
-    desc: "Dedicated space for personal training, movement correction, and one-on-one progress sessions.",
-    tag: "Personal Coaching",
-  },
-  {
-    title: "Recovery Zone",
-    desc: "Cooldown area with mobility support, stretch stations, and guided post-session recovery.",
-    tag: "Longevity",
-  },
-  {
-    title: "Luxury Locker Rooms",
-    desc: "Clean lockers, private changing zones, and shower facilities maintained through the day.",
-    tag: "Comfort",
-  },
-];
-
-const amenities = [
-  "Air-conditioned floors",
-  "Filtered drinking water",
-  "Secure lockers",
-  "Shower access",
-  "Music-ready training vibe",
-  "Hygiene maintained daily",
-];
+type FacilityItem = {
+  id: number;
+  kind: "zone" | "amenity";
+  title: string;
+  description: string;
+  tag: string;
+  image: string;
+  sort_order: number;
+  is_active: boolean;
+};
 
 export default function Facilities() {
+  const dispatch = useDispatch();
+  const { items, loading, error } = useSelector(
+    (s: any) => s.facilities ?? { items: [], loading: false, error: null }
+  );
+
+  const facilityItems: FacilityItem[] = items ?? [];
+  const zones = facilityItems.filter((i) => i.kind === "zone");
+  const amenities = facilityItems.filter((i) => i.kind === "amenity");
+
+  useEffect(() => {
+    dispatch(getFacilitiesRequest());
+  }, [dispatch]);
+
   const sectionPad = "px-6 lg:px-12 xl:px-20";
 
   return (
@@ -82,28 +67,56 @@ export default function Facilities() {
       </section>
 
       <section className={sectionPad}>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {zones.map((zone) => (
-            <article key={zone.title} className="rounded-3xl bg-white/6 p-6 hover:bg-white/10 transition">
-              <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-200">
-                {zone.tag}
-              </div>
-              <h2 className="mt-4 text-xl font-bold text-white">{zone.title}</h2>
-              <p className="mt-3 text-sm text-zinc-300 leading-relaxed">{zone.desc}</p>
-            </article>
-          ))}
-        </div>
+        {loading ? (
+          <div className="rounded-2xl bg-black/35 p-6 text-zinc-300">Loading facilities...</div>
+        ) : error ? (
+          <div className="rounded-2xl bg-red-500/10 p-6 text-red-300">{error}</div>
+        ) : zones.length === 0 ? (
+          <div className="rounded-2xl bg-black/35 p-6 text-zinc-400">No facility zones yet.</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {zones.map((zone) => (
+              <article key={zone.id} className="rounded-3xl bg-white/6 p-4 hover:bg-white/10 transition">
+                <div className="relative overflow-hidden rounded-2xl bg-black/30" style={{ aspectRatio: "16 / 10" }}>
+                  {zone.image ? (
+                    <img
+                      src={zone.image}
+                      alt={zone.title}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-white/8 to-transparent" />
+                  )}
+                </div>
+
+                {!!zone.tag && (
+                  <div className="mt-4 inline-flex rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-200">
+                    {zone.tag}
+                  </div>
+                )}
+
+                <h2 className="mt-3 text-xl font-bold text-white">{zone.title}</h2>
+                <p className="mt-2 text-sm text-zinc-300 leading-relaxed">{zone.description}</p>
+              </article>
+
+            ))}
+          </div>
+        )}
       </section>
 
       <section className={sectionPad}>
         <div className="rounded-3xl bg-black/35 p-6 sm:p-8">
-          <h3 className="text-2xl font-black text-white">Included amenities</h3>
+          <h3 className="text-2xl font-black text-white">Included features</h3>
           <div className="mt-5 flex flex-wrap gap-2">
-            {amenities.map((item) => (
-              <span key={item} className="rounded-full bg-white/10 px-4 py-2 text-sm text-zinc-200">
-                {item}
-              </span>
-            ))}
+            {amenities.length === 0 ? (
+              <span className="text-zinc-400 text-sm">No features added yet.</span>
+            ) : (
+              amenities.map((item) => (
+                <span key={item.id} className="rounded-full bg-white/10 px-4 py-2 text-sm text-zinc-200">
+                  {item.title}
+                </span>
+              ))
+            )}
           </div>
         </div>
       </section>
