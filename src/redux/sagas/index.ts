@@ -7,7 +7,7 @@ import pricingSaga from "./pricing";
 import footerSaga from "./footer"
 import contactSaga from "./contact";
 import homeSaga from "./home";
-
+import proShopSaga from "./proShop";
 
 export default function* rootSaga() {
   yield all([
@@ -19,5 +19,6 @@ export default function* rootSaga() {
     fork(footerSaga),
     fork(contactSaga),
     fork(homeSaga),
+    fork(proShopSaga),
   ]);
 }

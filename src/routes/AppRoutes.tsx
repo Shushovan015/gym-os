@@ -19,6 +19,7 @@ import AdminPricing from "../pages/admin/AdminPricing";
 import AdminFooter from "../pages/admin/AdminFooter";
 import AdminContact from "../pages/admin/AdminContact";
 import AdminHome from "../pages/admin/AdminHome";
+import AdminProShop from "../pages/admin/AdminProShop";
 
 export default function AppRoutes() {
   return (
@@ -46,6 +47,7 @@ export default function AppRoutes() {
           <Route path="footer" element={<AdminFooter />} />
           <Route path="contact" element={<AdminContact />} />
           <Route path="home" element={<AdminHome />} />
+          <Route path="proshop" element={<AdminProShop />} />
         </Route>
       </Route>
 

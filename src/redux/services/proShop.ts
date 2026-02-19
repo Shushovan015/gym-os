@@ -1,14 +1,14 @@
 import { supabase } from "@src/Client/supabase";
 
-export const fetchPricing = async () => {
+export const fetchProShop = async () => {
   const [{ data: items, error: itemsError }, { data: content, error: contentError }] =
     await Promise.all([
       supabase
-        .from("pricing_items")
+        .from("shop_items")
         .select("*")
         .eq("is_active", true)
         .order("sort_order", { ascending: true }),
-      supabase.from("pricing_page_content").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("shop_page_content").select("*").eq("id", 1).maybeSingle(),
     ]);
 
   if (itemsError) throw new Error(itemsError.message);

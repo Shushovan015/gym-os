@@ -1,288 +1,421 @@
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ElementType } from "react";
 import { Link } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  ChevronRight,
+  Dumbbell,
+  Pill,
+  Search,
+  ShieldCheck,
+  Shirt,
+  ShoppingBag,
+  Sparkles,
+  Star,
+  Truck,
+} from "lucide-react";
+
 import Pagination from "@src/components/Pagination";
-
-const ITEMS_PER_PAGE = 8;
-
-type Category = "All" | "Supplements" | "Accessories" | "Clothing";
+import { getProShopRequest } from "@src/redux/actions/proShop";
+import { PageRoot, Section, Surface, PrimaryCTA, SecondaryCTA } from "./PageKit";
 
 type ShopItem = {
-  name: string;
-  category: Category;
+  id: number;
+  title: string;
+  category: string;
   price: string;
-  desc: string;
+  description: string;
   image: string;
-  badge?: string;
+  badge: string;
+  inquire_link: string;
+  sort_order: number;
+  is_featured: boolean;
+  is_active: boolean;
 };
 
-const tabs: Category[] = ["All", "Supplements", "Accessories", "Clothing"];
+type SummaryCard = {
+  label: string;
+  value: string;
+  icon: string;
+};
 
-const items: ShopItem[] = [
-  // Supplements
+type PageContent = {
+  hero_badge: string;
+  hero_title: string;
+  hero_description: string;
+  hero_image: string;
+  hero_primary_cta_text: string;
+  hero_primary_cta_link: string;
+  hero_secondary_cta_text: string;
+  hero_secondary_cta_link: string;
+  summary_cards: SummaryCard[];
+  catalog_title: string;
+  catalog_description: string;
+  inquiry_button_text: string;
+  inquiry_link_default: string;
+  items_per_page: number;
+  bottom_cta_title: string;
+  bottom_cta_description: string;
+  bottom_primary_cta_text: string;
+  bottom_primary_cta_link: string;
+  bottom_secondary_cta_text: string;
+  bottom_secondary_cta_link: string;
+};
+
+const iconMap: Record<string, ElementType> = {
+  ShoppingBag,
+  Sparkles,
+  ShieldCheck,
+  Truck,
+  Shirt,
+  Pill,
+  Dumbbell,
+};
+
+const fallbackItems: ShopItem[] = [
   {
-    name: "Whey Protein Isolate",
+    id: -1,
+    title: "Whey Protein Isolate",
     category: "Supplements",
     price: "Rs 5,500",
-    desc: "Fast-absorbing protein for post-workout recovery.",
+    description: "Fast-absorbing protein for recovery and muscle support.",
     image: "https://picsum.photos/seed/whey-isolate/800/800",
     badge: "Best Seller",
+    inquire_link: "/contact",
+    sort_order: 1,
+    is_featured: true,
+    is_active: true,
   },
   {
-    name: "Creatine Monohydrate",
+    id: -2,
+    title: "Creatine Monohydrate",
     category: "Supplements",
     price: "Rs 2,200",
-    desc: "Supports strength, power, and muscle performance.",
+    description: "Supports strength, power, and high-intensity performance.",
     image: "https://picsum.photos/seed/creatine/800/800",
     badge: "Coach Pick",
+    inquire_link: "/contact",
+    sort_order: 2,
+    is_featured: true,
+    is_active: true,
   },
   {
-    name: "Pre-Workout Blast",
-    category: "Supplements",
-    price: "Rs 3,100",
-    desc: "Energy and focus support before intense sessions.",
-    image: "https://picsum.photos/seed/preworkout/800/800",
-  },
-  {
-    name: "Mass Gainer Pro",
-    category: "Supplements",
-    price: "Rs 4,900",
-    desc: "High-calorie blend for muscle and weight gain goals.",
-    image: "https://picsum.photos/seed/mass-gainer/800/800",
-  },
-  {
-    name: "BCAA + Electrolytes",
-    category: "Supplements",
-    price: "Rs 2,700",
-    desc: "Hydration and endurance support during training.",
-    image: "https://picsum.photos/seed/bcaa/800/800",
-  },
-  {
-    name: "Fish Oil Omega 3",
-    category: "Supplements",
-    price: "Rs 1,800",
-    desc: "Daily wellness and joint support supplement.",
-    image: "https://picsum.photos/seed/fishoil/800/800",
-  },
-  {
-    name: "Multivitamin Daily",
-    category: "Supplements",
-    price: "Rs 1,500",
-    desc: "Micronutrient support for active lifestyles.",
-    image: "https://picsum.photos/seed/multivitamin/800/800",
-  },
-  {
-    name: "Casein Night Protein",
-    category: "Supplements",
-    price: "Rs 5,200",
-    desc: "Slow-release protein ideal for nighttime recovery.",
-    image: "https://picsum.photos/seed/casein/800/800",
-  },
-
-  // Accessories
-  {
-    name: "Lifting Belt",
+    id: -3,
+    title: "Lifting Belt",
     category: "Accessories",
     price: "Rs 2,900",
-    desc: "Core support for heavy compound lifts.",
+    description: "Core support for heavy compound lifts.",
     image: "https://picsum.photos/seed/lifting-belt/800/800",
+    badge: "",
+    inquire_link: "/contact",
+    sort_order: 3,
+    is_featured: false,
+    is_active: true,
   },
   {
-    name: "Wrist Straps",
-    category: "Accessories",
-    price: "Rs 950",
-    desc: "Improves pulling grip for back and deadlift days.",
-    image: "https://picsum.photos/seed/wrist-straps/800/800",
-  },
-  {
-    name: "Knee Sleeves (Pair)",
-    category: "Accessories",
-    price: "Rs 1,700",
-    desc: "Compression support for squat and leg sessions.",
-    image: "https://picsum.photos/seed/knee-sleeves/800/800",
-  },
-  {
-    name: "Gym Gloves",
-    category: "Accessories",
-    price: "Rs 1,100",
-    desc: "Comfort grip and palm protection for training.",
-    image: "https://picsum.photos/seed/gym-gloves/800/800",
-  },
-  {
-    name: "Shaker Bottle",
-    category: "Accessories",
-    price: "Rs 550",
-    desc: "Leak-proof shaker for protein and pre-workout.",
-    image: "https://picsum.photos/seed/shaker-bottle/800/800",
-  },
-  {
-    name: "Jump Rope Pro",
-    category: "Accessories",
-    price: "Rs 800",
-    desc: "Speed rope for warm-up and conditioning work.",
-    image: "https://picsum.photos/seed/jump-rope/800/800",
-  },
-  {
-    name: "Resistance Bands Set",
-    category: "Accessories",
-    price: "Rs 1,300",
-    desc: "Versatile bands for warm-up and mobility drills.",
-    image: "https://picsum.photos/seed/bands-set/800/800",
-  },
-
-  // Clothing
-  {
-    name: "A&A Oversized Gym Tee",
+    id: -4,
+    title: "A&A Oversized Gym Tee",
     category: "Clothing",
     price: "Rs 1,600",
-    desc: "Breathable oversized fit for training comfort.",
+    description: "Breathable oversized fit for training comfort.",
     image: "https://picsum.photos/seed/oversized-tee/800/800",
     badge: "New",
-  },
-  {
-    name: "A&A Dry-Fit Tank",
-    category: "Clothing",
-    price: "Rs 1,400",
-    desc: "Lightweight tank for high-sweat sessions.",
-    image: "https://picsum.photos/seed/dryfit-tank/800/800",
-  },
-  {
-    name: "A&A Training Joggers",
-    category: "Clothing",
-    price: "Rs 2,200",
-    desc: "Stretch-friendly joggers for lower body days.",
-    image: "https://picsum.photos/seed/training-joggers/800/800",
-  },
-  {
-    name: "A&A Compression Tee",
-    category: "Clothing",
-    price: "Rs 1,900",
-    desc: "Slim compression fit for performance training.",
-    image: "https://picsum.photos/seed/compression-tee/800/800",
-  },
-  {
-    name: "A&A Zip Hoodie",
-    category: "Clothing",
-    price: "Rs 2,800",
-    desc: "Warm-up layer with premium street-gym look.",
-    image: "https://picsum.photos/seed/zip-hoodie/800/800",
-  },
-  {
-    name: "A&A Training Shorts",
-    category: "Clothing",
-    price: "Rs 1,500",
-    desc: "Flexible shorts for cardio and mobility work.",
-    image: "https://picsum.photos/seed/training-shorts/800/800",
+    inquire_link: "/contact",
+    sort_order: 4,
+    is_featured: true,
+    is_active: true,
   },
 ];
 
+const fallbackContent: PageContent = {
+  hero_badge: "A&A Pro Shop",
+  hero_title: "Supplements, Accessories & Clothing",
+  hero_description: "Curated gym essentials for strength, performance, and recovery.",
+  hero_image:
+    "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=1800&auto=format&fit=crop",
+  hero_primary_cta_text: "Browse products",
+  hero_primary_cta_link: "/shop",
+  hero_secondary_cta_text: "Contact team",
+  hero_secondary_cta_link: "/contact",
+  summary_cards: [],
+  catalog_title: "Product Catalog",
+  catalog_description: "Select a category to browse what is available in the gym.",
+  inquiry_button_text: "Inquire now",
+  inquiry_link_default: "/contact",
+  items_per_page: 8,
+  bottom_cta_title: "Need help choosing?",
+  bottom_cta_description: "Message us with your goal and we will suggest the right product.",
+  bottom_primary_cta_text: "Contact support",
+  bottom_primary_cta_link: "/contact",
+  bottom_secondary_cta_text: "View memberships",
+  bottom_secondary_cta_link: "/pricing",
+};
+
+const fallbackSummaryCards: SummaryCard[] = [
+  { label: "Products", value: "{products}+", icon: "ShoppingBag" },
+  { label: "Categories", value: "{categories}", icon: "Sparkles" },
+  { label: "Featured", value: "{featured}", icon: "ShieldCheck" },
+  { label: "Fast Inquiry", value: "< 24 hrs", icon: "Truck" },
+];
+
+function resolveTokens(value: string, products: number, categories: number, featured: number) {
+  return value
+    .replaceAll("{products}", String(products))
+    .replaceAll("{categories}", String(categories))
+    .replaceAll("{featured}", String(featured));
+}
+
 export default function ProShop() {
-
-  const sectionPad = "px-6 lg:px-12 xl:px-20";
-  const cardPad = "p-4 sm:p-4";
-  const [activeTab, setActiveTab] = useState<Category>("All");
-
-  const [currentPage, setCurrentPage] = useState(1);
-
-  const filteredItems = useMemo(
-    () => (activeTab === "All" ? items : items.filter((item) => item.category === activeTab)),
-    [activeTab]
+  const dispatch = useDispatch();
+  const { items, content, loading, error } = useSelector(
+    (s: any) => s.proshop ?? { items: [], content: null, loading: false, error: null }
   );
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / ITEMS_PER_PAGE));
 
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredItems.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredItems, currentPage]);
+  const page: PageContent = { ...fallbackContent, ...(content || {}) };
+  const remoteItems: ShopItem[] = Array.isArray(items) ? items : [];
+  const shopItems = remoteItems.length ? remoteItems : fallbackItems;
+
+  const categories = useMemo(
+    () => ["All", ...Array.from(new Set(shopItems.map((item) => item.category).filter(Boolean)))],
+    [shopItems]
+  );
+
+  const [activeTab, setActiveTab] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [query, setQuery] = useState("");
+
+  const itemsPerPage = Math.max(1, Number(page.items_per_page || 8));
+
+  useEffect(() => {
+    dispatch(getProShopRequest());
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (!categories.includes(activeTab)) setActiveTab("All");
+  }, [categories, activeTab]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab]);
+  }, [activeTab, itemsPerPage, query]);
 
+  const filteredItems = useMemo(() => {
+    const base =
+      activeTab === "All"
+        ? shopItems
+        : shopItems.filter((item) => item.category === activeTab);
+
+    const q = query.trim().toLowerCase();
+    if (!q) return base;
+
+    return base.filter((item) =>
+      [item.title, item.description, item.category, item.badge]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [shopItems, activeTab, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / itemsPerPage));
+
+  const paginatedItems = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredItems.slice(start, start + itemsPerPage);
+  }, [filteredItems, currentPage, itemsPerPage]);
+
+  const featuredCount = useMemo(
+    () => shopItems.filter((item) => item.is_featured).length,
+    [shopItems]
+  );
+
+  const summaryCards = useMemo(() => {
+    const raw = Array.isArray(page.summary_cards) ? page.summary_cards : [];
+    const base = raw.length ? raw : fallbackSummaryCards;
+
+    return base.map((card) => ({
+      label: card.label || "",
+      value: resolveTokens(
+        String(card.value || ""),
+        shopItems.length,
+        Math.max(categories.length - 1, 0),
+        featuredCount
+      ),
+      icon: card.icon || "ShoppingBag",
+    }));
+  }, [page.summary_cards, shopItems.length, categories.length, featuredCount]);
 
   return (
-    <div className="space-y-12 pb-10">
-      <section className={sectionPad}>
-        <div className="rounded-[30px] bg-gradient-to-br from-white/12 via-white/8 to-white/4 py-8 sm:py-10 lg:py-10">
-          <div className="inline-flex rounded-full bg-black/35 px-4 py-2 text-xs font-semibold text-zinc-200">
-            A&A Pro Shop
+    <PageRoot>
+      <Section>
+        <div className="surface-card relative overflow-hidden p-0">
+          <img
+            src={page.hero_image}
+            alt="A&A Pro Shop"
+            className="absolute inset-0 h-full w-full object-cover brightness-[0.45] saturate-[0.85]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/74 to-black/56" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/84 via-black/25 to-black/45" />
+
+          <div className="relative z-10 p-7 sm:p-9 lg:p-10">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+              <div>
+                <div className="label-chip">{page.hero_badge}</div>
+                <h1 className="mt-5 text-4xl sm:text-5xl font-bold leading-[1.05] tracking-tight text-white">
+                  {page.hero_title}
+                </h1>
+                <p className="mt-4 max-w-2xl text-zinc-200 leading-relaxed">{page.hero_description}</p>
+
+                <div className="mt-7 flex flex-col sm:flex-row gap-3">
+                  <PrimaryCTA to={page.hero_primary_cta_link || "/shop"}>
+                    {page.hero_primary_cta_text}
+                  </PrimaryCTA>
+                  <SecondaryCTA to={page.hero_secondary_cta_link || "/contact"}>
+                    {page.hero_secondary_cta_text}
+                  </SecondaryCTA>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {summaryCards.map((card, idx) => {
+                  const Icon = iconMap[card.icon] || ShoppingBag;
+                  return (
+                    <div
+                      key={`${card.label}-${idx}`}
+                      className="rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm transition duration-300 hover:bg-black/45"
+                    >
+                      <Icon className="h-5 w-5 text-accent" />
+                      <div className="mt-3 text-2xl font-bold text-white">{card.value}</div>
+                      <div className="text-xs text-zinc-300">{card.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-          <h1 className="mt-5 text-4xl sm:text-5xl font-black tracking-tight text-white">
-            Supplements, Accessories & Clothing
-          </h1>
-          <p className="mt-4 text-zinc-300 leading-relaxed">
-            Select a category to browse products available in the gym.
-          </p>
         </div>
-      </section>
+      </Section>
 
-      <section className={`${sectionPad} relative z-10`}>
-        <div className="flex flex-wrap gap-3">
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              className={[
-                "rounded-xl px-5 py-2.5 text-sm font-semibold transition",
-                activeTab === tab
-                  ? "bg-white text-black"
-                  : "bg-white/10 text-white hover:bg-white/15",
-              ].join(" ")}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+      <Section>
+        <Surface className="space-y-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-white">{page.catalog_title}</h2>
+              <p className="mt-1 text-sm text-muted">{page.catalog_description}</p>
+            </div>
+            <div className="text-xs text-zinc-400">
+              Showing {filteredItems.length} product{filteredItems.length === 1 ? "" : "s"}
+            </div>
+          </div>
 
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {paginatedItems.map((item) => (
-            <article
-              key={item.name}
-              className={`rounded-3xl bg-black/35 hover:bg-black/45 transition ${cardPad}`}
-            >
-              <div
-                className="relative w-full overflow-hidden rounded-2xl bg-white/5"
-                style={{ aspectRatio: "1 / 1" }}
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search products..."
+                className="w-full rounded-xl border border-line/20 bg-white/10 py-3 pl-10 pr-3 text-sm text-white placeholder:text-zinc-400 outline-none transition focus:border-accent/50"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={[
+                    "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                    activeTab === tab
+                      ? "bg-accent text-black"
+                      : "bg-white/10 text-white hover:bg-white/15",
+                  ].join(" ")}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {loading ? <div className="text-zinc-300">Loading products...</div> : null}
+          {error ? <div className="text-red-300">{error}</div> : null}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {paginatedItems.map((item) => (
+              <article
+                key={`${item.id}-${item.title}`}
+                className="group rounded-2xl border border-line/15 bg-white/[0.04] p-3 transition duration-300 hover:-translate-y-1 hover:border-accent/35 hover:bg-white/[0.06]"
               >
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover object-center"
-                />
-              </div>
+                <div className="relative w-full overflow-hidden rounded-xl bg-white/5 aspect-square">
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      loading="lazy"
+                      className="absolute inset-0 h-full w-full object-cover object-center transition duration-500 group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-white/10 to-transparent" />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
+                  {item.is_featured ? (
+                    <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/15 px-2.5 py-1 text-[10px] font-semibold text-accent">
+                      <Star className="h-3 w-3" />
+                      Featured
+                    </div>
+                  ) : null}
+                </div>
 
-              <div className="mt-4 flex items-start justify-between gap-3">
-                <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-200">
-                  {item.category}
-                </span>
-                {item.badge && (
-                  <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold text-white">
-                    {item.badge}
+                <div className="mt-3 flex items-start justify-between gap-2">
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-200">
+                    {item.category}
                   </span>
-                )}
-              </div>
+                  {item.badge ? (
+                    <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white">
+                      {item.badge}
+                    </span>
+                  ) : null}
+                </div>
 
-              <h2 className="mt-4 text-xl font-black text-white">{item.name}</h2>
-              <p className="mt-2 text-sm text-zinc-300 leading-relaxed">{item.desc}</p>
-              <div className="mt-5 text-2xl font-black text-white">{item.price}</div>
+                <h3 className="mt-3 min-h-[3.25rem] text-lg font-bold leading-tight text-white">{item.title}</h3>
+                <p className="mt-2 min-h-[3.5rem] text-sm leading-relaxed text-zinc-300">{item.description}</p>
+                <div className="mt-4 text-2xl font-bold text-white">{item.price}</div>
 
-              <Link
-                to="/contact"
-                className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-black text-black hover:bg-white/90 transition"
-              >
-                Inquire now
-              </Link>
-            </article>
-          ))}
-        </div>
+                <Link
+                  to={item.inquire_link || page.inquiry_link_default || "/contact"}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black transition hover:bg-white/90"
+                >
+                  {page.inquiry_button_text}
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              </article>
+            ))}
+          </div>
 
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-        />
-      </section>
-    </div>
+          {!loading && paginatedItems.length === 0 ? (
+            <div className="rounded-xl border border-line/20 bg-white/5 p-5 text-zinc-400">
+              No products found for this filter/search.
+            </div>
+          ) : null}
+
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+        </Surface>
+      </Section>
+
+      <Section className="pb-10">
+        <Surface className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div>
+            <h3 className="text-3xl font-bold text-white">{page.bottom_cta_title}</h3>
+            <p className="mt-2 text-muted">{page.bottom_cta_description}</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <PrimaryCTA to={page.bottom_primary_cta_link || "/contact"}>
+              {page.bottom_primary_cta_text}
+            </PrimaryCTA>
+            <SecondaryCTA to={page.bottom_secondary_cta_link || "/pricing"}>
+              {page.bottom_secondary_cta_text}
+            </SecondaryCTA>
+          </div>
+        </Surface>
+      </Section>
+    </PageRoot>
   );
 }

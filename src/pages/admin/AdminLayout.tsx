@@ -33,6 +33,7 @@ export default function AdminLayout() {
         <NavLink to="/admin/footer" className="rounded-xl bg-white/10 px-4 py-2 text-white">
           Footer
         </NavLink>
+        <NavLink to="/admin/proshop" className="rounded-xl bg-white/10 px-4 py-2 text-white">ProShop</NavLink>
         <NavLink to="/admin/contact" className="rounded-xl bg-white/10 px-4 py-2 text-white">
           Contact
         </NavLink>

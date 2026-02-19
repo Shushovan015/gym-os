@@ -9,6 +9,7 @@ import pricing from "./pricing";
 import footer from "./footer";
 import contact from "./contact";
 import home from "./home";
+import proshop from "./proShop";
 
 const rootReducer = combineReducers({
   dashboard,
@@ -19,7 +20,7 @@ const rootReducer = combineReducers({
   facilities,
   pricing,
   footer,
-  contact, home
+  contact, home, proshop,
 });
 
 export type RootState = ReturnType<typeof rootReducer>;

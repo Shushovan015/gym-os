@@ -1,31 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
 
-type Kind = "plan" | "perk";
-
 type Row = {
   id: number;
-  kind: Kind;
   title: string;
+  category: string;
   price: string;
-  cadence: string;
-  subtitle: string;
-  is_highlighted: boolean;
-  features: string[];
+  description: string;
+  image: string;
+  badge: string;
+  inquire_link: string;
   sort_order: number;
+  is_featured: boolean;
   is_active: boolean;
 };
 
 type FormState = {
-  kind: Kind;
   title: string;
+  category: string;
   price: string;
-  cadence: string;
-  subtitle: string;
-  is_highlighted: boolean;
-  features: string[];
+  description: string;
+  image: string;
+  badge: string;
+  inquire_link: string;
   sort_order: number;
+  is_featured: boolean;
   is_active: boolean;
 };
 
@@ -39,18 +39,17 @@ type PageContent = {
   hero_badge: string;
   hero_title: string;
   hero_description: string;
+  hero_image: string;
   hero_primary_cta_text: string;
   hero_primary_cta_link: string;
   hero_secondary_cta_text: string;
   hero_secondary_cta_link: string;
   summary_cards: SummaryCard[];
-  benefits_title: string;
-  benefits_description: string;
-  advisor_title: string;
-  advisor_description: string;
-  advisor_cta_text: string;
-  advisor_cta_link: string;
-  popular_badge_text: string;
+  catalog_title: string;
+  catalog_description: string;
+  inquiry_button_text: string;
+  inquiry_link_default: string;
+  items_per_page: number;
   bottom_cta_title: string;
   bottom_cta_description: string;
   bottom_primary_cta_text: string;
@@ -59,46 +58,48 @@ type PageContent = {
   bottom_secondary_cta_link: string;
 };
 
-const iconOptions = ["Crown", "Sparkles", "ShieldCheck", "Zap", "Dumbbell", "Trophy", "Users"];
+const iconOptions = ["ShoppingBag", "Sparkles", "ShieldCheck", "Truck", "Shirt", "Pill", "Dumbbell"];
 
 const emptyForm: FormState = {
-  kind: "plan",
   title: "",
+  category: "Supplements",
   price: "",
-  cadence: "/month",
-  subtitle: "",
-  is_highlighted: false,
-  features: [],
+  description: "",
+  image: "",
+  badge: "",
+  inquire_link: "/contact",
   sort_order: 0,
+  is_featured: false,
   is_active: true,
 };
 
 const emptyPageContent: PageContent = {
-  hero_badge: "Membership Plans",
-  hero_title: "Transparent pricing for premium training",
-  hero_description: "Choose the plan that matches your training intensity. Upgrade anytime as your goals evolve.",
-  hero_primary_cta_text: "Get custom plan",
-  hero_primary_cta_link: "/contact",
-  hero_secondary_cta_text: "Talk to a coach",
-  hero_secondary_cta_link: "/trainers",
+  hero_badge: "A&A Pro Shop",
+  hero_title: "Supplements, Accessories & Clothing",
+  hero_description: "Curated gym essentials for strength, performance, and recovery.",
+  hero_image:
+    "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=1800&auto=format&fit=crop",
+  hero_primary_cta_text: "Browse products",
+  hero_primary_cta_link: "/shop",
+  hero_secondary_cta_text: "Contact team",
+  hero_secondary_cta_link: "/contact",
   summary_cards: [
-    { label: "Membership Tiers", value: "{plans}", icon: "Crown" },
-    { label: "Included Benefits", value: "{perks}+", icon: "Sparkles" },
-    { label: "Most Popular", value: "{popular}", icon: "ShieldCheck" },
+    { label: "Products", value: "{products}+", icon: "ShoppingBag" },
+    { label: "Categories", value: "{categories}", icon: "Sparkles" },
+    { label: "Featured", value: "{featured}", icon: "ShieldCheck" },
+    { label: "Fast Inquiry", value: "< 24 hrs", icon: "Truck" },
   ],
-  benefits_title: "What you get",
-  benefits_description: "Every membership includes core gym access and a serious training environment.",
-  advisor_title: "Need plan matching?",
-  advisor_description: "Tell us your goal and schedule. We will recommend the right package.",
-  advisor_cta_text: "Contact team",
-  advisor_cta_link: "/contact",
-  popular_badge_text: "Most Popular",
-  bottom_cta_title: "Need a custom offer for your goal?",
-  bottom_cta_description: "Get a personalized recommendation based on your training level and timeline.",
-  bottom_primary_cta_text: "Get custom plan",
+  catalog_title: "Product Catalog",
+  catalog_description: "Select a category to browse what is available in the gym.",
+  inquiry_button_text: "Inquire now",
+  inquiry_link_default: "/contact",
+  items_per_page: 8,
+  bottom_cta_title: "Need help choosing?",
+  bottom_cta_description: "Message us with your goal and we will suggest the right product.",
+  bottom_primary_cta_text: "Contact support",
   bottom_primary_cta_link: "/contact",
-  bottom_secondary_cta_text: "Meet trainers",
-  bottom_secondary_cta_link: "/trainers",
+  bottom_secondary_cta_text: "View memberships",
+  bottom_secondary_cta_link: "/pricing",
 };
 
 const normalizeSummaryCards = (value: any): SummaryCard[] => {
@@ -107,7 +108,7 @@ const normalizeSummaryCards = (value: any): SummaryCard[] => {
     .map((item: any) => ({
       label: String(item?.label ?? "").trim(),
       value: String(item?.value ?? "").trim(),
-      icon: String(item?.icon ?? "Crown").trim() || "Crown",
+      icon: String(item?.icon ?? "ShoppingBag").trim() || "ShoppingBag",
     }))
     .filter((item: SummaryCard) => item.label && item.value);
   return cleaned.length ? cleaned : emptyPageContent.summary_cards;
@@ -117,10 +118,9 @@ function Label({ children }: { children: string }) {
   return <label className="text-xs font-semibold text-zinc-300">{children}</label>;
 }
 
-export default function AdminPricing() {
+export default function AdminProShop() {
   const [rows, setRows] = useState<Row[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [featuresInput, setFeaturesInput] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -129,14 +129,19 @@ export default function AdminPricing() {
   const [pageSaving, setPageSaving] = useState(false);
   const [pageMsg, setPageMsg] = useState("");
 
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.category).filter(Boolean))),
+    [rows]
+  );
+
   const load = async () => {
     const [{ data: itemData }, { data: pageData }] = await Promise.all([
       supabase
-        .from("pricing_items")
+        .from("shop_items")
         .select("*")
-        .order("kind", { ascending: true })
+        .order("category", { ascending: true })
         .order("sort_order", { ascending: true }),
-      supabase.from("pricing_page_content").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("shop_page_content").select("*").eq("id", 1).maybeSingle(),
     ]);
 
     setRows((itemData as Row[]) || []);
@@ -146,6 +151,7 @@ export default function AdminPricing() {
         ...emptyPageContent,
         ...(pageData as Partial<PageContent>),
         summary_cards: normalizeSummaryCards((pageData as any)?.summary_cards),
+        items_per_page: Number((pageData as any)?.items_per_page || 8),
       });
     } else {
       setPageContent(emptyPageContent);
@@ -158,7 +164,6 @@ export default function AdminPricing() {
 
   const resetForm = () => {
     setForm(emptyForm);
-    setFeaturesInput("");
     setEditingId(null);
     setMsg("");
   };
@@ -169,28 +174,32 @@ export default function AdminPricing() {
     setMsg("");
 
     try {
-      const features = featuresInput
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
       const payload = {
         ...form,
-        price: form.kind === "perk" ? "" : form.price,
-        cadence: form.kind === "perk" ? "" : form.cadence,
-        subtitle: form.kind === "perk" ? "" : form.subtitle,
-        is_highlighted: form.kind === "perk" ? false : form.is_highlighted,
-        features: form.kind === "perk" ? [] : features,
+        title: form.title.trim(),
+        category: form.category.trim(),
+        price: form.price.trim(),
+        description: form.description.trim(),
+        image: form.image.trim(),
+        badge: form.badge.trim(),
+        inquire_link: (form.inquire_link || "/contact").trim(),
+        sort_order: Number(form.sort_order || 0),
       };
 
+      if (!payload.title || !payload.category) {
+        setMsg("Product title and category are required.");
+        setSaving(false);
+        return;
+      }
+
       if (editingId) {
-        const { error } = await supabase.from("pricing_items").update(payload).eq("id", editingId);
+        const { error } = await supabase.from("shop_items").update(payload).eq("id", editingId);
         if (error) throw new Error(error.message);
-        setMsg("Updated successfully.");
+        setMsg("Product updated.");
       } else {
-        const { error } = await supabase.from("pricing_items").insert(payload);
+        const { error } = await supabase.from("shop_items").insert(payload);
         if (error) throw new Error(error.message);
-        setMsg("Created successfully.");
+        setMsg("Product created.");
       }
 
       resetForm();
@@ -205,24 +214,24 @@ export default function AdminPricing() {
   const onEdit = (row: Row) => {
     setEditingId(row.id);
     setForm({
-      kind: row.kind,
-      title: row.title,
-      price: row.price,
-      cadence: row.cadence,
-      subtitle: row.subtitle,
-      is_highlighted: row.is_highlighted,
-      features: row.features || [],
-      sort_order: row.sort_order,
-      is_active: row.is_active,
+      title: row.title || "",
+      category: row.category || "",
+      price: row.price || "",
+      description: row.description || "",
+      image: row.image || "",
+      badge: row.badge || "",
+      inquire_link: row.inquire_link || "/contact",
+      sort_order: row.sort_order || 0,
+      is_featured: !!row.is_featured,
+      is_active: row.is_active !== false,
     });
-    setFeaturesInput((row.features || []).join(", "));
     setMsg("");
   };
 
   const onDelete = async (id: number) => {
-    const ok = window.confirm("Delete this item?");
+    const ok = window.confirm("Delete this product?");
     if (!ok) return;
-    const { error } = await supabase.from("pricing_items").delete().eq("id", id);
+    const { error } = await supabase.from("shop_items").delete().eq("id", id);
     if (!error) await load();
   };
 
@@ -237,7 +246,7 @@ export default function AdminPricing() {
   const addSummaryCard = () => {
     setPageContent((prev) => ({
       ...prev,
-      summary_cards: [...prev.summary_cards, { label: "", value: "", icon: "Crown" }],
+      summary_cards: [...prev.summary_cards, { label: "", value: "", icon: "ShoppingBag" }],
     }));
   };
 
@@ -256,20 +265,18 @@ export default function AdminPricing() {
     const payload = {
       id: 1,
       ...pageContent,
+      items_per_page: Math.max(1, Number(pageContent.items_per_page || 8)),
       summary_cards: pageContent.summary_cards
         .map((card) => ({
           label: card.label.trim(),
           value: card.value.trim(),
-          icon: (card.icon || "Crown").trim(),
+          icon: (card.icon || "ShoppingBag").trim(),
         }))
         .filter((card) => card.label && card.value),
     };
 
-    const { error } = await supabase
-      .from("pricing_page_content")
-      .upsert(payload, { onConflict: "id" });
-
-    setPageMsg(error ? error.message : "Pricing page content saved.");
+    const { error } = await supabase.from("shop_page_content").upsert(payload, { onConflict: "id" });
+    setPageMsg(error ? error.message : "ProShop page content saved.");
     setPageSaving(false);
     if (!error) await load();
   };
@@ -277,7 +284,7 @@ export default function AdminPricing() {
   return (
     <div className="space-y-6">
       <form onSubmit={savePageContent} className="rounded-2xl bg-black/35 p-6 space-y-4">
-        <h2 className="text-xl font-black text-white">Pricing Page Content</h2>
+        <h2 className="text-xl font-black text-white">ProShop Page Content</h2>
 
         <div className="pt-1 text-sm font-bold text-white">Hero</div>
         <Label>Hero Badge</Label>
@@ -288,6 +295,9 @@ export default function AdminPricing() {
 
         <Label>Hero Description</Label>
         <textarea className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.hero_description} onChange={(e) => setPageContent({ ...pageContent, hero_description: e.target.value })} />
+
+        <Label>Hero Background Image URL</Label>
+        <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.hero_image} onChange={(e) => setPageContent({ ...pageContent, hero_image: e.target.value })} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1">
@@ -347,34 +357,37 @@ export default function AdminPricing() {
           </div>
         </div>
 
-        <div className="pt-1 text-sm font-bold text-white">Benefits Sidebar</div>
-        <Label>Benefits Title</Label>
-        <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.benefits_title} onChange={(e) => setPageContent({ ...pageContent, benefits_title: e.target.value })} />
-        <Label>Benefits Description</Label>
-        <textarea className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.benefits_description} onChange={(e) => setPageContent({ ...pageContent, benefits_description: e.target.value })} />
+        <div className="pt-1 text-sm font-bold text-white">Catalog Section</div>
+        <Label>Catalog Title</Label>
+        <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.catalog_title} onChange={(e) => setPageContent({ ...pageContent, catalog_title: e.target.value })} />
 
-        <Label>Advisor Card Title</Label>
-        <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.advisor_title} onChange={(e) => setPageContent({ ...pageContent, advisor_title: e.target.value })} />
-        <Label>Advisor Card Description</Label>
-        <textarea className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.advisor_description} onChange={(e) => setPageContent({ ...pageContent, advisor_description: e.target.value })} />
+        <Label>Catalog Description</Label>
+        <textarea className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.catalog_description} onChange={(e) => setPageContent({ ...pageContent, catalog_description: e.target.value })} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label>Advisor CTA Text</Label>
-            <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.advisor_cta_text} onChange={(e) => setPageContent({ ...pageContent, advisor_cta_text: e.target.value })} />
+            <Label>Inquiry Button Text</Label>
+            <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.inquiry_button_text} onChange={(e) => setPageContent({ ...pageContent, inquiry_button_text: e.target.value })} />
           </div>
           <div className="space-y-1">
-            <Label>Advisor CTA Link</Label>
-            <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.advisor_cta_link} onChange={(e) => setPageContent({ ...pageContent, advisor_cta_link: e.target.value })} />
+            <Label>Default Inquiry Link</Label>
+            <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.inquiry_link_default} onChange={(e) => setPageContent({ ...pageContent, inquiry_link_default: e.target.value })} />
           </div>
         </div>
 
-        <Label>Popular Badge Text</Label>
-        <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.popular_badge_text} onChange={(e) => setPageContent({ ...pageContent, popular_badge_text: e.target.value })} />
+        <Label>Items Per Page</Label>
+        <input
+          type="number"
+          min={1}
+          className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
+          value={pageContent.items_per_page}
+          onChange={(e) => setPageContent({ ...pageContent, items_per_page: Number(e.target.value) || 8 })}
+        />
 
         <div className="pt-1 text-sm font-bold text-white">Bottom CTA</div>
         <Label>Bottom CTA Title</Label>
         <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.bottom_cta_title} onChange={(e) => setPageContent({ ...pageContent, bottom_cta_title: e.target.value })} />
+
         <Label>Bottom CTA Description</Label>
         <textarea className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={pageContent.bottom_cta_description} onChange={(e) => setPageContent({ ...pageContent, bottom_cta_description: e.target.value })} />
 
@@ -402,103 +415,70 @@ export default function AdminPricing() {
 
         {pageMsg && <p className="text-sm text-zinc-300">{pageMsg}</p>}
         <button type="submit" disabled={pageSaving} className="rounded-xl bg-white px-5 py-3 font-black text-black disabled:opacity-60">
-          {pageSaving ? "Saving..." : "Save Pricing Page Content"}
+          {pageSaving ? "Saving..." : "Save ProShop Page Content"}
         </button>
       </form>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <form onSubmit={submit} className="rounded-2xl bg-black/35 p-6 space-y-3">
-          <h2 className="text-xl font-black text-white">{editingId ? "Edit" : "Add"} Pricing Content</h2>
+          <h2 className="text-xl font-black text-white">{editingId ? "Edit" : "Add"} Product</h2>
 
-          <select
-            value={form.kind}
-            onChange={(e) => setForm({ ...form, kind: e.target.value as Kind })}
-            className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-          >
-            <option value="plan">Plan Card</option>
-            <option value="perk">Top Feature Chip</option>
-          </select>
+          <Label>Product Title</Label>
+          <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
 
+          <Label>Category</Label>
           <input
+            list="proshop-category-options"
             className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-            placeholder={form.kind === "perk" ? "Feature text" : "Plan name"}
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
             required
           />
+          <datalist id="proshop-category-options">
+            {categoryOptions.map((cat) => (
+              <option key={cat} value={cat} />
+            ))}
+            <option value="Supplements" />
+            <option value="Accessories" />
+            <option value="Clothing" />
+          </datalist>
 
-          {form.kind === "plan" && (
-            <>
-              <input
-                className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-                placeholder="Price (e.g. Rs 3,500)"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                required
-              />
-              <input
-                className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-                placeholder="Cadence (e.g. /month)"
-                value={form.cadence}
-                onChange={(e) => setForm({ ...form, cadence: e.target.value })}
-              />
-              <input
-                className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-                placeholder="Subtitle"
-                value={form.subtitle}
-                onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
-                required
-              />
-              <input
-                className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-                placeholder="Features (comma separated)"
-                value={featuresInput}
-                onChange={(e) => setFeaturesInput(e.target.value)}
-              />
-              <label className="flex items-center gap-2 text-zinc-200">
-                <input
-                  type="checkbox"
-                  checked={form.is_highlighted}
-                  onChange={(e) => setForm({ ...form, is_highlighted: e.target.checked })}
-                />
-                Mark as Most Popular
-              </label>
-            </>
-          )}
+          <Label>Price</Label>
+          <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
 
-          <input
-            type="number"
-            className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-            placeholder="Sort order"
-            value={form.sort_order}
-            onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}
-          />
+          <Label>Description</Label>
+          <textarea className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+
+          <Label>Image URL</Label>
+          <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} />
+
+          <Label>Badge (optional)</Label>
+          <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.badge} onChange={(e) => setForm({ ...form, badge: e.target.value })} />
+
+          <Label>Inquire Link</Label>
+          <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.inquire_link} onChange={(e) => setForm({ ...form, inquire_link: e.target.value })} />
+
+          <Label>Sort Order</Label>
+          <input type="number" className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })} />
 
           <label className="flex items-center gap-2 text-zinc-200">
-            <input
-              type="checkbox"
-              checked={form.is_active}
-              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-            />
+            <input type="checkbox" checked={form.is_featured} onChange={(e) => setForm({ ...form, is_featured: e.target.checked })} />
+            Featured product
+          </label>
+
+          <label className="flex items-center gap-2 text-zinc-200">
+            <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
             Active
           </label>
 
           {msg && <p className="text-sm text-zinc-300">{msg}</p>}
 
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-xl bg-white px-5 py-3 font-black text-black disabled:opacity-60"
-            >
+            <button type="submit" disabled={saving} className="rounded-xl bg-white px-5 py-3 font-black text-black disabled:opacity-60">
               {saving ? "Saving..." : editingId ? "Update" : "Create"}
             </button>
             {editingId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="rounded-xl bg-white/10 px-5 py-3 font-semibold text-white"
-              >
+              <button type="button" onClick={resetForm} className="rounded-xl bg-white/10 px-5 py-3 font-semibold text-white">
                 Cancel
               </button>
             )}
@@ -506,23 +486,16 @@ export default function AdminPricing() {
         </form>
 
         <div className="rounded-2xl bg-black/35 p-6 space-y-3">
-          <h2 className="text-xl font-black text-white">Saved Pricing Content</h2>
+          <h2 className="text-xl font-black text-white">Saved Products</h2>
+
           {rows.map((r) => (
             <div key={r.id} className="rounded-xl bg-white/6 p-4">
-              <div className="text-xs text-zinc-400">{r.kind === "plan" ? "Plan Card" : "Top Feature Chip"}</div>
+              <div className="text-xs text-zinc-400">{r.category}</div>
               <div className="text-white font-bold mt-1">{r.title}</div>
-              {r.kind === "plan" && (
-                <>
-                  <div className="text-zinc-300 text-sm mt-1">
-                    {r.price}
-                    {r.cadence}
-                  </div>
-                  <div className="text-zinc-300 text-sm mt-1">{r.subtitle}</div>
-                  <div className="text-xs text-zinc-400 mt-1">{r.is_highlighted ? "Most Popular" : "Normal"}</div>
-                </>
-              )}
+              <div className="text-zinc-300 text-sm mt-1">{r.price}</div>
+              <div className="text-zinc-300 text-sm mt-1">{r.description}</div>
               <div className="text-xs text-zinc-400 mt-1">
-                order: {r.sort_order} | {r.is_active ? "active" : "inactive"}
+                order: {r.sort_order} | {r.is_featured ? "featured" : "normal"} | {r.is_active ? "active" : "inactive"}
               </div>
 
               <div className="mt-3 flex gap-2">
