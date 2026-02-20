@@ -484,13 +484,13 @@ export default function Trainers() {
               </div>
             </div>
 
-            <div className="surface-card-soft p-5">
+            <div className="surface-card-soft mini-glow p-5">
               <h3 className="text-xl font-bold text-white">{page.strength_section_title}</h3>
               <div className="mt-4 space-y-3">
                 {strengthMetricsData.map((metric) => {
                   const Icon = resolveIcon(metric.icon, Dumbbell);
                   return (
-                    <div key={`${metric.label}-${metric.value}`} className="rounded-2xl border border-line/10 bg-black/25 p-3">
+                    <div key={`${metric.label}-${metric.value}`} className="mini-glow rounded-2xl border border-line/10 bg-black/25 p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
@@ -516,7 +516,7 @@ export default function Trainers() {
           {equipmentZonesData.map((zone) => {
             const Icon = resolveIcon(zone.icon, Activity);
             return (
-              <article key={zone.title} className="surface-card-soft p-5">
+              <article key={zone.title} className="surface-card-soft mini-glow p-5">
                 <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
                   <Icon className="h-5 w-5 text-accent" />
                 </div>
@@ -530,19 +530,19 @@ export default function Trainers() {
 
       <section className="section-pad">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div className="surface-card-soft p-5">
+          <div className="surface-card-soft mini-glow p-5">
             <div className="text-xs uppercase tracking-wide text-muted">Coaching Team</div>
             <div className="mt-2 text-3xl font-bold text-white">{trainers.length}</div>
           </div>
-          <div className="surface-card-soft p-5">
+          <div className="surface-card-soft mini-glow p-5">
             <div className="text-xs uppercase tracking-wide text-muted">Avg Experience</div>
             <div className="mt-2 text-3xl font-bold text-white">{avgExperience}+ yrs</div>
           </div>
-          <div className="surface-card-soft p-5">
+          <div className="surface-card-soft mini-glow p-5">
             <div className="text-xs uppercase tracking-wide text-muted">1-to-1 Coaches</div>
             <div className="mt-2 text-3xl font-bold text-white">{ptCount}</div>
           </div>
-          <div className="surface-card-soft p-5">
+          <div className="surface-card-soft mini-glow p-5">
             <div className="text-xs uppercase tracking-wide text-muted">Clients Coached</div>
             <div className="mt-2 text-3xl font-bold text-white">{totalClients > 0 ? `${totalClients}+` : "500+"}</div>
           </div>
@@ -588,7 +588,7 @@ export default function Trainers() {
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
             {personalTrainingPlans.map((plan, idx) => (
-              <article key={plan.id ?? `${plan.name}-${idx}`} className="surface-card-soft p-5">
+              <article key={plan.id ?? `${plan.name}-${idx}`} className="surface-card-soft mini-glow p-5">
                 <h4 className="text-2xl font-bold text-white">{plan.name}</h4>
                 <p className="mt-1 text-sm text-muted">{plan.details}</p>
                 <div className="mt-4 space-y-2">
@@ -611,7 +611,7 @@ export default function Trainers() {
             {coachingProcess.map((step) => {
               const Icon = step.icon;
               return (
-                <div key={step.title} className="rounded-2xl border border-line/10 bg-black/30 p-5">
+                <div key={step.title} className="mini-glow rounded-2xl border border-line/10 bg-black/30 p-5">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent/20">
                     <Icon className="h-4.5 w-4.5 text-accent" />
                   </span>

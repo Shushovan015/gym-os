@@ -279,7 +279,7 @@ export default function Facilities() {
                     type="button"
                     onClick={() => setActiveIndex(idx)}
                     className={[
-                      "w-full text-left rounded-xl border p-3 transition",
+                      "w-full text-left rounded-xl border p-3 transition mini-glow",
                       idx === activeIndex
                         ? "border-accent/50 bg-accent/10"
                         : "border-line/10 bg-white/5 hover:bg-white/10",

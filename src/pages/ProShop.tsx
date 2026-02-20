@@ -280,7 +280,7 @@ export default function ProShop() {
                   return (
                     <div
                       key={`${card.label}-${idx}`}
-                      className="rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm transition duration-300 hover:bg-black/45"
+                      className="mini-glow rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm transition duration-300 hover:bg-black/45"
                     >
                       <Icon className="h-5 w-5 text-accent" />
                       <div className="mt-3 text-2xl font-bold text-white">{card.value}</div>

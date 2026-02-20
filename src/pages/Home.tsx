@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import {
   Activity,
   BarChart3,
@@ -10,6 +11,7 @@ import {
   ShieldCheck,
   Star,
   Trophy,
+  type LucideIcon,
 } from "lucide-react";
 
 import { getHomeRequest } from "@src/redux/actions/home";
@@ -70,7 +72,7 @@ type HomeContent = {
   final_secondary_cta_link?: string;
 };
 
-const iconMap: Record<string, React.ElementType> = {
+const iconMap: Record<string, LucideIcon> = {
   Dumbbell,
   ShieldCheck,
   Star,
@@ -182,8 +184,40 @@ const fallbackGallery = [
   "https://images.unsplash.com/photo-1549476464-37392f717541?q=80&w=1600&auto=format&fit=crop",
 ];
 
+function RevealSection({
+  children,
+  delay = 0,
+  className = "",
+}: {
+  children: ReactNode;
+  delay?: number;
+  className?: string;
+}) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <motion.div
+      className={className}
+      initial={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 28, filter: "blur(8px)" }}
+      whileInView={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={{ duration: 0.65, delay, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 export default function Home() {
   const dispatch = useDispatch();
+  const reduceMotion = useReducedMotion();
+
+  const { scrollY } = useScroll();
+  const heroImageY = useTransform(scrollY, [0, 800], [0, reduceMotion ? 0 : 120]);
+  const heroImageScale = useTransform(scrollY, [0, 700], [1, reduceMotion ? 1 : 1.08]);
+  const heroOverlayY = useTransform(scrollY, [0, 700], [0, reduceMotion ? 0 : 48]);
+  const heroContentY = useTransform(scrollY, [0, 560], [0, reduceMotion ? 0 : 64]);
+  const heroContentOpacity = useTransform(scrollY, [0, 440], [1, reduceMotion ? 1 : 0.22]);
 
   const { content: homeContent, status: homeStatus, points: homePoints } = useSelector(
     (s: any) => s.home ?? { content: null, status: [], points: [] }
@@ -200,34 +234,34 @@ export default function Home() {
   const gymStatus =
     Array.isArray(homeStatus) && homeStatus.length
       ? homeStatus
-          .map((item: any, idx: number) => ({
-            label: item?.label ?? "",
-            value: item?.value ?? "",
-            icon: iconMap[item?.icon] || fallbackStatus[idx % fallbackStatus.length].icon,
-          }))
-          .filter((item: any) => item.label && item.value)
+        .map((item: any, idx: number) => ({
+          label: item?.label ?? "",
+          value: item?.value ?? "",
+          icon: iconMap[item?.icon] || fallbackStatus[idx % fallbackStatus.length].icon,
+        }))
+        .filter((item: any) => item.label && item.value)
       : fallbackStatus;
 
   const zoneCards =
     Array.isArray(facilitiesItems) && facilitiesItems.length
       ? facilitiesItems
-          .filter((item: any) => item?.kind === "zone" && item?.is_active !== false)
-          .slice(0, 3)
-          .map((item: any) => ({
-            name: item?.title ?? "Zone",
-            desc: item?.description ?? "",
-            image: item?.image || fallbackZones[0].image,
-          }))
+        .filter((item: any) => item?.kind === "zone" && item?.is_active !== false)
+        .slice(0, 3)
+        .map((item: any) => ({
+          name: item?.title ?? "Zone",
+          desc: item?.description ?? "",
+          image: item?.image || fallbackZones[0].image,
+        }))
       : fallbackZones;
 
   const coachCards =
     Array.isArray(trainerItems) && trainerItems.length
       ? trainerItems.slice(0, 3).map((item: any, idx: number) => ({
-          name: item?.name ?? "Coach",
-          role: item?.role ?? "Trainer",
-          focus: Array.isArray(item?.specialties) ? item.specialties.join(", ") : "",
-          image: item?.image || fallbackCoaches[idx % fallbackCoaches.length].image,
-        }))
+        name: item?.name ?? "Coach",
+        role: item?.role ?? "Trainer",
+        focus: Array.isArray(item?.specialties) ? item.specialties.join(", ") : "",
+        image: item?.image || fallbackCoaches[idx % fallbackCoaches.length].image,
+      }))
       : fallbackCoaches;
 
   const maximusPoints =
@@ -250,19 +284,19 @@ export default function Home() {
   const galleryFromContent =
     Array.isArray(home.gallery_images) && home.gallery_images.length
       ? home.gallery_images
-          .map((g: any) => (typeof g === "string" ? g : g?.url))
-          .filter(Boolean)
+        .map((g: any) => (typeof g === "string" ? g : g?.url))
+        .filter(Boolean)
       : [];
 
   const galleryImages =
     galleryFromContent.length > 0
       ? galleryFromContent
       : Array.isArray(facilitiesItems) && facilitiesItems.length
-      ? facilitiesItems
+        ? facilitiesItems
           .filter((item: any) => item?.image)
           .slice(0, 4)
           .map((item: any) => item.image)
-      : fallbackGallery;
+        : fallbackGallery;
 
   useEffect(() => {
     dispatch(getHomeRequest());
@@ -275,25 +309,33 @@ export default function Home() {
     <PageRoot>
       <section className="relative">
         <div className="relative h-[calc(100dvh-4rem)] min-h-[680px] w-full overflow-hidden rounded-none">
-          <img
+          <motion.img
             src={home.hero_image}
             alt="Gym interior"
-            className="absolute inset-0 h-full w-full object-cover brightness-[0.7] saturate-[0.9]"
+            className="absolute inset-0 h-full w-full object-cover brightness-[0.68] saturate-[0.95]"
+            style={reduceMotion ? undefined : { y: heroImageY, scale: heroImageScale }}
           />
-          <div className="absolute inset-0 bg-black/45" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/72 to-black/58" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/35" />
-
-          <div className="relative z-20 h-full px-6 py-8 sm:px-9 sm:py-10 lg:px-12 xl:px-20">
+          <motion.div
+            className="absolute inset-0 bg-black/45"
+            style={reduceMotion ? undefined : { y: heroOverlayY }}
+          />
+          <div className="hero-grid-overlay absolute inset-0 opacity-35" />
+          <div className="hero-spotlight absolute inset-0" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/72 to-black/58" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/22 to-black/36" />
+          <motion.div
+            className="relative z-20 h-full px-6 py-8 sm:px-9 sm:py-10 lg:px-12 xl:px-20"
+            style={reduceMotion ? undefined : { y: heroContentY, opacity: heroContentOpacity }}
+          >
             <div className="mx-auto flex h-full w-full max-w-6xl flex-col justify-between">
               <div className="max-w-3xl pt-2 sm:pt-4">
                 <div className="label-chip">{home.hero_badge}</div>
-                <h1 className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.03] tracking-tight text-white">
+                <h1 className="premium-heading mt-5 text-4xl font-bold leading-[1.03] tracking-tight text-white sm:text-5xl lg:text-7xl">
                   {home.hero_title}
                 </h1>
-                <p className="mt-4 text-zinc-200 leading-relaxed text-lg">{home.hero_description}</p>
+                <p className="mt-4 max-w-2xl text-lg leading-relaxed text-zinc-200">{home.hero_description}</p>
 
-                <div className="mt-7 flex flex-col sm:flex-row gap-3">
+                <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                   <PrimaryCTA to={home.hero_primary_cta_link || "/contact"}>
                     {home.hero_primary_cta_text}
                   </PrimaryCTA>
@@ -303,207 +345,295 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pb-2 sm:pb-4">
+              <div className="grid grid-cols-2 gap-3 pb-2 sm:pb-4 md:grid-cols-4">
                 {heroMetrics.map((item: any, idx: number) => {
-                  const Icon = iconMap[item?.icon] || Dumbbell;
+                  const Icon: LucideIcon = iconMap[String(item?.icon)] ?? Dumbbell;
                   return (
-                    <div
+                    <motion.div
                       key={`${item?.label}-${idx}`}
-                      className="rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
+                      initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 22 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, amount: 0.3 }}
+                      transition={{ duration: 0.46, delay: idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
+                      className="tilt-card card-glow parallax-float rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-md"
                     >
-                      <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
-                        <Icon className="h-4 w-4 text-accent" />
+                      <div className="tilt-content">
+                        <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
+                          <Icon className="h-4 w-4 text-accent" />
+                        </div>
+                        <div className="mt-3 text-2xl font-bold text-white">{item?.value}</div>
+                        <div className="text-xs text-zinc-300">{item?.label}</div>
                       </div>
-                      <div className="mt-3 text-2xl font-bold text-white">{item?.value}</div>
-                      <div className="text-xs text-zinc-300">{item?.label}</div>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
       <Section>
-        <Surface>
-          <h2 className="text-3xl font-bold text-white">{home.status_title}</h2>
-          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {gymStatus.map((item: any) => {
-              const Icon = item.icon || Clock3;
-              return (
-                <div key={item.label} className="surface-card-soft p-4">
-                  <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
-                    <Icon className="h-4 w-4 text-accent" />
-                  </div>
-                  <div className="mt-3 text-sm font-bold text-white">{item.label}</div>
-                  <div className="mt-1 text-sm text-muted">{item.value}</div>
-                </div>
-              );
-            })}
-          </div>
-        </Surface>
-      </Section>
-
-      <Section>
-        <div className="flex items-end justify-between gap-4">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white">{home.zones_title}</h2>
-          <Link to="/facilities" className="btn-secondary text-sm">
-            View all zones
-          </Link>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {zoneCards.map((zone: any) => (
-            <article key={zone.name} className="surface-card-soft p-4">
-              <div className="relative overflow-hidden rounded-2xl bg-white/5 aspect-[16/10]">
-                <img src={zone.image} alt={zone.name} className="absolute inset-0 h-full w-full object-cover" />
-              </div>
-              <h3 className="mt-4 text-2xl font-bold text-white">{zone.name}</h3>
-              <p className="mt-2 text-sm text-muted leading-relaxed">{zone.desc}</p>
-            </article>
-          ))}
-        </div>
-      </Section>
-
-      <Section>
-        <Surface>
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-            <div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-white">{home.coaches_title}</h2>
-              <p className="mt-2 text-muted">{home.coaches_subtitle}</p>
+        <RevealSection>
+          <Surface>
+            <h2 className="text-3xl font-bold text-white">{home.status_title}</h2>
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {gymStatus.map((item: any, idx: number) => {
+                const Icon: LucideIcon = item.icon ?? Clock3;
+                return (
+                  <motion.div
+                    key={item.label}
+                    initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, amount: 0.3 }}
+                    transition={{ duration: 0.44, delay: idx * 0.05 }}
+                    className="tilt-card card-glow surface-card-soft p-4"
+                  >
+                    <div className="tilt-content">
+                      <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
+                        <Icon className="h-4 w-4 text-accent" />
+                      </div>
+                      <div className="mt-3 text-sm font-bold text-white">{item.label}</div>
+                      <div className="mt-1 text-sm text-muted">{item.value}</div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
-            <Link to="/trainers" className="btn-primary inline-flex items-center gap-2">
-              View all trainers
-              <ChevronRight className="h-4 w-4" />
+          </Surface>
+        </RevealSection>
+      </Section>
+
+      <Section>
+        <RevealSection delay={0.03}>
+          <div className="flex items-end justify-between gap-4">
+            <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.zones_title}</h2>
+            <Link to="/facilities" className="btn-secondary text-sm">
+              View all zones
             </Link>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {coachCards.map((coach: any) => (
-              <article key={coach.name} className="surface-card-soft p-4">
-                <div className="relative overflow-hidden rounded-xl bg-white/5 aspect-[4/3]">
-                  <img src={coach.image} alt={coach.name} className="absolute inset-0 h-full w-full object-cover" />
+          <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
+            {zoneCards.map((zone: any, idx: number) => (
+              <motion.article
+                key={zone.name}
+                initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.2 }}
+                transition={{ duration: 0.48, delay: idx * 0.06 }}
+                className="group tilt-card surface-card-soft p-4"
+              >
+                <div className="tilt-content">
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-white/5">
+                    <img
+                      src={zone.image}
+                      alt={zone.name}
+                      className="absolute inset-0 h-full w-full object-cover transition duration-700 ease-out group-hover:scale-110"
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-85" />
+                  </div>
+                  <h3 className="mt-4 text-2xl font-bold text-white">{zone.name}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">{zone.desc}</p>
                 </div>
-                <h3 className="mt-4 text-2xl font-bold text-white">{coach.name}</h3>
-                <p className="mt-1 text-sm text-zinc-300">{coach.role}</p>
-                <p className="mt-2 text-sm text-muted">{coach.focus}</p>
-              </article>
+              </motion.article>
             ))}
           </div>
-        </Surface>
+        </RevealSection>
       </Section>
 
       <Section>
-        <Surface className="bg-gradient-to-r from-white/10 via-white/5 to-white/10">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <div>
-              <div className="label-chip">{home.maximus_badge}</div>
-              <h2 className="mt-4 text-3xl sm:text-4xl font-bold text-white">{home.maximus_title}</h2>
-              <p className="mt-3 text-muted leading-relaxed">{home.maximus_description}</p>
-
-              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {maximusPoints.map((point: string) => (
-                  <div key={point} className="surface-card-soft p-3 text-sm text-zinc-200">
-                    {point}
-                  </div>
-                ))}
+        <RevealSection delay={0.04}>
+          <Surface className="surface-premium">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.coaches_title}</h2>
+                <p className="mt-2 text-muted">{home.coaches_subtitle}</p>
               </div>
+              <Link to="/trainers" className="btn-primary inline-flex items-center gap-2">
+                View all trainers
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
 
-              <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                <PrimaryCTA to={home.maximus_learn_more_link || "/about#maximus-strength"}>
-                  Learn more
-                </PrimaryCTA>
-                <a
-                  href={home.maximus_instagram_link || "https://www.instagram.com/teammaximusstrength/"}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-secondary text-center"
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+              {coachCards.map((coach: any, idx: number) => (
+                <motion.article
+                  key={coach.name}
+                  initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.2 }}
+                  transition={{ duration: 0.48, delay: idx * 0.06 }}
+                  className="group tilt-card surface-card-soft p-4"
                 >
-                  Instagram
-                </a>
-              </div>
-            </div>
-
-            <div className="relative overflow-hidden rounded-2xl bg-white/5 aspect-[16/10]">
-              <img
-                src={home.maximus_image}
-                alt="Maximus Strength powerlifting"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </div>
-          </div>
-        </Surface>
-      </Section>
-
-      <Section>
-        <h2 className="text-3xl sm:text-4xl font-bold text-white">
-          {home.gallery_title || "Inside Our Gym"}
-        </h2>
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {galleryImages.map((img: string, idx: number) => (
-            <div key={`${img}-${idx}`} className="relative overflow-hidden rounded-2xl bg-white/5 aspect-[4/5]">
-              <img src={img} alt={`Gym gallery ${idx + 1}`} className="absolute inset-0 h-full w-full object-cover" />
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section>
-        <Surface>
-          <h2 className="text-3xl font-bold text-white">{home.testimonials_title}</h2>
-          <p className="mt-2 text-muted">{home.testimonials_subtitle}</p>
-
-          {testimonialsLoading ? (
-            <div className="mt-6 text-zinc-300">Loading testimonials...</div>
-          ) : testimonials.length === 0 ? (
-            <div className="mt-6 text-zinc-400">No testimonials yet.</div>
-          ) : (
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {testimonials.slice(0, 3).map((t) => (
-                <article key={t.id} className="surface-card-soft p-5">
-                  <div className="flex items-center gap-3">
-                    {t.image ? (
+                  <div className="tilt-content">
+                    <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-white/5">
                       <img
-                        src={t.image}
-                        alt={t.name}
-                        className="h-12 w-12 rounded-full object-cover ring-2 ring-white/20"
+                        src={coach.image}
+                        alt={coach.name}
+                        className="absolute inset-0 h-full w-full object-cover transition duration-700 ease-out group-hover:scale-110"
                       />
-                    ) : (
-                      <div className="h-12 w-12 rounded-full bg-white/10" />
-                    )}
-                    <div>
-                      <div className="text-sm font-bold text-white">{t.name}</div>
-                      <div className="text-xs text-zinc-400">{t.goal}</div>
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-80" />
                     </div>
+                    <h3 className="mt-4 text-2xl font-bold text-white">{coach.name}</h3>
+                    <p className="mt-1 text-sm text-zinc-300">{coach.role}</p>
+                    <p className="mt-2 text-sm text-muted">{coach.focus}</p>
                   </div>
-                  <p className="mt-4 text-sm text-zinc-200 leading-relaxed">"{t.quote}"</p>
-                </article>
+                </motion.article>
               ))}
             </div>
-          )}
-        </Surface>
+          </Surface>
+        </RevealSection>
+      </Section>
+
+      <Section>
+        <RevealSection delay={0.03}>
+          <Surface className="surface-premium bg-gradient-to-r from-white/10 via-white/5 to-white/10">
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+              <div>
+                <div className="label-chip">{home.maximus_badge}</div>
+                <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">{home.maximus_title}</h2>
+                <p className="mt-3 leading-relaxed text-muted">{home.maximus_description}</p>
+
+                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {maximusPoints.map((point: string, idx: number) => (
+                    <motion.div
+                      key={point}
+                      initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, amount: 0.4 }}
+                      transition={{ duration: 0.42, delay: idx * 0.04 }}
+                      className="tilt-card surface-card-soft p-3 text-sm text-zinc-200"
+                    >
+                      <div className="tilt-content">{point}</div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <PrimaryCTA to={home.maximus_learn_more_link || "/about#maximus-strength"}>
+                    Learn more
+                  </PrimaryCTA>
+                  <a
+                    href={home.maximus_instagram_link || "https://www.instagram.com/teammaximusstrength/"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary text-center"
+                  >
+                    Instagram
+                  </a>
+                </div>
+              </div>
+
+              <div className="tilt-card relative aspect-[16/10] overflow-hidden rounded-2xl bg-white/5">
+                <div className="tilt-content h-full w-full">
+                  <img
+                    src={home.maximus_image}
+                    alt="Maximus Strength powerlifting"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-80" />
+                </div>
+              </div>
+            </div>
+          </Surface>
+        </RevealSection>
+      </Section>
+
+      <Section>
+        <RevealSection delay={0.03}>
+          <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.gallery_title || "Inside Our Gym"}</h2>
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {galleryImages.map((img: string, idx: number) => (
+              <motion.div
+                key={`${img}-${idx}`}
+                initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.28 }}
+                transition={{ duration: 0.45, delay: idx * 0.05 }}
+                className="group tilt-card relative aspect-[4/5] overflow-hidden rounded-2xl bg-white/5"
+              >
+                <div className="tilt-content h-full w-full">
+                  <img
+                    src={img}
+                    alt={`Gym gallery ${idx + 1}`}
+                    className="absolute inset-0 h-full w-full object-cover transition duration-700 ease-out group-hover:scale-110"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-70" />
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </RevealSection>
+      </Section>
+
+      <Section>
+        <RevealSection delay={0.03}>
+          <Surface>
+            <h2 className="text-3xl font-bold text-white">{home.testimonials_title}</h2>
+            <p className="mt-2 text-muted">{home.testimonials_subtitle}</p>
+
+            {testimonialsLoading ? (
+              <div className="mt-6 text-zinc-300">Loading testimonials...</div>
+            ) : testimonials.length === 0 ? (
+              <div className="mt-6 text-zinc-400">No testimonials yet.</div>
+            ) : (
+              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {testimonials.slice(0, 3).map((t, idx) => (
+                  <motion.article
+                    key={t.id}
+                    initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, amount: 0.3 }}
+                    transition={{ duration: 0.45, delay: idx * 0.05 }}
+                    className="tilt-card card-glow surface-card-soft p-5"
+                  >
+                    <div className="tilt-content">
+                      <div className="flex items-center gap-3">
+                        {t.image ? (
+                          <img
+                            src={t.image}
+                            alt={t.name}
+                            className="h-12 w-12 rounded-full object-cover ring-2 ring-white/20"
+                          />
+                        ) : (
+                          <div className="h-12 w-12 rounded-full bg-white/10" />
+                        )}
+                        <div>
+                          <div className="text-sm font-bold text-white">{t.name}</div>
+                          <div className="text-xs text-zinc-400">{t.goal}</div>
+                        </div>
+                      </div>
+                      <p className="mt-4 text-sm leading-relaxed text-zinc-200">"{t.quote}"</p>
+                    </div>
+                  </motion.article>
+                ))}
+              </div>
+            )}
+          </Surface>
+        </RevealSection>
       </Section>
 
       <Section className="pb-10">
-        <Surface className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div>
-            <h3 className="text-3xl font-bold text-white">
-              {home.final_cta_title || "Ready to start your transformation?"}
-            </h3>
-            <p className="mt-2 text-muted">
-              {home.final_cta_description || "Book a trial session and get a personalized training roadmap."}
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <PrimaryCTA to={home.final_primary_cta_link || "/contact"}>
-              {home.final_primary_cta_text || "Book trial"}
-            </PrimaryCTA>
-            <SecondaryCTA to={home.final_secondary_cta_link || "/pricing"}>
-              {home.final_secondary_cta_text || "View pricing"}
-            </SecondaryCTA>
-          </div>
-        </Surface>
+        <RevealSection delay={0.02}>
+          <Surface className="surface-premium flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="premium-heading text-3xl font-bold text-white">
+                {home.final_cta_title || "Ready to start your transformation?"}
+              </h3>
+              <p className="mt-2 text-muted">
+                {home.final_cta_description || "Book a trial session and get a personalized training roadmap."}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <PrimaryCTA to={home.final_primary_cta_link || "/contact"}>
+                {home.final_primary_cta_text || "Book trial"}
+              </PrimaryCTA>
+              <SecondaryCTA to={home.final_secondary_cta_link || "/pricing"}>
+                {home.final_secondary_cta_text || "View pricing"}
+              </SecondaryCTA>
+            </div>
+          </Surface>
+        </RevealSection>
       </Section>
     </PageRoot>
   );

@@ -210,7 +210,7 @@ export default function Pricing() {
               {summaryCards.map((card, idx) => {
                 const Icon = iconMap[card.icon] || Crown;
                 return (
-                  <SurfaceSoft key={`${card.label}-${idx}`} className="p-4">
+                  <SurfaceSoft key={`${card.label}-${idx}`} className="p-4 mini-glow">
                     <Icon className="h-5 w-5 text-accent" />
                     <div className="mt-3 text-2xl font-bold text-white">{card.value}</div>
                     <div className="text-xs text-muted">{card.label}</div>
@@ -284,7 +284,7 @@ export default function Pricing() {
                     {(Array.isArray(plan.features) ? plan.features : []).map((feature) => (
                       <div
                         key={feature}
-                        className="rounded-xl border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 flex items-start gap-2"
+                        className="mini-glow rounded-xl border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 flex items-start gap-2"
                       >
                         <Check className="h-4 w-4 text-accent mt-0.5 shrink-0" />
                         <span>{feature}</span>

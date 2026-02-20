@@ -137,7 +137,7 @@ export default function About() {
           {stats.map((s) => {
             const Icon = s.icon;
             return (
-              <SurfaceSoft key={s.label}>
+              <SurfaceSoft key={s.label} className="mini-glow">
                 <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent/20">
                   <Icon className="h-4.5 w-4.5 text-accent" />
                 </div>
@@ -158,7 +158,7 @@ export default function About() {
               {principles.map((p) => {
                 const Icon = p.icon;
                 return (
-                  <div key={p.title} className="rounded-2xl border border-line/10 bg-white/5 p-4">
+                  <div key={p.title} className="mini-glow rounded-2xl border border-line/10 bg-white/5 p-4">
                     <div className="flex items-start gap-3">
                       <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent/20">
                         <Icon className="h-4.5 w-4.5 text-accent" />
@@ -188,7 +188,7 @@ export default function About() {
               ].map((item) => {
                 const Icon = item.icon;
                 return (
-                  <div key={item.label} className="rounded-xl border border-line/10 bg-black/25 px-4 py-3 text-sm text-zinc-200 flex items-center gap-2">
+                  <div key={item.label} className="mini-glow rounded-xl border border-line/10 bg-black/25 px-4 py-3 text-sm text-zinc-200 flex items-center gap-2">
                     <Icon className="h-4 w-4 text-accent" />
                     {item.label}
                   </div>
@@ -204,7 +204,7 @@ export default function About() {
           <h2 className="text-3xl font-bold text-white">How We Work</h2>
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
             {method.map((m) => (
-              <div key={m.step} className="rounded-2xl border border-line/10 bg-white/5 p-5">
+              <div key={m.step} className="mini-glow rounded-2xl border border-line/10 bg-white/5 p-5">
                 <div className="text-xs font-bold tracking-[0.18em] text-zinc-400">STEP {m.step}</div>
                 <div className="mt-2 text-xl font-bold text-white">{m.title}</div>
                 <p className="mt-2 text-sm text-muted">{m.desc}</p>
@@ -228,7 +228,7 @@ export default function About() {
 
               <div className="mt-5 space-y-2">
                 {maximusPoints.map((point) => (
-                  <div key={point} className="rounded-xl border border-line/10 bg-black/25 px-4 py-3 text-sm text-zinc-200 flex items-center gap-2">
+                  <div key={point} className="mini-glow rounded-xl border border-line/10 bg-black/25 px-4 py-3 text-sm text-zinc-200 flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-accent" />
                     {point}
                   </div>

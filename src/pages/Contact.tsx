@@ -166,7 +166,7 @@ export default function Contact() {
                   return (
                     <div
                       key={`${card.label}-${idx}`}
-                      className="rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
+                      className="mini-glow rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
                     >
                       <Icon className="h-5 w-5 text-accent" />
                       <div className="mt-3 text-2xl font-bold text-white">{card.value}</div>
@@ -191,7 +191,7 @@ export default function Contact() {
 
             <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
               {contactCards.map((card) => (
-                <article key={card.label} className="surface-card-soft p-4">
+                <article key={card.label} className="surface-card-soft mini-glow p-4">
                   <card.icon className="h-4 w-4 text-accent" />
                   <div className="mt-2 text-xs uppercase tracking-[0.12em] text-zinc-400">{card.label}</div>
                   {card.href ? (
@@ -271,7 +271,7 @@ export default function Contact() {
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {(faqs || []).length ? (
               (faqs || []).map((f: any) => (
-                <article key={f.id} className="surface-card-soft p-5">
+                <article key={f.id} className="surface-card-soft mini-glow p-5">
                   <h4 className="text-base font-bold text-white">{f.question}</h4>
                   <p className="mt-2 text-sm text-zinc-300 leading-relaxed">{f.answer}</p>
                 </article>
