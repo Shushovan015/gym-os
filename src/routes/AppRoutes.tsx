@@ -1,4 +1,7 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import type { ReactElement } from "react";
+import { AnimatePresence } from "framer-motion";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import RouteTransition from "@src/components/motion/RouteTransition";
 
 import Home from "@src/pages/Home";
 import Facilities from "@src/pages/Facilities";
@@ -22,37 +25,43 @@ import AdminHome from "../pages/admin/AdminHome";
 import AdminProShop from "../pages/admin/AdminProShop";
 
 export default function AppRoutes() {
+  const location = useLocation();
+
+  const withTransition = (element: ReactElement) => <RouteTransition>{element}</RouteTransition>;
+
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={<Home />} />
-      <Route path="/about" element={<About />} />
-      <Route path="/facilities" element={<Facilities />} />
-      <Route path="/trainers" element={<Trainers />} />
-      <Route path="/shop" element={<ProShop />} />
-      <Route path="/pricing" element={<Pricing />} />
-      <Route path="/contact" element={<Contact />} />
+    <AnimatePresence mode="wait" initial>
+      <Routes location={location} key={location.pathname}>
+        {/* Public Routes */}
+        <Route path="/" element={withTransition(<Home />)} />
+        <Route path="/about" element={withTransition(<About />)} />
+        <Route path="/facilities" element={withTransition(<Facilities />)} />
+        <Route path="/trainers" element={withTransition(<Trainers />)} />
+        <Route path="/shop" element={withTransition(<ProShop />)} />
+        <Route path="/pricing" element={withTransition(<Pricing />)} />
+        <Route path="/contact" element={withTransition(<Contact />)} />
 
-      {/* Admin Login */}
-      <Route path="/admin/login" element={<AdminLogin />} />
+        {/* Admin Login */}
+        <Route path="/admin/login" element={withTransition(<AdminLogin />)} />
 
-      {/* Protected Admin Routes */}
-      <Route element={<ProtectedAdminRoute />}>
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<AdminDashboard />} />
-          <Route path="testimonials" element={<AdminTestimonials />} />
-          <Route path="trainers" element={<AdminTrainers />} />
-          <Route path="facilities" element={<AdminFacilities />} />
-          <Route path="pricing" element={<AdminPricing />} />
-          <Route path="footer" element={<AdminFooter />} />
-          <Route path="contact" element={<AdminContact />} />
-          <Route path="home" element={<AdminHome />} />
-          <Route path="proshop" element={<AdminProShop />} />
+        {/* Protected Admin Routes */}
+        <Route element={<ProtectedAdminRoute />}>
+          <Route path="/admin" element={withTransition(<AdminLayout />)}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="testimonials" element={<AdminTestimonials />} />
+            <Route path="trainers" element={<AdminTrainers />} />
+            <Route path="facilities" element={<AdminFacilities />} />
+            <Route path="pricing" element={<AdminPricing />} />
+            <Route path="footer" element={<AdminFooter />} />
+            <Route path="contact" element={<AdminContact />} />
+            <Route path="home" element={<AdminHome />} />
+            <Route path="proshop" element={<AdminProShop />} />
+          </Route>
         </Route>
-      </Route>
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AnimatePresence>
   );
 }

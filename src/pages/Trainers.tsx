@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getTrainersRequest } from "@src/redux/actions/trainers";
+import { PageRoot, Section } from "./PageKit";
 
 type TrainerRow = {
   id: number;
@@ -457,8 +458,8 @@ export default function Trainers() {
   const uniformImageHeight = "aspect-[3/4]";
 
   return (
-    <div className="space-y-16 pb-10">
-      <section className="section-pad">
+    <PageRoot>
+      <Section>
         <div className="surface-card relative overflow-hidden p-7 sm:p-9 lg:p-10">
           <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
           <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-accent2/20 blur-3xl" />
@@ -508,9 +509,9 @@ export default function Trainers() {
             </div>
           </div>
         </div>
-      </section>
+      </Section>
 
-      <section className="section-pad">
+      <Section>
         <h2 className="mb-4 text-2xl font-bold text-white">{page.equipment_section_title}</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {equipmentZonesData.map((zone) => {
@@ -526,9 +527,9 @@ export default function Trainers() {
             );
           })}
         </div>
-      </section>
+      </Section>
 
-      <section className="section-pad">
+      <Section>
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <div className="surface-card-soft mini-glow p-5">
             <div className="text-xs uppercase tracking-wide text-muted">Coaching Team</div>
@@ -547,19 +548,19 @@ export default function Trainers() {
             <div className="mt-2 text-3xl font-bold text-white">{totalClients > 0 ? `${totalClients}+` : "500+"}</div>
           </div>
         </div>
-      </section>
+      </Section>
 
       {!loading && !error && spotlightCoaches.length > 0 && (
-        <section className="section-pad">
+        <Section>
           <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-3">
             {spotlightCoaches.map((coach) => (
               <TrainerCard key={coach.id} trainer={coach} imageHeight={uniformImageHeight} onOpen={setSelectedTrainerId} />
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
-      <section className="section-pad">
+      <Section>
         {loading ? (
           <div className="surface-card p-6 text-zinc-300">Loading trainers...</div>
         ) : error ? (
@@ -571,9 +572,9 @@ export default function Trainers() {
             ))}
           </div>
         )}
-      </section>
+      </Section>
 
-      <section className="section-pad">
+      <Section>
         <div className="surface-card p-6 sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
@@ -602,9 +603,9 @@ export default function Trainers() {
             ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      <section className="section-pad">
+      <Section>
         <div className="surface-card-soft p-6 sm:p-8">
           <h3 className="text-3xl font-bold text-white">Our Coaching Process</h3>
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -622,9 +623,9 @@ export default function Trainers() {
             })}
           </div>
         </div>
-      </section>
+      </Section>
 
-      <section className="section-pad pb-10">
+      <Section className="pb-10">
         <div className="surface-card flex flex-col gap-6 p-8 sm:p-10 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 className="text-3xl font-bold text-white">Need a Coach Recommendation?</h3>
@@ -635,7 +636,7 @@ export default function Trainers() {
             Get matched now
           </Link>
         </div>
-      </section>
+      </Section>
 
       <AnimatePresence>
         {selectedTrainer && selectedDetails && (
@@ -771,6 +772,6 @@ export default function Trainers() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </PageRoot>
   );
 }

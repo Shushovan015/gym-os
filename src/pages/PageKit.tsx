@@ -1,12 +1,47 @@
 import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
+import { motion } from "framer-motion";
+import { revealUpVariants } from "@src/motion/variants";
+import { motionTokens } from "@src/motion/tokens";
+import { useAppReducedMotion } from "@src/motion/preferences";
 
 export function PageRoot({ children }: { children: ReactNode }) {
     return <div className="space-y-16 pb-10">{children}</div>;
 }
 
-export function Section({ children, className = "" }: { children: ReactNode; className?: string }) {
-    return <section className={`section-pad ${className}`}>{children}</section>;
+export function Section({
+    children,
+    className = "",
+    animated = true,
+    delay = 0,
+}: {
+    children: ReactNode;
+    className?: string;
+    animated?: boolean;
+    delay?: number;
+}) {
+    const reduceMotion = useAppReducedMotion();
+
+    if (!animated) {
+        return <section className={`section-pad ${className}`}>{children}</section>;
+    }
+
+    return (
+        <motion.section
+            className={`section-pad ${className}`}
+            variants={revealUpVariants(Boolean(reduceMotion), motionTokens.distance.md)}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.16 }}
+            transition={{
+                duration: motionTokens.duration.slow,
+                delay,
+                ease: motionTokens.easing.smoothOut,
+            }}
+        >
+            {children}
+        </motion.section>
+    );
 }
 
 export function HeroCard({ badge, title, desc, children }: { badge: string; title: string; desc: string; children?: ReactNode }) {

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
+import { motion, useScroll, useSpring, useTransform } from "framer-motion";
 import {
   Activity,
   BarChart3,
@@ -20,6 +20,10 @@ import { getTrainersRequest } from "@src/redux/actions/trainers";
 import { getTestimonialsRequest } from "@src/redux/actions/testimonials";
 
 import { PageRoot, Section, Surface, PrimaryCTA, SecondaryCTA } from "./PageKit";
+import { motionTokens } from "@src/motion/tokens";
+import { revealUpVariants } from "@src/motion/variants";
+import { gsap, initGsap } from "@src/motion/gsap";
+import { useAppReducedMotion } from "@src/motion/preferences";
 
 type Testimonial = {
   id: number;
@@ -193,15 +197,21 @@ function RevealSection({
   delay?: number;
   className?: string;
 }) {
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = useAppReducedMotion();
+  const variants = revealUpVariants(Boolean(reduceMotion), motionTokens.distance.md);
 
   return (
     <motion.div
       className={className}
-      initial={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 28, filter: "blur(8px)" }}
-      whileInView={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
+      variants={variants}
+      initial="hidden"
+      whileInView="show"
       viewport={{ once: true, amount: 0.2 }}
-      transition={{ duration: 0.65, delay, ease: [0.22, 1, 0.36, 1] }}
+      transition={{
+        duration: motionTokens.duration.slow,
+        delay,
+        ease: motionTokens.easing.smoothOut,
+      }}
     >
       {children}
     </motion.div>
@@ -210,14 +220,25 @@ function RevealSection({
 
 export default function Home() {
   const dispatch = useDispatch();
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = useAppReducedMotion();
+  const heroSectionRef = useRef<HTMLElement | null>(null);
+  const heroGridOverlayRef = useRef<HTMLDivElement | null>(null);
+  const heroSpotlightRef = useRef<HTMLDivElement | null>(null);
+  const heroIntroVeilRef = useRef<HTMLDivElement | null>(null);
 
   const { scrollY } = useScroll();
-  const heroImageY = useTransform(scrollY, [0, 800], [0, reduceMotion ? 0 : 120]);
-  const heroImageScale = useTransform(scrollY, [0, 700], [1, reduceMotion ? 1 : 1.08]);
-  const heroOverlayY = useTransform(scrollY, [0, 700], [0, reduceMotion ? 0 : 48]);
-  const heroContentY = useTransform(scrollY, [0, 560], [0, reduceMotion ? 0 : 64]);
-  const heroContentOpacity = useTransform(scrollY, [0, 440], [1, reduceMotion ? 1 : 0.22]);
+  const heroImageYRaw = useTransform(scrollY, [0, 900], [0, reduceMotion ? 0 : 42]);
+  const heroImageScaleRaw = useTransform(scrollY, [0, 900], [1, reduceMotion ? 1 : 1.015]);
+  const heroOverlayYRaw = useTransform(scrollY, [0, 900], [0, reduceMotion ? 0 : 14]);
+  const heroContentYRaw = useTransform(scrollY, [0, 760], [0, reduceMotion ? 0 : 16]);
+  const heroContentOpacityRaw = useTransform(scrollY, [0, 760], [1, reduceMotion ? 1 : 0.92]);
+
+  const springConfig = { stiffness: 80, damping: 26, mass: 0.45 };
+  const heroImageY = useSpring(heroImageYRaw, springConfig);
+  const heroImageScale = useSpring(heroImageScaleRaw, springConfig);
+  const heroOverlayY = useSpring(heroOverlayYRaw, springConfig);
+  const heroContentY = useSpring(heroContentYRaw, springConfig);
+  const heroContentOpacity = useSpring(heroContentOpacityRaw, springConfig);
 
   const { content: homeContent, status: homeStatus, points: homePoints } = useSelector(
     (s: any) => s.home ?? { content: null, status: [], points: [] }
@@ -305,9 +326,62 @@ export default function Home() {
     dispatch(getTestimonialsRequest());
   }, [dispatch]);
 
+  useEffect(() => {
+    if (reduceMotion || !heroSectionRef.current) return;
+
+    initGsap();
+
+    const section = heroSectionRef.current;
+    const ctx = gsap.context(() => {
+      const introTimeline = gsap.timeline();
+      introTimeline.set("[data-hero-reveal]", {
+        autoAlpha: 0,
+        y: 52,
+      });
+
+      if (heroIntroVeilRef.current) {
+        introTimeline.to(
+          heroIntroVeilRef.current,
+          {
+            autoAlpha: 0,
+            scaleY: 0,
+            transformOrigin: "top center",
+            duration: 0.76,
+            ease: "power3.inOut",
+          },
+          0
+        );
+      }
+
+      introTimeline.to(
+        "[data-hero-reveal]",
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.78,
+          stagger: 0.1,
+          ease: "power3.out",
+        },
+        0.14
+      );
+
+      // Keep hero scroll behavior controlled by Framer Motion springs for smoother motion.
+      if (heroGridOverlayRef.current) {
+        gsap.set(heroGridOverlayRef.current, { opacity: 0.3 });
+      }
+      if (heroSpotlightRef.current) {
+        gsap.set(heroSpotlightRef.current, { opacity: 0.9, scale: 1 });
+      }
+    }, section);
+
+    return () => {
+      ctx.revert();
+    };
+  }, [reduceMotion]);
+
   return (
     <PageRoot>
-      <section className="relative">
+      <section className="relative" ref={heroSectionRef}>
         <div className="relative h-[calc(100dvh-4rem)] min-h-[680px] w-full overflow-hidden rounded-none">
           <motion.img
             src={home.hero_image}
@@ -319,23 +393,29 @@ export default function Home() {
             className="absolute inset-0 bg-black/45"
             style={reduceMotion ? undefined : { y: heroOverlayY }}
           />
-          <div className="hero-grid-overlay absolute inset-0 opacity-35" />
-          <div className="hero-spotlight absolute inset-0" />
+          <div ref={heroGridOverlayRef} className="hero-grid-overlay absolute inset-0 opacity-35" />
+          <div ref={heroSpotlightRef} className="hero-spotlight absolute inset-0" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/72 to-black/58" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/22 to-black/36" />
+          {!reduceMotion && (
+            <div
+              ref={heroIntroVeilRef}
+              className="pointer-events-none absolute inset-0 z-30 bg-[#05080f]"
+            />
+          )}
           <motion.div
             className="relative z-20 h-full px-6 py-8 sm:px-9 sm:py-10 lg:px-12 xl:px-20"
             style={reduceMotion ? undefined : { y: heroContentY, opacity: heroContentOpacity }}
           >
             <div className="mx-auto flex h-full w-full max-w-6xl flex-col justify-between">
               <div className="max-w-3xl pt-2 sm:pt-4">
-                <div className="label-chip">{home.hero_badge}</div>
-                <h1 className="premium-heading mt-5 text-4xl font-bold leading-[1.03] tracking-tight text-white sm:text-5xl lg:text-7xl">
+                <div data-hero-reveal className="label-chip">{home.hero_badge}</div>
+                <h1 data-hero-reveal className="premium-heading mt-5 text-4xl font-bold leading-[1.03] tracking-tight text-white sm:text-5xl lg:text-7xl">
                   {home.hero_title}
                 </h1>
-                <p className="mt-4 max-w-2xl text-lg leading-relaxed text-zinc-200">{home.hero_description}</p>
+                <p data-hero-reveal className="mt-4 max-w-2xl text-lg leading-relaxed text-zinc-200">{home.hero_description}</p>
 
-                <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <div data-hero-reveal className="mt-7 flex flex-col gap-3 sm:flex-row">
                   <PrimaryCTA to={home.hero_primary_cta_link || "/contact"}>
                     {home.hero_primary_cta_text}
                   </PrimaryCTA>
@@ -345,7 +425,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pb-2 sm:pb-4 md:grid-cols-4">
+              <div data-hero-reveal className="grid grid-cols-2 gap-3 pb-2 sm:pb-4 md:grid-cols-4">
                 {heroMetrics.map((item: any, idx: number) => {
                   const Icon: LucideIcon = iconMap[String(item?.icon)] ?? Dumbbell;
                   return (
@@ -373,7 +453,7 @@ export default function Home() {
         </div>
       </section>
 
-      <Section>
+      <Section animated={false}>
         <RevealSection>
           <Surface>
             <h2 className="text-3xl font-bold text-white">{home.status_title}</h2>
@@ -404,7 +484,7 @@ export default function Home() {
         </RevealSection>
       </Section>
 
-      <Section>
+      <Section animated={false}>
         <RevealSection delay={0.03}>
           <div className="flex items-end justify-between gap-4">
             <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.zones_title}</h2>
@@ -441,7 +521,7 @@ export default function Home() {
         </RevealSection>
       </Section>
 
-      <Section>
+      <Section animated={false}>
         <RevealSection delay={0.04}>
           <Surface className="surface-premium">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -485,7 +565,7 @@ export default function Home() {
         </RevealSection>
       </Section>
 
-      <Section>
+      <Section animated={false}>
         <RevealSection delay={0.03}>
           <Surface className="surface-premium bg-gradient-to-r from-white/10 via-white/5 to-white/10">
             <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
@@ -539,7 +619,7 @@ export default function Home() {
         </RevealSection>
       </Section>
 
-      <Section>
+      <Section animated={false}>
         <RevealSection delay={0.03}>
           <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.gallery_title || "Inside Our Gym"}</h2>
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -566,7 +646,7 @@ export default function Home() {
         </RevealSection>
       </Section>
 
-      <Section>
+      <Section animated={false}>
         <RevealSection delay={0.03}>
           <Surface>
             <h2 className="text-3xl font-bold text-white">{home.testimonials_title}</h2>
@@ -613,7 +693,7 @@ export default function Home() {
         </RevealSection>
       </Section>
 
-      <Section className="pb-10">
+      <Section animated={false} className="pb-10">
         <RevealSection delay={0.02}>
           <Surface className="surface-premium flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div>

@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   ArrowUpRight,
   Clock3,
@@ -14,6 +14,7 @@ import {
   Youtube,
 } from "lucide-react";
 import { getFooterRequest } from "@src/redux/actions/footer";
+import { useAppReducedMotion } from "@src/motion/preferences";
 import logo from "../assets/logo.jpg";
 
 const quickLinks = [
@@ -50,7 +51,7 @@ const socialLinks = [
 
 export default function Footer() {
   const dispatch = useDispatch();
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = useAppReducedMotion();
 
   const { item, loading } = useSelector(
     (s: any) => s.footer ?? { item: null, loading: false, error: null }

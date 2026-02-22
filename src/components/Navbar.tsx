@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, Menu, X } from "lucide-react";
+import { useAppReducedMotion } from "@src/motion/preferences";
 import logo from "../assets/logo.jpg";
 
 type NavItem = { label: string; to: string; end?: boolean };
@@ -9,7 +10,7 @@ type NavItem = { label: string; to: string; end?: boolean };
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = useAppReducedMotion();
   const location = useLocation();
 
   const navItems: NavItem[] = useMemo(
