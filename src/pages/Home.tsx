@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring, useTransform } from "framer-motion";
 import { useDispatch, useSelector } from "react-redux";
-import { motion, useScroll, useSpring, useTransform } from "framer-motion";
 import {
   Activity,
   BarChart3,
@@ -188,6 +188,52 @@ const fallbackGallery = [
   "https://images.unsplash.com/photo-1549476464-37392f717541?q=80&w=1600&auto=format&fit=crop",
 ];
 
+const trustedBy = ["Team Maximus", "Butwal Runners", "Local Athletes", "Corporate Wellness"];
+
+const storySteps = [
+  {
+    eyebrow: "Why A&A",
+    title: "World-Class Training Facilities",
+    description:
+      "Our gym floor is purpose-built for strength, conditioning, and functional training with clean, premium-grade equipment.",
+    bullets: ["Dedicated strength floor", "Functional + conditioning zones", "Hygienic, organized environment"],
+    metric: "Built for serious training",
+  },
+  {
+    eyebrow: "Why A&A",
+    title: "Motivating Community & Coaching",
+    description:
+      "You train alongside committed members with coaches who guide, correct, and keep your momentum high every week.",
+    bullets: ["Supportive training culture", "Coach-led floor feedback", "High-accountability environment"],
+    metric: "Consistency without burnout",
+  },
+  {
+    eyebrow: "Why A&A",
+    title: "Proven Member Results",
+    description:
+      "Our focus is measurable progress, whether your goal is fat loss, strength gain, athletic performance, or confidence.",
+    bullets: ["Visible body transformations", "Strength progression milestones", "Data-backed plan updates"],
+    metric: "Results you can measure",
+  },
+];
+
+const storyThemes = [
+  {
+    glow: "from-amber-400/22 via-orange-500/14 to-transparent",
+    chip: "Begin with certainty",
+  },
+  {
+    glow: "from-sky-400/22 via-cyan-500/14 to-transparent",
+    chip: "Execute with structure",
+  },
+  {
+    glow: "from-emerald-400/22 via-teal-500/14 to-transparent",
+    chip: "Improve with data",
+  },
+];
+
+
+
 function RevealSection({
   children,
   delay = 0,
@@ -225,6 +271,30 @@ export default function Home() {
   const heroGridOverlayRef = useRef<HTMLDivElement | null>(null);
   const heroSpotlightRef = useRef<HTMLDivElement | null>(null);
   const heroIntroVeilRef = useRef<HTMLDivElement | null>(null);
+  const storySectionRef = useRef<HTMLElement | null>(null);
+  const [activeStoryIndex, setActiveStoryIndex] = useState(0);
+  const [storyDirection, setStoryDirection] = useState(1);
+  const prevStoryIndexRef = useRef(0);
+  const activeStep = storySteps[activeStoryIndex];
+  const activeTheme = storyThemes[activeStoryIndex] ?? storyThemes[0];
+
+  const { scrollYProgress: storyProgress } = useScroll({
+    target: storySectionRef,
+    offset: ["start start", "end end"],
+  });
+
+  useMotionValueEvent(storyProgress, "change", (v) => {
+    if (reduceMotion) return;
+
+    const total = storySteps.length;
+    const next = Math.min(total - 1, Math.max(0, Math.floor(v * total)));
+
+    if (next !== prevStoryIndexRef.current) {
+      setStoryDirection(next > prevStoryIndexRef.current ? 1 : -1);
+      prevStoryIndexRef.current = next;
+      setActiveStoryIndex(next);
+    }
+  });
 
   const { scrollY } = useScroll();
   const heroImageYRaw = useTransform(scrollY, [0, 900], [0, reduceMotion ? 0 : 42]);
@@ -319,6 +389,14 @@ export default function Home() {
           .map((item: any) => item.image)
         : fallbackGallery;
 
+  const trustStats = [
+    { label: "Avg response", value: "<24 hrs" },
+    { label: "Coaches", value: String(coachCards.length || 3) },
+    { label: "Training zones", value: String(zoneCards.length || 3) },
+    { label: "Member rating", value: "4.9/5" },
+  ];
+
+
   useEffect(() => {
     dispatch(getHomeRequest());
     dispatch(getFacilitiesRequest());
@@ -378,6 +456,7 @@ export default function Home() {
       ctx.revert();
     };
   }, [reduceMotion]);
+
 
   return (
     <PageRoot>
@@ -452,6 +531,173 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
+
+      <Section animated={false}>
+        <RevealSection delay={0.02}>
+          <Surface className="surface-premium">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="label-chip">Trusted Training Ecosystem</div>
+                <h2 className="mt-3 text-3xl font-bold text-white">Trusted by local athletes and serious lifters</h2>
+                <p className="mt-2 text-muted">
+                  Real coaching, clean floor culture, and measurable progression standards.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {trustStats.map((s) => (
+                  <div key={s.label} className="surface-card-soft p-4 text-center">
+                    <div className="text-2xl font-bold text-white">{s.value}</div>
+                    <div className="mt-1 text-xs text-muted">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              {trustedBy.map((brand) => (
+                <span
+                  key={brand}
+                  className="inline-flex rounded-full border border-line/20 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200"
+                >
+                  {brand}
+                </span>
+              ))}
+            </div>
+          </Surface>
+        </RevealSection>
+      </Section>
+
+      <section ref={storySectionRef} className="section-pad relative h-[300vh]">
+        <div className="sticky top-16 h-[calc(100vh-4rem)]">
+          <div className="h-full overflow-hidden rounded-[28px] border border-line/20 bg-[#090f17]">
+            <div className="px-6 py-6 sm:px-8 sm:py-7">
+              <div className="label-chip">How It Works</div>
+              <h2 className="mt-3 text-3xl font-bold text-white sm:text-4xl">
+                Why Members Choose A&A Health Club
+              </h2>
+
+              <p>Three core reasons athletes and beginners trust us for consistent results.</p>
+              <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <motion.div
+                  className="h-full rounded-full bg-accent"
+                  animate={{ width: `${((activeStoryIndex + 1) / storySteps.length) * 100}%` }}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                />
+              </div>
+            </div>
+
+            <div className="px-6 pb-6 sm:px-8 sm:pb-8">
+              {reduceMotion ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {storySteps.map((step) => (
+                    <article key={step.eyebrow} className="surface-card-soft p-5">
+                      <div className="text-xs font-semibold tracking-[0.14em] text-zinc-400">{step.eyebrow}</div>
+                      <h3 className="mt-2 text-2xl font-bold text-white">{step.title}</h3>
+                      <p className="mt-2 text-sm text-muted">{step.description}</p>
+                      <div className="mt-3 space-y-2">
+                        {step.bullets.map((b) => (
+                          <div key={b} className="rounded-lg border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
+                            {b}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 text-sm font-semibold text-accent">{step.metric}</div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="relative h-[58vh] min-h-[380px]">
+                  <div className="relative h-[58vh] min-h-[380px] overflow-hidden rounded-2xl border border-line/15 bg-[#0a1018]">
+                    <motion.div
+                      key={`bg-${activeStoryIndex}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.45 }}
+                      className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${activeTheme.glow}`}
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.08),transparent_45%)]" />
+
+                    <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
+                      {storySteps.map((_, i) => (
+                        <motion.span
+                          key={i}
+                          className="h-1.5 rounded-full bg-white/25"
+                          animate={{ width: i === activeStoryIndex ? 44 : 18, opacity: i <= activeStoryIndex ? 1 : 0.45 }}
+                          transition={{ duration: 0.28 }}
+                        />
+                      ))}
+                    </div>
+
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.article
+                        key={activeStoryIndex}
+                        initial={{ opacity: 0, y: storyDirection > 0 ? 24 : -24, filter: "blur(6px)" }}
+                        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                        exit={{ opacity: 0, y: storyDirection > 0 ? -18 : 18, filter: "blur(4px)" }}
+                        transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                        className="absolute inset-0 p-6 sm:p-8"
+                      >
+                        <div className="grid h-full grid-cols-1 items-center gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+                          <div>
+                            <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-100">
+                              {activeTheme.chip}
+                            </div>
+
+                            <div className="mt-4 flex items-end gap-3">
+                              <motion.div
+                                key={`num-${activeStoryIndex}`}
+                                initial={{ y: 16, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                className="text-5xl font-black tracking-tight text-white/90"
+                              >
+                                {String(activeStoryIndex + 1).padStart(2, "0")}
+                              </motion.div>
+                              <div className="pb-1 text-xs font-semibold tracking-[0.14em] text-zinc-400">{activeStep.eyebrow}</div>
+                            </div>
+
+                            <h3 className="mt-3 text-4xl font-bold leading-tight text-white">{activeStep.title}</h3>
+                            <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-300">{activeStep.description}</p>
+                          </div>
+
+                          <div className="rounded-2xl border border-line/15 bg-white/[0.04] p-5 backdrop-blur-sm">
+                            <div className="space-y-2">
+                              {activeStep.bullets.map((b) => (
+                                <div key={b} className="rounded-lg border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
+                                  {b}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-4 inline-flex rounded-full border border-accent/35 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                              {activeStep.metric}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.article>
+                    </AnimatePresence>
+                  </div>
+
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <Section animated={false}>
+        <RevealSection delay={0.02}>
+          <Surface className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-2xl font-bold text-white">Ready to start with a structured plan?</h3>
+              <p className="mt-1 text-sm text-muted">Book a trial and get your personalized roadmap from day one.</p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <PrimaryCTA to="/contact">Book trial now</PrimaryCTA>
+              <SecondaryCTA to="/pricing">See pricing</SecondaryCTA>
+            </div>
+          </Surface>
+        </RevealSection>
+      </Section>
 
       <Section animated={false}>
         <RevealSection>
@@ -715,6 +961,18 @@ export default function Home() {
           </Surface>
         </RevealSection>
       </Section>
+
+      <div className="fixed inset-x-0 bottom-3 z-[75] px-4 sm:hidden">
+        <div className="mx-auto flex max-w-md items-center gap-2 rounded-2xl border border-line/25 bg-[#080d14]/95 p-2 backdrop-blur-xl">
+          <Link to="/contact" className="btn-primary !py-2.5 flex-1 text-center text-xs">
+            Book Trial
+          </Link>
+          <Link to="/pricing" className="btn-secondary !py-2.5 flex-1 text-center text-xs">
+            View Plans
+          </Link>
+        </div>
+      </div>
+
     </PageRoot>
   );
 }
