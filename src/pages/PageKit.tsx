@@ -30,9 +30,8 @@ export function Section({
         <motion.section
             className={`section-pad ${className}`}
             variants={revealUpVariants(Boolean(reduceMotion), motionTokens.distance.md)}
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, amount: 0.16 }}
+            initial={reduceMotion ? "show" : "hidden"}
+            animate="show"
             transition={{
                 duration: motionTokens.duration.slow,
                 delay,

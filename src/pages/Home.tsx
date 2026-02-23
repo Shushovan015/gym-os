@@ -248,9 +248,8 @@ function RevealSection({
     <motion.div
       className={className}
       variants={variants}
-      initial="hidden"
-      whileInView="show"
-      viewport={{ once: true, amount: 0.2 }}
+      initial={reduceMotion ? "show" : "hidden"}
+      animate="show"
       transition={{
         duration: motionTokens.duration.slow,
         delay,
@@ -308,8 +307,8 @@ export default function Home() {
   const heroContentY = useSpring(heroContentYRaw, springConfig);
   const heroContentOpacity = useSpring(heroContentOpacityRaw, springConfig);
 
-  const { content: homeContent, status: homeStatus, points: homePoints } = useSelector(
-    (s: any) => s.home ?? { content: null, status: [], points: [] }
+  const { content: homeContent, status: homeStatus, points: homePoints, loading: homeLoading } = useSelector(
+    (s: any) => s.home ?? { content: null, status: [], points: [], loading: false }
   );
   const { items: facilitiesItems } = useSelector((s: any) => s.facilities ?? { items: [] });
   const { items: trainerItems } = useSelector((s: any) => s.trainers ?? { items: [] });
@@ -318,6 +317,14 @@ export default function Home() {
   );
 
   const home: HomeContent = { ...homeFallback, ...(homeContent || {}) };
+  const hasDynamicHeroImage =
+    typeof homeContent?.hero_image === "string" && homeContent.hero_image.trim().length > 0;
+
+  const heroImageSrc: string | null = hasDynamicHeroImage
+    ? homeContent.hero_image
+    : homeLoading
+      ? null
+      : homeFallback.hero_image;
   const testimonials: Testimonial[] = Array.isArray(testimonialItems) ? testimonialItems : [];
 
   const gymStatus =
@@ -460,12 +467,19 @@ export default function Home() {
     <PageRoot>
       <section className="relative" ref={heroSectionRef}>
         <div className="relative h-[calc(100dvh-4rem)] min-h-[680px] w-full overflow-hidden rounded-none">
-          <motion.img
-            src={home.hero_image}
-            alt="Gym interior"
-            className="absolute inset-0 h-full w-full object-cover brightness-[0.68] saturate-[0.95]"
-            style={reduceMotion ? undefined : { y: heroImageY, scale: heroImageScale }}
-          />
+          {heroImageSrc ? (
+            <motion.img
+              src={heroImageSrc}
+              alt="Gym interior"
+              className="absolute inset-0 h-full w-full object-cover brightness-[0.68] saturate-[0.95]"
+              style={reduceMotion ? undefined : { y: heroImageY, scale: heroImageScale }}
+            />
+          ) : (
+            <div
+              aria-hidden
+              className="absolute inset-0 bg-[radial-gradient(70%_55%_at_20%_10%,rgba(245,158,11,0.28),transparent_65%),linear-gradient(180deg,#111821_0%,#090d13_100%)]"
+            />
+          )}
           <motion.div
             className="absolute inset-0 bg-black/45"
             style={reduceMotion ? undefined : { y: heroOverlayY }}

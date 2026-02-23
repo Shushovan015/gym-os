@@ -30,7 +30,7 @@ export default function AppRoutes() {
   const withTransition = (element: ReactElement) => <RouteTransition>{element}</RouteTransition>;
 
   return (
-    <AnimatePresence mode="wait" initial>
+    <AnimatePresence mode="sync" initial={false}>
       <Routes location={location} key={location.pathname}>
         {/* Public Routes */}
         <Route path="/" element={withTransition(<Home />)} />
