@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -456,6 +457,7 @@ export default function Trainers() {
   }, [selectedTrainer]);
 
   const uniformImageHeight = "aspect-[3/4]";
+  const canUsePortal = typeof document !== "undefined";
 
   return (
     <PageRoot>
@@ -638,140 +640,144 @@ export default function Trainers() {
         </div>
       </Section>
 
-      <AnimatePresence>
-        {selectedTrainer && selectedDetails && (
-          <motion.div
-            className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm p-3 sm:p-6"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSelectedTrainerId(null)}
-          >
-            <motion.div
-              className="mx-auto w-full max-w-6xl max-h-[94vh] overflow-y-auto rounded-3xl border border-line/20 bg-[#0b1118] shadow-2xl"
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              transition={{ duration: 0.28 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="sticky top-0 z-20 flex items-center justify-between border-b border-line/10 bg-[#0b1118]/95 px-4 py-3 backdrop-blur">
-                <div className="text-sm font-semibold text-zinc-300">Trainer Profile</div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTrainerId(null)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20"
+      {canUsePortal &&
+        createPortal(
+          <AnimatePresence>
+            {selectedTrainer && selectedDetails && (
+              <motion.div
+                className="fixed inset-0 z-[140] bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedTrainerId(null)}
+              >
+                <motion.div
+                  className="mx-auto max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-line/20 bg-[#0b1118] shadow-2xl"
+                  initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 20, scale: 0.98 }}
+                  transition={{ duration: 0.28 }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr]">
-                <div className="border-b border-line/10 lg:border-b-0 lg:border-r lg:border-line/10">
-                  <ProImage
-                    src={selectedTrainer.image}
-                    alt={selectedTrainer.name}
-                    heightClass="h-[340px] sm:h-[420px] lg:h-[560px]"
-                    layoutId={`trainer-image-${selectedTrainer.id}`}
-                  />
-                </div>
-
-                <div className="p-5 sm:p-7">
-                  <h2 className="text-4xl font-bold text-white">{selectedTrainer.name}</h2>
-                  <p className="mt-1 text-sm font-semibold text-zinc-200">{selectedTrainer.role}</p>
-
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-line/10 bg-white/5 p-3">
-                      <div className="text-xs text-muted">Experience</div>
-                      <div className="mt-1 text-lg font-bold text-white">{selectedTrainer.years_experience}+ yrs</div>
-                    </div>
-                    <div className="rounded-xl border border-line/10 bg-white/5 p-3">
-                      <div className="text-xs text-muted">Clients Coached</div>
-                      <div className="mt-1 text-lg font-bold text-white">
-                        {selectedTrainer.clients_coached ? `${selectedTrainer.clients_coached}+` : "100+"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl border border-line/10 bg-white/5 p-4">
-                    <div className="text-sm font-bold text-white">Detailed Profile</div>
-                    <p className="mt-2 text-sm leading-relaxed text-muted">{selectedDetails.longBio}</p>
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-line/10 bg-white/5 p-4">
-                    <div className="text-sm font-bold text-white">Coaching Style</div>
-                    <p className="mt-2 text-sm leading-relaxed text-muted">{selectedDetails.coachingStyle}</p>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
-                      <div className="flex items-center gap-2 text-sm font-bold text-white">
-                        <Target className="h-4 w-4 text-accent" />
-                        Session Focus
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {selectedDetails.sessionFocus.map((item) => (
-                          <span key={item} className="rounded-full border border-line/20 bg-black/25 px-3 py-1 text-xs text-zinc-200">
-                            {item}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
-                      <div className="flex items-center gap-2 text-sm font-bold text-white">
-                        <Clock3 className="h-4 w-4 text-accent" />
-                        Availability
-                      </div>
-                      <p className="mt-3 text-sm text-muted">{selectedDetails.availability}</p>
-                    </div>
-
-                    <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
-                      <div className="flex items-center gap-2 text-sm font-bold text-white">
-                        <ShieldCheck className="h-4 w-4 text-accent" />
-                        Certifications
-                      </div>
-                      <ul className="mt-3 space-y-2 text-sm text-muted">
-                        {selectedDetails.certifications.map((item) => (
-                          <li key={item}>- {item}</li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
-                      <div className="flex items-center gap-2 text-sm font-bold text-white">
-                        <Medal className="h-4 w-4 text-accent" />
-                        Achievements
-                      </div>
-                      <ul className="mt-3 space-y-2 text-sm text-muted">
-                        {selectedDetails.achievements.map((item) => (
-                          <li key={item}>- {item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                    <Link to="/contact" className="btn-primary gap-2" onClick={() => setSelectedTrainerId(null)}>
-                      Book with {firstName(selectedTrainer.name)}
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                    <a
-                      href={selectedTrainer.intro_video_url || "#"}
-                      target={selectedTrainer.intro_video_url ? "_blank" : undefined}
-                      rel={selectedTrainer.intro_video_url ? "noreferrer" : undefined}
-                      className="btn-secondary gap-2"
+                  <div className="sticky top-0 z-20 flex items-center justify-between border-b border-line/10 bg-[#0b1118]/95 px-4 py-3 backdrop-blur">
+                    <div className="text-sm font-semibold text-zinc-300">Trainer Profile</div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTrainerId(null)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20"
                     >
-                      <PlayCircle className="h-4 w-4" />
-                      {selectedTrainer.intro_video_url ? "Watch intro reel" : "Intro reel coming soon"}
-                    </a>
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr]">
+                    <div className="border-b border-line/10 lg:border-r lg:border-b-0 lg:border-line/10">
+                      <ProImage
+                        src={selectedTrainer.image}
+                        alt={selectedTrainer.name}
+                        heightClass="h-[340px] sm:h-[420px] lg:h-[560px]"
+                        layoutId={`trainer-image-${selectedTrainer.id}`}
+                      />
+                    </div>
+
+                    <div className="p-5 sm:p-7">
+                      <h2 className="text-4xl font-bold text-white">{selectedTrainer.name}</h2>
+                      <p className="mt-1 text-sm font-semibold text-zinc-200">{selectedTrainer.role}</p>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="rounded-xl border border-line/10 bg-white/5 p-3">
+                          <div className="text-xs text-muted">Experience</div>
+                          <div className="mt-1 text-lg font-bold text-white">{selectedTrainer.years_experience}+ yrs</div>
+                        </div>
+                        <div className="rounded-xl border border-line/10 bg-white/5 p-3">
+                          <div className="text-xs text-muted">Clients Coached</div>
+                          <div className="mt-1 text-lg font-bold text-white">
+                            {selectedTrainer.clients_coached ? `${selectedTrainer.clients_coached}+` : "100+"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 rounded-2xl border border-line/10 bg-white/5 p-4">
+                        <div className="text-sm font-bold text-white">Detailed Profile</div>
+                        <p className="mt-2 text-sm leading-relaxed text-muted">{selectedDetails.longBio}</p>
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-line/10 bg-white/5 p-4">
+                        <div className="text-sm font-bold text-white">Coaching Style</div>
+                        <p className="mt-2 text-sm leading-relaxed text-muted">{selectedDetails.coachingStyle}</p>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
+                          <div className="flex items-center gap-2 text-sm font-bold text-white">
+                            <Target className="h-4 w-4 text-accent" />
+                            Session Focus
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {selectedDetails.sessionFocus.map((item) => (
+                              <span key={item} className="rounded-full border border-line/20 bg-black/25 px-3 py-1 text-xs text-zinc-200">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
+                          <div className="flex items-center gap-2 text-sm font-bold text-white">
+                            <Clock3 className="h-4 w-4 text-accent" />
+                            Availability
+                          </div>
+                          <p className="mt-3 text-sm text-muted">{selectedDetails.availability}</p>
+                        </div>
+
+                        <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
+                          <div className="flex items-center gap-2 text-sm font-bold text-white">
+                            <ShieldCheck className="h-4 w-4 text-accent" />
+                            Certifications
+                          </div>
+                          <ul className="mt-3 space-y-2 text-sm text-muted">
+                            {selectedDetails.certifications.map((item) => (
+                              <li key={item}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div className="rounded-2xl border border-line/10 bg-white/5 p-4">
+                          <div className="flex items-center gap-2 text-sm font-bold text-white">
+                            <Medal className="h-4 w-4 text-accent" />
+                            Achievements
+                          </div>
+                          <ul className="mt-3 space-y-2 text-sm text-muted">
+                            {selectedDetails.achievements.map((item) => (
+                              <li key={item}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                        <Link to="/contact" className="btn-primary gap-2" onClick={() => setSelectedTrainerId(null)}>
+                          Book with {firstName(selectedTrainer.name)}
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
+                        <a
+                          href={selectedTrainer.intro_video_url || "#"}
+                          target={selectedTrainer.intro_video_url ? "_blank" : undefined}
+                          rel={selectedTrainer.intro_video_url ? "noreferrer" : undefined}
+                          className="btn-secondary gap-2"
+                        >
+                          <PlayCircle className="h-4 w-4" />
+                          {selectedTrainer.intro_video_url ? "Watch intro reel" : "Intro reel coming soon"}
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </PageRoot>
   );
 }

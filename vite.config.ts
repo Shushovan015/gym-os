@@ -4,6 +4,9 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ["react-dom", "react-dom/client"],
+  },
   resolve: {
     alias: {
       "@src": path.resolve(__dirname, "src"),

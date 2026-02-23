@@ -232,8 +232,6 @@ const storyThemes = [
   },
 ];
 
-
-
 function RevealSection({
   children,
   delay = 0,
@@ -567,16 +565,15 @@ export default function Home() {
         </RevealSection>
       </Section>
 
-      <section ref={storySectionRef} className="section-pad relative h-[300vh]">
-        <div className="sticky top-16 h-[calc(100vh-4rem)]">
+      <section ref={storySectionRef} className="section-pad relative h-[320vh] sm:h-[300vh]">
+        <div className="sticky top-14 h-[calc(100vh-3.5rem)] sm:top-16 sm:h-[calc(100vh-4rem)]">
           <div className="h-full overflow-hidden rounded-[28px] border border-line/20 bg-[#090f17]">
-            <div className="px-6 py-6 sm:px-8 sm:py-7">
-              <div className="label-chip">How It Works</div>
-              <h2 className="mt-3 text-3xl font-bold text-white sm:text-4xl">
-                Why Members Choose A&A Health Club
-              </h2>
-
-              <p>Three core reasons athletes and beginners trust us for consistent results.</p>
+            <div className="px-5 py-6 sm:px-8 sm:py-7">
+              <div className="label-chip">Why A&A</div>
+              <h2 className="mt-3 text-3xl font-bold leading-tight text-white sm:text-4xl">Why Members Choose A&A Health Club</h2>
+              <p className="mt-2 max-w-3xl text-sm text-muted">
+                Facilities, coaching culture, and measurable progress that set A&A apart.
+              </p>
               <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                 <motion.div
                   className="h-full rounded-full bg-accent"
@@ -586,99 +583,76 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="px-6 pb-6 sm:px-8 sm:pb-8">
-              {reduceMotion ? (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  {storySteps.map((step) => (
-                    <article key={step.eyebrow} className="surface-card-soft p-5">
-                      <div className="text-xs font-semibold tracking-[0.14em] text-zinc-400">{step.eyebrow}</div>
-                      <h3 className="mt-2 text-2xl font-bold text-white">{step.title}</h3>
-                      <p className="mt-2 text-sm text-muted">{step.description}</p>
-                      <div className="mt-3 space-y-2">
-                        {step.bullets.map((b) => (
-                          <div key={b} className="rounded-lg border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
-                            {b}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 text-sm font-semibold text-accent">{step.metric}</div>
-                    </article>
+            <div className="px-5 pb-5 sm:px-8 sm:pb-8">
+              <div className="relative h-[64vh] min-h-[500px] overflow-hidden rounded-2xl border border-line/15 bg-[#0a1018] sm:h-[58vh] sm:min-h-[380px]">
+                <motion.div
+                  key={`bg-${activeStoryIndex}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.45 }}
+                  className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${activeTheme.glow}`}
+                />
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.08),transparent_45%)]" />
+
+                <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
+                  {storySteps.map((_, i) => (
+                    <motion.span
+                      key={i}
+                      className="h-1.5 rounded-full bg-white/25"
+                      animate={{ width: i === activeStoryIndex ? 44 : 18, opacity: i <= activeStoryIndex ? 1 : 0.45 }}
+                      transition={{ duration: 0.28 }}
+                    />
                   ))}
                 </div>
-              ) : (
-                <div className="relative h-[58vh] min-h-[380px]">
-                  <div className="relative h-[58vh] min-h-[380px] overflow-hidden rounded-2xl border border-line/15 bg-[#0a1018]">
-                    <motion.div
-                      key={`bg-${activeStoryIndex}`}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.45 }}
-                      className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${activeTheme.glow}`}
-                    />
-                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.08),transparent_45%)]" />
 
-                    <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
-                      {storySteps.map((_, i) => (
-                        <motion.span
-                          key={i}
-                          className="h-1.5 rounded-full bg-white/25"
-                          animate={{ width: i === activeStoryIndex ? 44 : 18, opacity: i <= activeStoryIndex ? 1 : 0.45 }}
-                          transition={{ duration: 0.28 }}
-                        />
-                      ))}
-                    </div>
-
-                    <AnimatePresence mode="wait" initial={false}>
-                      <motion.article
-                        key={activeStoryIndex}
-                        initial={{ opacity: 0, y: storyDirection > 0 ? 24 : -24, filter: "blur(6px)" }}
-                        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                        exit={{ opacity: 0, y: storyDirection > 0 ? -18 : 18, filter: "blur(4px)" }}
-                        transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                        className="absolute inset-0 p-6 sm:p-8"
-                      >
-                        <div className="grid h-full grid-cols-1 items-center gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-                          <div>
-                            <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-100">
-                              {activeTheme.chip}
-                            </div>
-
-                            <div className="mt-4 flex items-end gap-3">
-                              <motion.div
-                                key={`num-${activeStoryIndex}`}
-                                initial={{ y: 16, opacity: 0 }}
-                                animate={{ y: 0, opacity: 1 }}
-                                className="text-5xl font-black tracking-tight text-white/90"
-                              >
-                                {String(activeStoryIndex + 1).padStart(2, "0")}
-                              </motion.div>
-                              <div className="pb-1 text-xs font-semibold tracking-[0.14em] text-zinc-400">{activeStep.eyebrow}</div>
-                            </div>
-
-                            <h3 className="mt-3 text-4xl font-bold leading-tight text-white">{activeStep.title}</h3>
-                            <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-300">{activeStep.description}</p>
-                          </div>
-
-                          <div className="rounded-2xl border border-line/15 bg-white/[0.04] p-5 backdrop-blur-sm">
-                            <div className="space-y-2">
-                              {activeStep.bullets.map((b) => (
-                                <div key={b} className="rounded-lg border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
-                                  {b}
-                                </div>
-                              ))}
-                            </div>
-                            <div className="mt-4 inline-flex rounded-full border border-accent/35 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
-                              {activeStep.metric}
-                            </div>
-                          </div>
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.article
+                    key={activeStoryIndex}
+                    initial={{ opacity: 0, y: storyDirection > 0 ? 24 : -24, filter: "blur(6px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    exit={{ opacity: 0, y: storyDirection > 0 ? -18 : 18, filter: "blur(4px)" }}
+                    transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                    className="absolute inset-0 overflow-y-auto p-5 pt-8 sm:p-8"
+                  >
+                    <div className="grid min-h-full grid-cols-1 items-start gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+                      <div>
+                        <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-100">
+                          {activeTheme.chip}
                         </div>
-                      </motion.article>
-                    </AnimatePresence>
-                  </div>
 
-                </div>
-              )}
+                        <div className="mt-4 flex items-end gap-3">
+                          <motion.div
+                            key={`num-${activeStoryIndex}`}
+                            initial={{ y: 16, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            className="text-4xl font-black tracking-tight text-white/90 sm:text-5xl"
+                          >
+                            {String(activeStoryIndex + 1).padStart(2, "0")}
+                          </motion.div>
+                          <div className="pb-1 text-xs font-semibold tracking-[0.14em] text-zinc-400">{activeStep.eyebrow}</div>
+                        </div>
+
+                        <h3 className="mt-3 text-2xl font-bold leading-tight text-white sm:text-4xl">{activeStep.title}</h3>
+                        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-300 sm:text-base">{activeStep.description}</p>
+                      </div>
+
+                      <div className="rounded-2xl border border-line/15 bg-white/[0.04] p-5 backdrop-blur-sm">
+                        <div className="space-y-2">
+                          {activeStep.bullets.map((b) => (
+                            <div key={b} className="rounded-lg border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
+                              {b}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 inline-flex rounded-full border border-accent/35 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                          {activeStep.metric}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.article>
+                </AnimatePresence>
+              </div>
             </div>
           </div>
         </div>
