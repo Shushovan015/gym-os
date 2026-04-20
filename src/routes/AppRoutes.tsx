@@ -23,6 +23,8 @@ import AdminFooter from "../pages/admin/AdminFooter";
 import AdminContact from "../pages/admin/AdminContact";
 import AdminHome from "../pages/admin/AdminHome";
 import AdminProShop from "../pages/admin/AdminProShop";
+import AdminMembers from "../pages/admin/AdminMembers";
+import AdminAttendance from "../pages/admin/AdminAttendance";
 
 export default function AppRoutes() {
   const location = useLocation();
@@ -56,6 +58,8 @@ export default function AppRoutes() {
             <Route path="contact" element={<AdminContact />} />
             <Route path="home" element={<AdminHome />} />
             <Route path="proshop" element={<AdminProShop />} />
+            <Route path="members" element={<AdminMembers />} />
+            <Route path="attendance" element={<AdminAttendance />} />
           </Route>
         </Route>
 

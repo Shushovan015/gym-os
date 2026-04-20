@@ -7,6 +7,15 @@ export default defineConfig({
   optimizeDeps: {
     include: ["react-dom", "react-dom/client"],
   },
+  server: {
+    proxy: {
+      "/n8n": {
+        target: "http://localhost:5678",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/n8n/, ""),
+      },
+    },
+  },
   resolve: {
     alias: {
       "@src": path.resolve(__dirname, "src"),
