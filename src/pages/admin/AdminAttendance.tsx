@@ -82,6 +82,7 @@ export default function AdminAttendance() {
   const [loading, setLoading] = useState(true);
   const [activeCell, setActiveCell] = useState<string>("");
   const [message, setMessage] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const bsDays = useMemo(
     () => buildBsMonthDays(selectedBsYear, selectedBsMonth),
@@ -105,6 +106,15 @@ export default function AdminAttendance() {
     });
     return map;
   }, [records]);
+
+  const filteredMembers = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return members;
+    return members.filter(
+      (member) =>
+        member.full_name.toLowerCase().includes(query) || member.member_id.toLowerCase().includes(query)
+    );
+  }, [members, searchTerm]);
 
   const loadMembers = async () => {
     const { data, error } = await supabase
@@ -253,6 +263,19 @@ export default function AdminAttendance() {
       </div>
 
       <div className="rounded-2xl bg-black/35 p-6">
+        <div className="mb-4 max-w-md space-y-1">
+          <label className="text-xs font-semibold text-zinc-300">Search Member</label>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by member name or ID"
+            className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
+          />
+        </div>
+        {members.length > 0 && filteredMembers.length === 0 ? (
+          <p className="mb-4 text-sm text-zinc-400">No matching members found.</p>
+        ) : null}
         {members.length === 0 ? <p className="text-sm text-zinc-400">कुनै सदस्य फेला परेन।</p> : null}
         <div className="overflow-auto">
           <table className="min-w-max text-sm text-white border-separate border-spacing-1">
@@ -273,7 +296,7 @@ export default function AdminAttendance() {
               </tr>
             </thead>
             <tbody>
-              {members.map((member) => (
+              {filteredMembers.map((member) => (
                 <tr key={member.id}>
                   <td className="sticky left-0 z-10 bg-zinc-900/95 rounded-md px-3 py-2 whitespace-nowrap">
                     <div className="font-semibold">{member.full_name}</div>
