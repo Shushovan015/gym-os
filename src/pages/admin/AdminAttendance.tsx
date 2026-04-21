@@ -8,6 +8,15 @@ type MemberOption = {
   id: number;
   member_id: string;
   full_name: string;
+  email: string | null;
+  phone: string | null;
+  membership_type: string | null;
+  membership_status: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  payment_status: string | null;
+  payment_due_date: string | null;
+  notes: string | null;
 };
 
 type AttendanceRow = {
@@ -15,6 +24,7 @@ type AttendanceRow = {
   member_ref: number;
   attendance_date: string;
   status: AttendanceStatus;
+  deleted_at: string | null;
 };
 
 type HolidayRow = {
@@ -57,6 +67,15 @@ function formatNepaliNumber(value: number) {
   return value.toLocaleString("ne-NP-u-nu-deva");
 }
 
+function formatBsFromAd(adDate: string | null) {
+  if (!adDate) return "-";
+  try {
+    return new NepaliDate(new Date(`${adDate}T00:00:00`)).format("YYYY-MM-DD");
+  } catch {
+    return adDate;
+  }
+}
+
 function cellKey(memberId: number, adDate: string) {
   return `${memberId}:${adDate}`;
 }
@@ -93,6 +112,10 @@ export default function AdminAttendance() {
   const [activeHolidayDate, setActiveHolidayDate] = useState<string>("");
   const [message, setMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [profileMember, setProfileMember] = useState<MemberOption | null>(null);
+  const [deletedRecords, setDeletedRecords] = useState<AttendanceRow[]>([]);
+  const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
+  const [focusDay, setFocusDay] = useState<number>(1);
 
   const bsDays = useMemo(
     () => buildBsMonthDays(selectedBsYear, selectedBsMonth),
@@ -124,6 +147,21 @@ export default function AdminAttendance() {
     return map;
   }, [holidays]);
 
+  useEffect(() => {
+    if (bsDays.length === 0) return;
+    if (!bsDays.find((d) => d.bsDay === focusDay)) {
+      setFocusDay(bsDays[0].bsDay);
+    }
+  }, [bsDays, focusDay]);
+
+  const visibleDays = useMemo(() => {
+    if (viewMode === "month") return bsDays;
+    if (viewMode === "day") return bsDays.filter((d) => d.bsDay === focusDay);
+    const start = Math.floor((focusDay - 1) / 7) * 7 + 1;
+    const end = start + 6;
+    return bsDays.filter((d) => d.bsDay >= start && d.bsDay <= end);
+  }, [bsDays, focusDay, viewMode]);
+
   const filteredMembers = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return members;
@@ -136,7 +174,9 @@ export default function AdminAttendance() {
   const loadMembers = async () => {
     const { data, error } = await supabase
       .from("members")
-      .select("id, member_id, full_name")
+      .select(
+        "id, member_id, full_name, email, phone, membership_type, membership_status, start_date, end_date, payment_status, payment_due_date, notes"
+      )
       .order("full_name", { ascending: true })
       .limit(1000);
 
@@ -147,6 +187,15 @@ export default function AdminAttendance() {
 
     setMembers((data as MemberOption[]) || []);
   };
+
+  useEffect(() => {
+    if (!profileMember) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [profileMember]);
 
   const loadRecords = async (bsYear: number, bsMonth: number) => {
     const days = buildBsMonthDays(bsYear, bsMonth);
@@ -160,9 +209,10 @@ export default function AdminAttendance() {
 
     const { data, error } = await supabase
       .from("attendance_records")
-      .select("id, member_ref, attendance_date, status")
+      .select("id, member_ref, attendance_date, status, deleted_at")
       .gte("attendance_date", startDate)
       .lte("attendance_date", endDate)
+      .is("deleted_at", null)
       .order("attendance_date", { ascending: false })
       .limit(5000);
 
@@ -172,6 +222,29 @@ export default function AdminAttendance() {
     }
 
     setRecords((data as AttendanceRow[]) || []);
+  };
+
+  const loadDeletedRecords = async (bsYear: number, bsMonth: number) => {
+    const days = buildBsMonthDays(bsYear, bsMonth);
+    if (!days.length) {
+      setDeletedRecords([]);
+      return;
+    }
+    const startDate = days[0].adDate;
+    const endDate = days[days.length - 1].adDate;
+    const { data, error } = await supabase
+      .from("attendance_records")
+      .select("id, member_ref, attendance_date, status, deleted_at")
+      .gte("attendance_date", startDate)
+      .lte("attendance_date", endDate)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false })
+      .limit(100);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setDeletedRecords((data as AttendanceRow[]) || []);
   };
 
   const loadHolidays = async (bsYear: number, bsMonth: number) => {
@@ -206,6 +279,7 @@ export default function AdminAttendance() {
       await loadMembers();
       await loadRecords(selectedBsYear, selectedBsMonth);
       await loadHolidays(selectedBsYear, selectedBsMonth);
+      await loadDeletedRecords(selectedBsYear, selectedBsMonth);
       setLoading(false);
     };
 
@@ -220,6 +294,7 @@ export default function AdminAttendance() {
     setLoading(true);
     await loadRecords(nextYear, nextMonth);
     await loadHolidays(nextYear, nextMonth);
+    await loadDeletedRecords(nextYear, nextMonth);
     setLoading(false);
   };
 
@@ -247,7 +322,10 @@ export default function AdminAttendance() {
         return;
       }
     } else if (existing) {
-      const { error } = await supabase.from("attendance_records").delete().eq("id", existing.id);
+      const { error } = await supabase
+        .from("attendance_records")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", existing.id);
       if (error) {
         setMessage(error.message);
         setActiveCell("");
@@ -256,7 +334,19 @@ export default function AdminAttendance() {
     }
 
     await loadRecords(selectedBsYear, selectedBsMonth);
+    await loadDeletedRecords(selectedBsYear, selectedBsMonth);
     setActiveCell("");
+  };
+
+  const restoreAttendance = async (id: number) => {
+    const { error } = await supabase.from("attendance_records").update({ deleted_at: null }).eq("id", id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setMessage("Attendance restored.");
+    await loadRecords(selectedBsYear, selectedBsMonth);
+    await loadDeletedRecords(selectedBsYear, selectedBsMonth);
   };
 
   const setHolidayOccasion = async (dayInfo: BsDayCell) => {
@@ -378,6 +468,46 @@ export default function AdminAttendance() {
             className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
           />
         </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode("month")}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold ${viewMode === "month" ? "bg-white text-black" : "bg-white/10 text-white"}`}
+          >
+            Month
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("week")}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold ${viewMode === "week" ? "bg-white text-black" : "bg-white/10 text-white"}`}
+          >
+            Week
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("day")}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold ${viewMode === "day" ? "bg-white text-black" : "bg-white/10 text-white"}`}
+          >
+            Day
+          </button>
+          <div className="ml-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFocusDay((d) => Math.max(1, d - (viewMode === "day" ? 1 : 7)))}
+              className="rounded-lg bg-white/10 px-3 py-2 text-xs text-white"
+            >
+              Prev
+            </button>
+            <span className="text-xs text-zinc-300">Day {formatNepaliNumber(focusDay)}</span>
+            <button
+              type="button"
+              onClick={() => setFocusDay((d) => Math.min(bsDays.length, d + (viewMode === "day" ? 1 : 7)))}
+              className="rounded-lg bg-white/10 px-3 py-2 text-xs text-white"
+            >
+              Next
+            </button>
+          </div>
+        </div>
         {members.length > 0 && filteredMembers.length === 0 ? (
           <p className="mb-4 text-sm text-zinc-400">No matching members found.</p>
         ) : null}
@@ -389,7 +519,7 @@ export default function AdminAttendance() {
                 <th className="sticky top-0 left-0 z-20 bg-zinc-900 rounded-md px-3 py-2 text-left min-w-[220px]">
                   सदस्य
                 </th>
-                {bsDays.map((dayInfo) => {
+                {visibleDays.map((dayInfo) => {
                   const holiday = holidayByDate.get(dayInfo.adDate);
                   const isHoliday = Boolean(holiday);
                   const isOffDay = dayInfo.isSaturday || isHoliday;
@@ -456,10 +586,17 @@ export default function AdminAttendance() {
               {filteredMembers.map((member) => (
                 <tr key={member.id}>
                   <td className="sticky left-0 z-10 bg-zinc-900 rounded-md px-3 py-2 whitespace-nowrap">
-                    <div className="font-semibold">{member.full_name}</div>
+                    <button
+                      type="button"
+                      onClick={() => setProfileMember(member)}
+                      className="font-semibold text-left text-emerald-300 hover:underline"
+                      title="Open member profile"
+                    >
+                      {member.full_name}
+                    </button>
                     <div className="text-[11px] text-zinc-400">{member.member_id}</div>
                   </td>
-                  {bsDays.map((dayInfo) => {
+                  {visibleDays.map((dayInfo) => {
                     const key = cellKey(member.id, dayInfo.adDate);
                     const record = attendanceMap.get(key);
                     const checked = Boolean(record && record.status !== "absent");
@@ -501,6 +638,80 @@ export default function AdminAttendance() {
           </table>
         </div>
       </div>
+
+      <div className="rounded-2xl bg-black/35 p-6 space-y-3">
+        <h3 className="text-lg font-black text-white">Recently Removed Attendance (Restore)</h3>
+        {deletedRecords.length === 0 ? (
+          <p className="text-sm text-zinc-400">No removed attendance records in this month.</p>
+        ) : (
+          deletedRecords.map((record) => {
+            const member = members.find((m) => m.id === record.member_ref);
+            return (
+              <div key={record.id} className="rounded-xl bg-white/8 p-3 flex items-center justify-between gap-3">
+                <div className="text-sm text-zinc-100">
+                  {member?.full_name || "Member"} ({member?.member_id || record.member_ref}) | {record.attendance_date}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => restoreAttendance(record.id)}
+                  className="rounded-lg bg-white px-3 py-1 text-sm font-semibold text-black"
+                >
+                  Restore
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {profileMember ? (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 grid place-items-center">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-300 bg-zinc-100 text-zinc-900 shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-300 bg-zinc-100 px-6 py-4">
+              <h3 className="text-xl font-black">Member Profile</h3>
+              <button
+                type="button"
+                onClick={() => setProfileMember(null)}
+                className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-xl bg-white p-4">
+                <div className="text-lg font-black">{profileMember.full_name}</div>
+                <div className="text-sm text-zinc-600">{profileMember.member_id}</div>
+              </div>
+
+              <div className="rounded-xl bg-white p-4 space-y-1">
+                <div className="text-sm font-black">Contact</div>
+                <div className="text-sm">Email: {profileMember.email || "-"}</div>
+                <div className="text-sm">Phone: {profileMember.phone || "-"}</div>
+              </div>
+
+              <div className="rounded-xl bg-white p-4 space-y-1">
+                <div className="text-sm font-black">Plan</div>
+                <div className="text-sm">Type: {profileMember.membership_type || "-"}</div>
+                <div className="text-sm">Status: {profileMember.membership_status || "-"}</div>
+                <div className="text-sm">Start (BS): {formatBsFromAd(profileMember.start_date)}</div>
+                <div className="text-sm">End (BS): {formatBsFromAd(profileMember.end_date)}</div>
+              </div>
+
+              <div className="rounded-xl bg-white p-4 space-y-1">
+                <div className="text-sm font-black">Dues</div>
+                <div className="text-sm">Payment Status: {profileMember.payment_status || "-"}</div>
+                <div className="text-sm">Payment Due (BS): {formatBsFromAd(profileMember.payment_due_date)}</div>
+              </div>
+
+              <div className="rounded-xl bg-white p-4 space-y-1">
+                <div className="text-sm font-black">Notes</div>
+                <div className="text-sm">{profileMember.notes || "-"}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

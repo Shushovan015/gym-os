@@ -25,9 +25,10 @@ type MemberRow = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
 };
 
-type MemberForm = Omit<MemberRow, "id" | "created_at" | "updated_at">;
+type MemberForm = Omit<MemberRow, "id" | "created_at" | "updated_at" | "deleted_at">;
 
 type CsvParsedRow = MemberForm & {
   rowNumber: number;
@@ -298,6 +299,7 @@ export default function AdminMembers() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showDeleted, setShowDeleted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
   const [csvRows, setCsvRows] = useState<CsvParsedRow[]>([]);
@@ -321,15 +323,16 @@ export default function AdminMembers() {
 
   const filteredMembers = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    if (!q) return members;
-    return members.filter(
+    const base = members.filter((m) => (showDeleted ? m.deleted_at !== null : m.deleted_at === null));
+    if (!q) return base;
+    return base.filter(
       (member) =>
         member.full_name.toLowerCase().includes(q) ||
         member.member_id.toLowerCase().includes(q) ||
         (member.email || "").toLowerCase().includes(q) ||
         member.phone.toLowerCase().includes(q)
     );
-  }, [members, searchTerm]);
+  }, [members, searchTerm, showDeleted]);
 
   const totalPages = Math.max(1, Math.ceil(filteredMembers.length / rowsPerPage));
   const pageStart = (currentPage - 1) * rowsPerPage;
@@ -484,13 +487,26 @@ export default function AdminMembers() {
   };
 
   const onDelete = async (id: number) => {
-    if (!window.confirm("Delete this member?")) return;
-    const { error } = await supabase.from("members").delete().eq("id", id);
+    if (!window.confirm("Move this member to deleted list?")) return;
+    const { error } = await supabase
+      .from("members")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", id);
     if (error) {
       setMessage(error.message);
       return;
     }
-    setMessage("Member deleted.");
+    setMessage("Member soft-deleted.");
+    await loadMembers();
+  };
+
+  const onRestore = async (id: number) => {
+    const { error } = await supabase.from("members").update({ deleted_at: null }).eq("id", id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setMessage("Member restored.");
     await loadMembers();
   };
 
@@ -676,6 +692,13 @@ export default function AdminMembers() {
           >
             Add Member
           </button>
+          <button
+            type="button"
+            onClick={() => setShowDeleted((v) => !v)}
+            className="rounded-xl bg-white/10 px-4 py-3 font-semibold text-white"
+          >
+            {showDeleted ? "Show Active" : "Show Deleted"}
+          </button>
         </div>
 
         {message ? <p className="text-sm text-zinc-300">{message}</p> : null}
@@ -698,6 +721,7 @@ export default function AdminMembers() {
                 <th className="px-3 py-3 text-left">Notes</th>
                 <th className="px-3 py-3 text-left">Created</th>
                 <th className="px-3 py-3 text-left">Updated</th>
+                <th className="px-3 py-3 text-left">Deleted At</th>
                 <th className="px-3 py-3 text-left">Actions</th>
               </tr>
             </thead>
@@ -722,28 +746,44 @@ export default function AdminMembers() {
                   <td className="px-3 py-3">{row.notes || "-"}</td>
                   <td className="px-3 py-3">{formatDateTime(row.created_at)}</td>
                   <td className="px-3 py-3">{formatDateTime(row.updated_at)}</td>
+                  <td className="px-3 py-3">{formatDateTime(row.deleted_at)}</td>
                   <td className="px-3 py-3">
                     <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEdit(row);
-                        }}
-                        className="rounded-lg bg-white/10 px-3 py-1 text-white"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDelete(row.id);
-                        }}
-                        className="rounded-lg bg-red-500/20 px-3 py-1 text-red-300"
-                      >
-                        Delete
-                      </button>
+                      {row.deleted_at ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRestore(row.id);
+                          }}
+                          className="rounded-lg bg-white px-3 py-1 text-black"
+                        >
+                          Restore
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEdit(row);
+                            }}
+                            className="rounded-lg bg-white/10 px-3 py-1 text-white"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDelete(row.id);
+                            }}
+                            className="rounded-lg bg-red-500/20 px-3 py-1 text-red-300"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -974,11 +1014,15 @@ export default function AdminMembers() {
                 onClick={() => {
                   const targetId = detailMember.id;
                   setDetailMember(null);
-                  onDelete(targetId);
+                  if (detailMember.deleted_at) {
+                    onRestore(targetId);
+                  } else {
+                    onDelete(targetId);
+                  }
                 }}
                 className="rounded-xl bg-red-500/20 px-5 py-3 font-semibold text-red-300"
               >
-                Delete Member
+                {detailMember.deleted_at ? "Restore Member" : "Delete Member"}
               </button>
             </div>
             </div>
