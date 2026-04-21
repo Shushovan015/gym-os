@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, SyntheticEvent } from "react";
+import type { ChangeEvent, ReactNode, SyntheticEvent } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@src/Client/supabase";
 import Pagination from "@src/components/Pagination";
+import NepaliDate from "nepali-date-converter";
 
 type MembershipType = "monthly" | "quarterly" | "yearly" | "trial";
 type MembershipStatus = "active" | "paused" | "cancelled" | "expired";
@@ -79,8 +81,100 @@ const rowsPerPage = 10;
 const n8nMembersWebhookUrl = (import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_URL as string | undefined)?.trim();
 const n8nMembersWebhookSecret = (import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_SECRET as string | undefined)?.trim();
 
-function FieldLabel({ children }: { children: string }) {
-  return <label className="text-xs font-semibold text-zinc-300">{children}</label>;
+function FieldLabel({ children, className = "text-zinc-300" }: { children: ReactNode; className?: string }) {
+  return <label className={`text-xs font-semibold ${className}`}>{children}</label>;
+}
+
+function pad2(value: number) {
+  return value.toString().padStart(2, "0");
+}
+
+function formatAdDate(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function formatBsDateFromAd(adDate: string | null) {
+  if (!adDate) return "-";
+  try {
+    const jsDate = new Date(`${adDate}T00:00:00`);
+    if (Number.isNaN(jsDate.getTime())) return adDate;
+    return new NepaliDate(jsDate).format("YYYY-MM-DD");
+  } catch {
+    return adDate;
+  }
+}
+
+function adToBsString(adDate: string | null) {
+  if (!adDate) return "";
+  try {
+    const jsDate = new Date(`${adDate}T00:00:00`);
+    if (Number.isNaN(jsDate.getTime())) return "";
+    return new NepaliDate(jsDate).format("YYYY-MM-DD");
+  } catch {
+    return "";
+  }
+}
+
+function bsStringToAdDate(bsDate: string) {
+  const value = bsDate.trim();
+  if (!value) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  try {
+    const bs = new NepaliDate(value);
+    const normalized = bs.format("YYYY-MM-DD");
+    if (normalized !== value) return null;
+    return formatAdDate(bs.toJsDate());
+  } catch {
+    return null;
+  }
+}
+
+function BsDateInput({
+  label,
+  adValue,
+  onChangeAd,
+}: {
+  label: string;
+  adValue: string | null;
+  onChangeAd: (value: string) => void;
+}) {
+  const [bsText, setBsText] = useState(adToBsString(adValue));
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setBsText(adToBsString(adValue));
+    setError("");
+  }, [adValue]);
+
+  const handleChange = (value: string) => {
+    setBsText(value);
+    if (!value.trim()) {
+      onChangeAd("");
+      setError("");
+      return;
+    }
+    const ad = bsStringToAdDate(value);
+    if (ad === null) {
+      setError("Invalid BS date. Use YYYY-MM-DD.");
+      return;
+    }
+    setError("");
+    onChangeAd(ad);
+  };
+
+  return (
+    <div className="space-y-1">
+      <FieldLabel className="text-zinc-800">{label} (BS)</FieldLabel>
+      <input
+        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+        value={bsText}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder="YYYY-MM-DD (BS)"
+      />
+      {error ? <p className="text-xs text-zinc-900">{error}</p> : null}
+      <p className="text-[11px] text-zinc-500">Example: 2083-01-15</p>
+    </div>
+  );
 }
 
 function parseCsvLine(line: string): string[] {
@@ -211,6 +305,16 @@ export default function AdminMembers() {
   const [importing, setImporting] = useState(false);
   const n8nEnabled = Boolean(n8nMembersWebhookUrl);
   const isAnyModalOpen = showMemberModal || Boolean(detailMember);
+  const modalRoot = typeof document !== "undefined" ? document.body : null;
+
+  useEffect(() => {
+    if (!isAnyModalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isAnyModalOpen]);
 
   const validCsvRows = useMemo(() => csvRows.filter((row) => row.errors.length === 0), [csvRows]);
   const invalidCsvRows = useMemo(() => csvRows.filter((row) => row.errors.length > 0), [csvRows]);
@@ -610,11 +714,11 @@ export default function AdminMembers() {
                   <td className="px-3 py-3">{row.phone}</td>
                   <td className="px-3 py-3">{row.membership_type}</td>
                   <td className="px-3 py-3">{row.membership_status}</td>
-                  <td className="px-3 py-3">{row.start_date || "-"}</td>
-                  <td className="px-3 py-3">{row.end_date || "-"}</td>
-                  <td className="px-3 py-3">{row.last_visit_date || "-"}</td>
+                  <td className="px-3 py-3">{formatBsDateFromAd(row.start_date)}</td>
+                  <td className="px-3 py-3">{formatBsDateFromAd(row.end_date)}</td>
+                  <td className="px-3 py-3">{formatBsDateFromAd(row.last_visit_date)}</td>
                   <td className="px-3 py-3">{row.payment_status}</td>
-                  <td className="px-3 py-3">{row.payment_due_date || "-"}</td>
+                  <td className="px-3 py-3">{formatBsDateFromAd(row.payment_due_date)}</td>
                   <td className="px-3 py-3">{row.notes || "-"}</td>
                   <td className="px-3 py-3">{formatDateTime(row.created_at)}</td>
                   <td className="px-3 py-3">{formatDateTime(row.updated_at)}</td>
@@ -656,182 +760,177 @@ export default function AdminMembers() {
       </div>
       </div>
 
-      {showMemberModal ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-4">
-          <form
-            onSubmit={saveMember}
-            className="w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl border border-zinc-300 bg-zinc-100 text-zinc-900 shadow-2xl p-6 space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-black text-zinc-900">{editingId ? "Edit" : "Add"} Member</h2>
-              <button
-                type="button"
-                onClick={closeMemberModal}
-                className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <FieldLabel>Member ID</FieldLabel>
-                <input
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.member_id}
-                  onChange={(e) => onChange("member_id", e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>Full Name</FieldLabel>
-                <input
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.full_name}
-                  onChange={(e) => onChange("full_name", e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <FieldLabel>Email</FieldLabel>
-                <input
-                  type="email"
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.email || ""}
-                  onChange={(e) => onChange("email", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>Phone</FieldLabel>
-                <input
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.phone}
-                  onChange={(e) => onChange("phone", e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <FieldLabel>Membership Type</FieldLabel>
-                <select
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.membership_type}
-                  onChange={(e) => onChange("membership_type", e.target.value as MembershipType)}
+      {modalRoot && showMemberModal
+        ? createPortal(
+            <>
+              <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-md" />
+              <div className="fixed left-1/2 top-1/2 z-[100] w-[calc(100%-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2">
+                <form
+                  onSubmit={saveMember}
+                  className="w-full max-h-[90vh] rounded-2xl border border-zinc-300 bg-zinc-100 text-zinc-900 shadow-2xl overflow-hidden flex flex-col"
                 >
-                  {membershipTypes.map((v) => (
-                    <option key={v} value={v} className="bg-black">
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>Membership Status</FieldLabel>
-                <select
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.membership_status}
-                  onChange={(e) => onChange("membership_status", e.target.value as MembershipStatus)}
-                >
-                  {membershipStatuses.map((v) => (
-                    <option key={v} value={v} className="bg-black">
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>Payment Status</FieldLabel>
-                <select
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.payment_status}
-                  onChange={(e) => onChange("payment_status", e.target.value as PaymentStatus)}
-                >
-                  {paymentStatuses.map((v) => (
-                    <option key={v} value={v} className="bg-black">
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-300 bg-zinc-100 px-6 py-4">
+                    <h2 className="text-xl font-black text-zinc-900">{editingId ? "Edit" : "Add"} Member</h2>
+                    <button
+                      type="button"
+                      onClick={closeMemberModal}
+                      className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <FieldLabel>Start Date</FieldLabel>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.start_date || ""}
-                  onChange={(e) => onChange("start_date", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>End Date</FieldLabel>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.end_date || ""}
-                  onChange={(e) => onChange("end_date", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>Last Visit Date</FieldLabel>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.last_visit_date || ""}
-                  onChange={(e) => onChange("last_visit_date", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>Payment Due Date</FieldLabel>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                  value={form.payment_due_date || ""}
-                  onChange={(e) => onChange("payment_due_date", e.target.value)}
-                />
-              </div>
-            </div>
+                  <div className="overflow-y-auto p-6 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <FieldLabel className="text-zinc-800">Member ID</FieldLabel>
+                      <input
+                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                        value={form.member_id}
+                        onChange={(e) => onChange("member_id", e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <FieldLabel className="text-zinc-800">Full Name</FieldLabel>
+                      <input
+                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                        value={form.full_name}
+                        onChange={(e) => onChange("full_name", e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
 
-            <div className="space-y-1">
-              <FieldLabel>Notes</FieldLabel>
-              <textarea
-                className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                value={form.notes || ""}
-                onChange={(e) => onChange("notes", e.target.value)}
-              />
-            </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <FieldLabel className="text-zinc-800">Email</FieldLabel>
+                      <input
+                        type="email"
+                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                        value={form.email || ""}
+                        onChange={(e) => onChange("email", e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <FieldLabel className="text-zinc-800">Phone</FieldLabel>
+                      <input
+                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                        value={form.phone}
+                        onChange={(e) => onChange("phone", e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
 
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-xl bg-white px-5 py-3 font-black text-black disabled:opacity-60"
-              >
-                {saving ? "Saving..." : editingId ? "Update Member" : "Create Member"}
-              </button>
-              <button
-                type="button"
-                onClick={closeMemberModal}
-                className="rounded-xl bg-zinc-700 px-5 py-3 font-semibold text-white"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <FieldLabel className="text-zinc-800">Membership Type</FieldLabel>
+                      <select
+                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                        value={form.membership_type}
+                        onChange={(e) => onChange("membership_type", e.target.value as MembershipType)}
+                      >
+                        {membershipTypes.map((v) => (
+                          <option key={v} value={v} className="bg-white text-zinc-900">
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <FieldLabel className="text-zinc-800">Membership Status</FieldLabel>
+                      <select
+                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                        value={form.membership_status}
+                        onChange={(e) => onChange("membership_status", e.target.value as MembershipStatus)}
+                      >
+                        {membershipStatuses.map((v) => (
+                          <option key={v} value={v} className="bg-white text-zinc-900">
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <FieldLabel className="text-zinc-800">Payment Status</FieldLabel>
+                      <select
+                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                        value={form.payment_status}
+                        onChange={(e) => onChange("payment_status", e.target.value as PaymentStatus)}
+                      >
+                        {paymentStatuses.map((v) => (
+                          <option key={v} value={v} className="bg-white text-zinc-900">
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
 
-      {detailMember ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-4">
-          <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border border-zinc-300 bg-zinc-100 shadow-2xl p-6 space-y-4 text-zinc-900">
-            <div className="flex items-center justify-between">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <BsDateInput label="Start Date" adValue={form.start_date} onChangeAd={(v) => onChange("start_date", v)} />
+                    </div>
+                    <div>
+                      <BsDateInput label="End Date" adValue={form.end_date} onChangeAd={(v) => onChange("end_date", v)} />
+                    </div>
+                    <div>
+                      <BsDateInput
+                        label="Last Visit Date"
+                        adValue={form.last_visit_date}
+                        onChangeAd={(v) => onChange("last_visit_date", v)}
+                      />
+                    </div>
+                    <div>
+                      <BsDateInput
+                        label="Payment Due Date"
+                        adValue={form.payment_due_date}
+                        onChangeAd={(v) => onChange("payment_due_date", v)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <FieldLabel className="text-zinc-800">Notes</FieldLabel>
+                    <textarea
+                      className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
+                      value={form.notes || ""}
+                      onChange={(e) => onChange("notes", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="rounded-xl bg-white px-5 py-3 font-black text-black disabled:opacity-60"
+                    >
+                      {saving ? "Saving..." : editingId ? "Update Member" : "Create Member"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeMemberModal}
+                      className="rounded-xl bg-zinc-700 px-5 py-3 font-semibold text-white"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  </div>
+                </form>
+              </div>
+            </>,
+            modalRoot
+          )
+        : null}
+
+      {modalRoot && detailMember
+        ? createPortal(
+            <>
+              <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-md" />
+              <div className="fixed left-1/2 top-1/2 z-[100] w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 -translate-y-1/2">
+                <div className="w-full max-h-[90vh] rounded-2xl border border-zinc-300 bg-zinc-100 shadow-2xl overflow-hidden flex flex-col text-zinc-900">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-300 bg-zinc-100 px-6 py-4">
               <h2 className="text-xl font-black text-zinc-900">Member Details</h2>
               <button
                 type="button"
@@ -842,6 +941,7 @@ export default function AdminMembers() {
               </button>
             </div>
 
+            <div className="overflow-y-auto p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Member ID:</span> <span className="font-semibold">{detailMember.member_id}</span></div>
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Full Name:</span> <span className="font-semibold">{detailMember.full_name}</span></div>
@@ -849,11 +949,11 @@ export default function AdminMembers() {
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Phone:</span> <span className="font-semibold">{detailMember.phone}</span></div>
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Membership Type:</span> <span className="font-semibold">{detailMember.membership_type}</span></div>
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Membership Status:</span> <span className="font-semibold">{detailMember.membership_status}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Start Date:</span> <span className="font-semibold">{detailMember.start_date || "-"}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">End Date:</span> <span className="font-semibold">{detailMember.end_date || "-"}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Last Visit Date:</span> <span className="font-semibold">{detailMember.last_visit_date || "-"}</span></div>
+              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Start Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.start_date)}</span></div>
+              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">End Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.end_date)}</span></div>
+              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Last Visit Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.last_visit_date)}</span></div>
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Payment Status:</span> <span className="font-semibold">{detailMember.payment_status}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Payment Due Date:</span> <span className="font-semibold">{detailMember.payment_due_date || "-"}</span></div>
+              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Payment Due Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.payment_due_date)}</span></div>
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Created:</span> <span className="font-semibold">{formatDateTime(detailMember.created_at)}</span></div>
               <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Updated:</span> <span className="font-semibold">{formatDateTime(detailMember.updated_at)}</span></div>
               <div className="md:col-span-2 rounded-lg bg-white p-3">
@@ -881,9 +981,13 @@ export default function AdminMembers() {
                 Delete Member
               </button>
             </div>
-          </div>
-        </div>
-      ) : null}
+            </div>
+                </div>
+              </div>
+            </>,
+            modalRoot
+          )
+        : null}
     </div>
   );
 }
