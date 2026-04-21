@@ -68,6 +68,39 @@ type TransformationRow = {
   created_at: string;
 };
 
+type MemberReportLogRow = {
+  id: number;
+  member_ref: number;
+  recipient_email: string | null;
+  status: string;
+  error_message: string | null;
+  sent_by: string | null;
+  sent_at: string;
+  created_at: string;
+};
+
+type GeneratedReportMilestone = {
+  captured_at: string;
+  milestone_title: string;
+  milestone_notes: string | null;
+  photo_url: string | null;
+};
+
+type GeneratedProgressReport = {
+  gym_name: string;
+  member_id: string;
+  member_name: string;
+  generated_at: string;
+  summary_lines: string[];
+  recent_milestones: GeneratedReportMilestone[];
+};
+
+type SendProgressReportResponse = {
+  ok: boolean;
+  error?: string;
+  report?: GeneratedProgressReport;
+};
+
 const membershipTypes: MembershipType[] = ["monthly", "quarterly", "yearly", "trial"];
 const membershipStatuses: MembershipStatus[] = ["active", "paused", "cancelled", "expired"];
 const paymentStatuses: PaymentStatus[] = ["paid", "unpaid", "overdue"];
@@ -362,6 +395,9 @@ export default function AdminMembers() {
   const [loadingProfileExtras, setLoadingProfileExtras] = useState(false);
   const [savingMeasurement, setSavingMeasurement] = useState(false);
   const [savingTransformation, setSavingTransformation] = useState(false);
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportLogs, setReportLogs] = useState<MemberReportLogRow[]>([]);
+  const [generatedReport, setGeneratedReport] = useState<GeneratedProgressReport | null>(null);
 
   const [measurementForm, setMeasurementForm] = useState({
     recorded_at: new Date().toISOString().slice(0, 10),
@@ -379,8 +415,10 @@ export default function AdminMembers() {
     captured_at: new Date().toISOString().slice(0, 10),
     milestone_title: "",
     milestone_notes: "",
-    photo_url: "",
   });
+  const [transformationPhotoFile, setTransformationPhotoFile] = useState<File | null>(null);
+  const [transformationPhotoPreview, setTransformationPhotoPreview] = useState("");
+  const [transformationFileInputKey, setTransformationFileInputKey] = useState(0);
 
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -477,6 +515,19 @@ export default function AdminMembers() {
 
     setMeasurements((mRes.data as MeasurementRow[]) || []);
     setTransformations((tRes.data as TransformationRow[]) || []);
+    const logsRes = await supabase
+      .from("member_report_logs")
+      .select("id, member_ref, recipient_email, status, error_message, sent_by, sent_at, created_at")
+      .eq("member_ref", memberId)
+      .order("sent_at", { ascending: false })
+      .limit(20);
+    if (logsRes.error) {
+      setMessage(logsRes.error.message);
+      setReportLogs([]);
+      setLoadingProfileExtras(false);
+      return;
+    }
+    setReportLogs((logsRes.data as MemberReportLogRow[]) || []);
     setLoadingProfileExtras(false);
   };
 
@@ -487,6 +538,7 @@ export default function AdminMembers() {
 
   useEffect(() => {
     if (!detailMember) return;
+    setGeneratedReport(null);
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     loadMemberExtras(detailMember.id);
   }, [detailMember]);
@@ -671,15 +723,43 @@ export default function AdminMembers() {
     await loadMemberExtras(detailMember.id);
   };
 
+  const uploadMilestoneImage = async (file: File) => {
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `member-transformations/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from("gym-media").upload(path, file);
+    if (error) throw new Error(error.message);
+    return supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
+  };
+
+  const onTransformationFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setTransformationPhotoFile(file);
+    if (file) {
+      setTransformationPhotoPreview(URL.createObjectURL(file));
+      return;
+    }
+    setTransformationPhotoPreview("");
+  };
+
   const addTransformation = async () => {
     if (!detailMember) return;
     setSavingTransformation(true);
+    let photoUrl: string | null = null;
+    if (transformationPhotoFile) {
+      try {
+        photoUrl = await uploadMilestoneImage(transformationPhotoFile);
+      } catch (uploadErr: any) {
+        setSavingTransformation(false);
+        setMessage(uploadErr?.message || "Milestone photo upload failed.");
+        return;
+      }
+    }
     const payload = {
       member_ref: detailMember.id,
       captured_at: transformationForm.captured_at,
       milestone_title: transformationForm.milestone_title.trim() || null,
       milestone_notes: transformationForm.milestone_notes.trim() || null,
-      photo_url: transformationForm.photo_url.trim() || null,
+      photo_url: photoUrl,
     };
     const { error } = await supabase.from("member_transformations").insert(payload);
     setSavingTransformation(false);
@@ -691,8 +771,10 @@ export default function AdminMembers() {
       ...prev,
       milestone_title: "",
       milestone_notes: "",
-      photo_url: "",
     }));
+    setTransformationPhotoFile(null);
+    setTransformationPhotoPreview("");
+    setTransformationFileInputKey((k) => k + 1);
     await loadMemberExtras(detailMember.id);
   };
 
@@ -703,6 +785,45 @@ export default function AdminMembers() {
       setMessage(error.message);
       return;
     }
+    await loadMemberExtras(detailMember.id);
+  };
+
+  const sendProgressReport = async () => {
+    if (!detailMember) return;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setMessage("Admin session missing. Please sign in again.");
+      return;
+    }
+
+    setSendingReport(true);
+    setMessage("");
+    setGeneratedReport(null);
+    const { data, error } = await supabase.functions.invoke("send-progress-report", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: { member_id: detailMember.id },
+    });
+    setSendingReport(false);
+
+    if (error) {
+      setMessage(`Report generation failed: ${error.message}`);
+      await loadMemberExtras(detailMember.id);
+      return;
+    }
+
+    const response = (data || null) as SendProgressReportResponse | null;
+    if (!response?.ok) {
+      setMessage(`Report generation failed: ${response?.error || "Unknown error"}`);
+      await loadMemberExtras(detailMember.id);
+      return;
+    }
+
+    setGeneratedReport(response.report || null);
+    setMessage("Progress report generated successfully.");
     await loadMemberExtras(detailMember.id);
   };
 
@@ -1321,9 +1442,10 @@ export default function AdminMembers() {
                   className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
                 />
                 <input
-                  placeholder="Photo URL"
-                  value={transformationForm.photo_url}
-                  onChange={(e) => setTransformationForm((p) => ({ ...p, photo_url: e.target.value }))}
+                  key={transformationFileInputKey}
+                  type="file"
+                  accept="image/*"
+                  onChange={onTransformationFileChange}
                   className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
                 />
                 <button
@@ -1341,6 +1463,16 @@ export default function AdminMembers() {
                 onChange={(e) => setTransformationForm((p) => ({ ...p, milestone_notes: e.target.value }))}
                 className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
               />
+              {transformationPhotoPreview ? (
+                <div className="rounded-lg border border-zinc-200 p-2">
+                  <div className="mb-2 text-xs font-bold text-zinc-700">Photo Preview</div>
+                  <img
+                    src={transformationPhotoPreview}
+                    alt="Milestone preview"
+                    className="h-36 w-full rounded object-cover"
+                  />
+                </div>
+              ) : null}
 
               {loadingProfileExtras ? <p className="text-xs text-zinc-500">Loading timeline...</p> : null}
               {transformations.length === 0 ? <p className="text-xs text-zinc-500">No transformation timeline yet.</p> : null}
@@ -1359,12 +1491,73 @@ export default function AdminMembers() {
                   <div className="text-xs text-zinc-500 mt-1">{t.captured_at}</div>
                   {t.milestone_notes ? <div className="text-xs mt-1">{t.milestone_notes}</div> : null}
                   {t.photo_url ? (
-                    <a href={t.photo_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-blue-700 underline">
-                      Open Photo
-                    </a>
+                    <img src={t.photo_url} alt={t.milestone_title || "Milestone photo"} className="mt-2 h-40 w-full rounded object-cover" />
                   ) : null}
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-xl bg-white p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-sm font-black text-zinc-900">Progress Report</h4>
+                <button
+                  type="button"
+                  onClick={sendProgressReport}
+                  disabled={sendingReport}
+                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {sendingReport ? "Generating..." : "Generate Progress Report"}
+                </button>
+              </div>
+              {generatedReport ? (
+                <div className="rounded-lg border border-zinc-200 p-3 space-y-3">
+                  <div className="text-xs text-zinc-600">
+                    Generated: <b>{formatDateTime(generatedReport.generated_at)}</b> | Gym: <b>{generatedReport.gym_name}</b>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-zinc-700">Summary</div>
+                    <ul className="mt-1 list-disc pl-5 text-xs text-zinc-700 space-y-1">
+                      {generatedReport.summary_lines.map((line, idx) => (
+                        <li key={`${line}-${idx}`}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-zinc-700">Recent Milestones</div>
+                    {generatedReport.recent_milestones.length === 0 ? (
+                      <p className="mt-1 text-xs text-zinc-500">No milestones in generated report.</p>
+                    ) : (
+                      <div className="mt-2 space-y-2">
+                        {generatedReport.recent_milestones.map((m, idx) => (
+                          <div key={`${m.captured_at}-${idx}`} className="rounded border border-zinc-200 p-2 text-xs text-zinc-700">
+                            <div className="font-semibold">{m.milestone_title}</div>
+                            <div className="text-zinc-500">{m.captured_at}</div>
+                            {m.milestone_notes ? <div className="mt-1">{m.milestone_notes}</div> : null}
+                            {m.photo_url ? (
+                              <img
+                                src={m.photo_url}
+                                alt={m.milestone_title || "Generated milestone photo"}
+                                className="mt-2 h-40 w-full rounded object-cover"
+                              />
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              {reportLogs.length === 0 ? (
+                <p className="text-xs text-zinc-500">No report logs yet.</p>
+              ) : (
+                reportLogs.map((log) => (
+                  <div key={log.id} className="rounded-lg border border-zinc-200 p-2 text-xs text-zinc-700">
+                    {formatDateTime(log.sent_at)} | status: <b>{log.status}</b>
+                    {log.error_message ? ` | error: ${log.error_message}` : ""}
+                    {log.recipient_email ? ` | to: ${log.recipient_email}` : ""}
+                  </div>
+                ))
+              )}
             </div>
 
             <div className="flex gap-2">
