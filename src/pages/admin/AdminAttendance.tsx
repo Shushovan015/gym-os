@@ -17,10 +17,17 @@ type AttendanceRow = {
   status: AttendanceStatus;
 };
 
+type HolidayRow = {
+  id: number;
+  holiday_date: string;
+  name: string | null;
+};
+
 type BsDayCell = {
   bsDay: number;
   adDate: string;
   weekday: string;
+  isSaturday: boolean;
 };
 
 const BS_MONTHS = [
@@ -67,6 +74,7 @@ function buildBsMonthDays(bsYear: number, bsMonthIndex: number) {
       bsDay: day,
       adDate: formatAdDate(bsDate.toJsDate()),
       weekday: bsDate.format("dd", "np"),
+      isSaturday: bsDate.getDay() === 6,
     });
   }
 
@@ -77,10 +85,12 @@ export default function AdminAttendance() {
   const todayBs = new NepaliDate();
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [records, setRecords] = useState<AttendanceRow[]>([]);
+  const [holidays, setHolidays] = useState<HolidayRow[]>([]);
   const [selectedBsYear, setSelectedBsYear] = useState<number>(todayBs.getYear());
   const [selectedBsMonth, setSelectedBsMonth] = useState<number>(todayBs.getMonth());
   const [loading, setLoading] = useState(true);
   const [activeCell, setActiveCell] = useState<string>("");
+  const [activeHolidayDate, setActiveHolidayDate] = useState<string>("");
   const [message, setMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -106,6 +116,13 @@ export default function AdminAttendance() {
     });
     return map;
   }, [records]);
+
+  const holidayDateSet = useMemo(() => new Set(holidays.map((h) => h.holiday_date)), [holidays]);
+  const holidayByDate = useMemo(() => {
+    const map = new Map<string, HolidayRow>();
+    holidays.forEach((h) => map.set(h.holiday_date, h));
+    return map;
+  }, [holidays]);
 
   const filteredMembers = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -157,12 +174,38 @@ export default function AdminAttendance() {
     setRecords((data as AttendanceRow[]) || []);
   };
 
+  const loadHolidays = async (bsYear: number, bsMonth: number) => {
+    const days = buildBsMonthDays(bsYear, bsMonth);
+    if (days.length === 0) {
+      setHolidays([]);
+      return;
+    }
+
+    const startDate = days[0].adDate;
+    const endDate = days[days.length - 1].adDate;
+
+    const { data, error } = await supabase
+      .from("attendance_holidays")
+      .select("id, holiday_date, name")
+      .gte("holiday_date", startDate)
+      .lte("holiday_date", endDate)
+      .order("holiday_date", { ascending: true });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setHolidays((data as HolidayRow[]) || []);
+  };
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       setMessage("");
       await loadMembers();
       await loadRecords(selectedBsYear, selectedBsMonth);
+      await loadHolidays(selectedBsYear, selectedBsMonth);
       setLoading(false);
     };
 
@@ -176,10 +219,13 @@ export default function AdminAttendance() {
     setMessage("");
     setLoading(true);
     await loadRecords(nextYear, nextMonth);
+    await loadHolidays(nextYear, nextMonth);
     setLoading(false);
   };
 
   const toggleAttendance = async (member: MemberOption, dayInfo: BsDayCell, checked: boolean) => {
+    if (dayInfo.isSaturday || holidayDateSet.has(dayInfo.adDate)) return;
+
     const key = cellKey(member.id, dayInfo.adDate);
     const existing = attendanceMap.get(key);
 
@@ -211,6 +257,65 @@ export default function AdminAttendance() {
 
     await loadRecords(selectedBsYear, selectedBsMonth);
     setActiveCell("");
+  };
+
+  const setHolidayOccasion = async (dayInfo: BsDayCell) => {
+    if (dayInfo.isSaturday) return;
+
+    setActiveHolidayDate(dayInfo.adDate);
+    setMessage("");
+
+    const existing = holidayByDate.get(dayInfo.adDate);
+    const defaultName = existing?.name || "";
+    const nameInput = window.prompt("Enter holiday occasion for this day:", defaultName);
+    if (nameInput === null) {
+      setActiveHolidayDate("");
+      return;
+    }
+
+    const holidayName = nameInput.trim() || "Holiday";
+
+    if (existing) {
+      const { error } = await supabase
+        .from("attendance_holidays")
+        .update({ name: holidayName })
+        .eq("id", existing.id);
+      if (error) {
+        setMessage(error.message);
+        setActiveHolidayDate("");
+        return;
+      }
+    } else {
+      const payload = { holiday_date: dayInfo.adDate, name: holidayName };
+      const { error } = await supabase.from("attendance_holidays").insert(payload);
+      if (error) {
+        setMessage(error.message);
+        setActiveHolidayDate("");
+        return;
+      }
+    }
+
+    await loadHolidays(selectedBsYear, selectedBsMonth);
+    setActiveHolidayDate("");
+  };
+
+  const clearHoliday = async (dayInfo: BsDayCell) => {
+    if (dayInfo.isSaturday) return;
+    const existing = holidayByDate.get(dayInfo.adDate);
+    if (!existing) return;
+
+    setActiveHolidayDate(dayInfo.adDate);
+    setMessage("");
+
+    const { error } = await supabase.from("attendance_holidays").delete().eq("id", existing.id);
+    if (error) {
+      setMessage(error.message);
+      setActiveHolidayDate("");
+      return;
+    }
+
+    await loadHolidays(selectedBsYear, selectedBsMonth);
+    setActiveHolidayDate("");
   };
 
   if (loading) {
@@ -277,28 +382,80 @@ export default function AdminAttendance() {
           <p className="mb-4 text-sm text-zinc-400">No matching members found.</p>
         ) : null}
         {members.length === 0 ? <p className="text-sm text-zinc-400">कुनै सदस्य फेला परेन।</p> : null}
-        <div className="overflow-auto">
+        <div className="max-h-[70vh] overflow-auto rounded-xl border border-white/10">
           <table className="min-w-max text-sm text-white border-separate border-spacing-1">
             <thead>
               <tr>
-                <th className="sticky left-0 z-10 bg-zinc-900/95 rounded-md px-3 py-2 text-left min-w-[220px]">
+                <th className="sticky top-0 left-0 z-20 bg-zinc-900 rounded-md px-3 py-2 text-left min-w-[220px]">
                   सदस्य
                 </th>
-                {bsDays.map((dayInfo) => (
+                {bsDays.map((dayInfo) => {
+                  const holiday = holidayByDate.get(dayInfo.adDate);
+                  const isHoliday = Boolean(holiday);
+                  const isOffDay = dayInfo.isSaturday || isHoliday;
+                  const holidayBusy = activeHolidayDate === dayInfo.adDate;
+                  return (
                   <th
                     key={dayInfo.adDate}
-                    className="rounded-md bg-zinc-800/70 px-2 py-2 text-center min-w-[48px]"
+                    className={[
+                      "sticky top-0 z-10 rounded-md px-2 py-2 text-center min-w-[48px]",
+                      isOffDay ? "bg-amber-400 text-black" : "bg-zinc-800",
+                    ].join(" ")}
                   >
                     <div>{formatNepaliNumber(dayInfo.bsDay)}</div>
-                    <div className="text-[10px] text-zinc-400">{dayInfo.weekday}</div>
+                    <div className={isOffDay ? "text-[10px] text-black/80" : "text-[10px] text-zinc-400"}>
+                      {dayInfo.weekday}
+                    </div>
+                    {isHoliday ? (
+                      <div
+                        className="mt-1 text-[9px] leading-tight text-black/90 max-w-[44px] mx-auto break-words"
+                        title={holiday?.name || "Holiday"}
+                      >
+                        {holiday?.name || "Holiday"}
+                      </div>
+                    ) : null}
+                    {!dayInfo.isSaturday ? (
+                      <div className="mt-1 flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          disabled={holidayBusy}
+                          onClick={() => setHolidayOccasion(dayInfo)}
+                          className={[
+                            "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                            isHoliday ? "bg-black text-amber-300" : "bg-white/25 text-black",
+                            holidayBusy ? "opacity-60 cursor-not-allowed" : "",
+                          ].join(" ")}
+                          title={isHoliday ? "Edit holiday occasion" : "Set holiday occasion"}
+                        >
+                          {isHoliday ? "Edit" : "Set"}
+                        </button>
+                        {isHoliday ? (
+                          <button
+                            type="button"
+                            disabled={holidayBusy}
+                            onClick={() => clearHoliday(dayInfo)}
+                            className={[
+                              "rounded px-1.5 py-0.5 text-[10px] font-semibold bg-white/25 text-black",
+                              holidayBusy ? "opacity-60 cursor-not-allowed" : "",
+                            ].join(" ")}
+                            title="Clear holiday"
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[10px] font-semibold text-black/80">Off</div>
+                    )}
                   </th>
-                ))}
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
               {filteredMembers.map((member) => (
                 <tr key={member.id}>
-                  <td className="sticky left-0 z-10 bg-zinc-900/95 rounded-md px-3 py-2 whitespace-nowrap">
+                  <td className="sticky left-0 z-10 bg-zinc-900 rounded-md px-3 py-2 whitespace-nowrap">
                     <div className="font-semibold">{member.full_name}</div>
                     <div className="text-[11px] text-zinc-400">{member.member_id}</div>
                   </td>
@@ -307,14 +464,33 @@ export default function AdminAttendance() {
                     const record = attendanceMap.get(key);
                     const checked = Boolean(record && record.status !== "absent");
                     const busy = activeCell === key;
+                    const holiday = holidayByDate.get(dayInfo.adDate);
+                    const isHoliday = Boolean(holiday);
+                    const disabled = busy || dayInfo.isSaturday || isHoliday;
                     return (
-                      <td key={key} className="rounded-md bg-white/5 text-center p-1">
+                      <td
+                        key={key}
+                        className={[
+                          "rounded-md text-center p-1",
+                          dayInfo.isSaturday || isHoliday ? "bg-amber-300/30" : "bg-white/5",
+                        ].join(" ")}
+                      >
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={busy}
+                          disabled={disabled}
                           onChange={(e) => toggleAttendance(member, dayInfo, e.target.checked)}
-                          className="h-4 w-4 accent-emerald-400 cursor-pointer"
+                          className={[
+                            "h-4 w-4 accent-emerald-400",
+                            disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+                          ].join(" ")}
+                          title={
+                            dayInfo.isSaturday
+                              ? "Off day (Saturday)"
+                              : isHoliday
+                                ? `Holiday: ${holiday?.name || "Holiday"}`
+                                : "Toggle attendance"
+                          }
                         />
                       </td>
                     );
