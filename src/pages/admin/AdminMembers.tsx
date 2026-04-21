@@ -43,6 +43,31 @@ type N8nMembersEventPayload = {
   occurred_at: string;
 };
 
+type MeasurementRow = {
+  id: number;
+  member_ref: number;
+  recorded_at: string;
+  weight_kg: number | null;
+  body_fat_percent: number | null;
+  chest_cm: number | null;
+  waist_cm: number | null;
+  hips_cm: number | null;
+  arm_cm: number | null;
+  thigh_cm: number | null;
+  notes: string | null;
+  created_at: string;
+};
+
+type TransformationRow = {
+  id: number;
+  member_ref: number;
+  captured_at: string;
+  milestone_title: string | null;
+  milestone_notes: string | null;
+  photo_url: string | null;
+  created_at: string;
+};
+
 const membershipTypes: MembershipType[] = ["monthly", "quarterly", "yearly", "trial"];
 const membershipStatuses: MembershipStatus[] = ["active", "paused", "cancelled", "expired"];
 const paymentStatuses: PaymentStatus[] = ["paid", "unpaid", "overdue"];
@@ -178,6 +203,43 @@ function BsDateInput({
   );
 }
 
+function MiniLineChart({
+  values,
+  stroke = "#0f766e",
+}: {
+  values: Array<number | null>;
+  stroke?: string;
+}) {
+  const clean = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (clean.length < 2) {
+    return <div className="text-xs text-zinc-500">Not enough data for chart.</div>;
+  }
+
+  const min = Math.min(...clean);
+  const max = Math.max(...clean);
+  const range = max - min || 1;
+  const points = clean
+    .map((v, i) => {
+      const x = (i / (clean.length - 1 || 1)) * 220;
+      const y = 54 - ((v - min) / range) * 44;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width="220" height="60" viewBox="0 0 220 60" className="rounded bg-zinc-50">
+      <polyline fill="none" stroke={stroke} strokeWidth="2.5" points={points} />
+    </svg>
+  );
+}
+
+function toNullableNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
   let current = "";
@@ -295,6 +357,30 @@ export default function AdminMembers() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [detailMember, setDetailMember] = useState<MemberRow | null>(null);
+  const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
+  const [transformations, setTransformations] = useState<TransformationRow[]>([]);
+  const [loadingProfileExtras, setLoadingProfileExtras] = useState(false);
+  const [savingMeasurement, setSavingMeasurement] = useState(false);
+  const [savingTransformation, setSavingTransformation] = useState(false);
+
+  const [measurementForm, setMeasurementForm] = useState({
+    recorded_at: new Date().toISOString().slice(0, 10),
+    weight_kg: "",
+    body_fat_percent: "",
+    chest_cm: "",
+    waist_cm: "",
+    hips_cm: "",
+    arm_cm: "",
+    thigh_cm: "",
+    notes: "",
+  });
+
+  const [transformationForm, setTransformationForm] = useState({
+    captured_at: new Date().toISOString().slice(0, 10),
+    milestone_title: "",
+    milestone_notes: "",
+    photo_url: "",
+  });
 
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -361,10 +447,49 @@ export default function AdminMembers() {
     setMembers((data as MemberRow[]) || []);
   };
 
+  const loadMemberExtras = async (memberId: number) => {
+    setLoadingProfileExtras(true);
+    const [mRes, tRes] = await Promise.all([
+      supabase
+        .from("member_measurements")
+        .select("*")
+        .eq("member_ref", memberId)
+        .order("recorded_at", { ascending: true })
+        .limit(500),
+      supabase
+        .from("member_transformations")
+        .select("*")
+        .eq("member_ref", memberId)
+        .order("captured_at", { ascending: false })
+        .limit(200),
+    ]);
+
+    if (mRes.error) {
+      setMessage(mRes.error.message);
+      setLoadingProfileExtras(false);
+      return;
+    }
+    if (tRes.error) {
+      setMessage(tRes.error.message);
+      setLoadingProfileExtras(false);
+      return;
+    }
+
+    setMeasurements((mRes.data as MeasurementRow[]) || []);
+    setTransformations((tRes.data as TransformationRow[]) || []);
+    setLoadingProfileExtras(false);
+  };
+
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     loadMembers();
   }, []);
+
+  useEffect(() => {
+    if (!detailMember) return;
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    loadMemberExtras(detailMember.id);
+  }, [detailMember]);
 
   const onChange = <K extends keyof MemberForm>(key: K, value: MemberForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -498,6 +623,87 @@ export default function AdminMembers() {
     }
     setMessage("Member soft-deleted.");
     await loadMembers();
+  };
+
+  const addMeasurement = async () => {
+    if (!detailMember) return;
+    setSavingMeasurement(true);
+    const payload = {
+      member_ref: detailMember.id,
+      recorded_at: measurementForm.recorded_at,
+      weight_kg: toNullableNumber(measurementForm.weight_kg),
+      body_fat_percent: toNullableNumber(measurementForm.body_fat_percent),
+      chest_cm: toNullableNumber(measurementForm.chest_cm),
+      waist_cm: toNullableNumber(measurementForm.waist_cm),
+      hips_cm: toNullableNumber(measurementForm.hips_cm),
+      arm_cm: toNullableNumber(measurementForm.arm_cm),
+      thigh_cm: toNullableNumber(measurementForm.thigh_cm),
+      notes: measurementForm.notes.trim() || null,
+    };
+
+    const { error } = await supabase.from("member_measurements").insert(payload);
+    setSavingMeasurement(false);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setMeasurementForm((prev) => ({
+      ...prev,
+      weight_kg: "",
+      body_fat_percent: "",
+      chest_cm: "",
+      waist_cm: "",
+      hips_cm: "",
+      arm_cm: "",
+      thigh_cm: "",
+      notes: "",
+    }));
+    await loadMemberExtras(detailMember.id);
+  };
+
+  const deleteMeasurement = async (id: number) => {
+    if (!detailMember) return;
+    const { error } = await supabase.from("member_measurements").delete().eq("id", id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    await loadMemberExtras(detailMember.id);
+  };
+
+  const addTransformation = async () => {
+    if (!detailMember) return;
+    setSavingTransformation(true);
+    const payload = {
+      member_ref: detailMember.id,
+      captured_at: transformationForm.captured_at,
+      milestone_title: transformationForm.milestone_title.trim() || null,
+      milestone_notes: transformationForm.milestone_notes.trim() || null,
+      photo_url: transformationForm.photo_url.trim() || null,
+    };
+    const { error } = await supabase.from("member_transformations").insert(payload);
+    setSavingTransformation(false);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setTransformationForm((prev) => ({
+      ...prev,
+      milestone_title: "",
+      milestone_notes: "",
+      photo_url: "",
+    }));
+    await loadMemberExtras(detailMember.id);
+  };
+
+  const deleteTransformation = async (id: number) => {
+    if (!detailMember) return;
+    const { error } = await supabase.from("member_transformations").delete().eq("id", id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    await loadMemberExtras(detailMember.id);
   };
 
   const onRestore = async (id: number) => {
@@ -999,6 +1205,166 @@ export default function AdminMembers() {
               <div className="md:col-span-2 rounded-lg bg-white p-3">
                 <span className="text-zinc-600">Notes:</span> <span className="font-semibold">{detailMember.notes || "-"}</span>
               </div>
+            </div>
+
+            <div className="rounded-xl bg-white p-4 space-y-3">
+              <h4 className="text-sm font-black text-zinc-900">Body Measurement Logs</h4>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                <input
+                  type="date"
+                  value={measurementForm.recorded_at}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, recorded_at: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Weight (kg)"
+                  value={measurementForm.weight_kg}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, weight_kg: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Body Fat %"
+                  value={measurementForm.body_fat_percent}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, body_fat_percent: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Chest (cm)"
+                  value={measurementForm.chest_cm}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, chest_cm: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Waist (cm)"
+                  value={measurementForm.waist_cm}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, waist_cm: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <input
+                  placeholder="Hips (cm)"
+                  value={measurementForm.hips_cm}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, hips_cm: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Arm (cm)"
+                  value={measurementForm.arm_cm}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, arm_cm: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Thigh (cm)"
+                  value={measurementForm.thigh_cm}
+                  onChange={(e) => setMeasurementForm((p) => ({ ...p, thigh_cm: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={addMeasurement}
+                  disabled={savingMeasurement}
+                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {savingMeasurement ? "Saving..." : "Add Measurement"}
+                </button>
+              </div>
+              <textarea
+                placeholder="Measurement notes"
+                value={measurementForm.notes}
+                onChange={(e) => setMeasurementForm((p) => ({ ...p, notes: e.target.value }))}
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-lg border border-zinc-200 p-3">
+                  <div className="mb-2 text-xs font-bold text-zinc-700">Weight Progress</div>
+                  <MiniLineChart values={measurements.map((m) => m.weight_kg)} stroke="#0ea5e9" />
+                </div>
+                <div className="rounded-lg border border-zinc-200 p-3">
+                  <div className="mb-2 text-xs font-bold text-zinc-700">Waist Progress</div>
+                  <MiniLineChart values={measurements.map((m) => m.waist_cm)} stroke="#16a34a" />
+                </div>
+              </div>
+
+              {loadingProfileExtras ? <p className="text-xs text-zinc-500">Loading measurements...</p> : null}
+              {measurements.length === 0 ? <p className="text-xs text-zinc-500">No measurements logged yet.</p> : null}
+              {measurements.slice().reverse().slice(0, 10).map((m) => (
+                <div key={m.id} className="rounded-lg border border-zinc-200 p-2 text-xs text-zinc-700 flex items-center justify-between gap-2">
+                  <div>
+                    {m.recorded_at} | W: {m.weight_kg ?? "-"} | BF: {m.body_fat_percent ?? "-"} | Chest: {m.chest_cm ?? "-"} | Waist: {m.waist_cm ?? "-"}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => deleteMeasurement(m.id)}
+                    className="rounded bg-red-500/15 px-2 py-1 font-semibold text-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl bg-white p-4 space-y-3">
+              <h4 className="text-sm font-black text-zinc-900">Transformation Timeline</h4>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <input
+                  type="date"
+                  value={transformationForm.captured_at}
+                  onChange={(e) => setTransformationForm((p) => ({ ...p, captured_at: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Milestone title"
+                  value={transformationForm.milestone_title}
+                  onChange={(e) => setTransformationForm((p) => ({ ...p, milestone_title: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <input
+                  placeholder="Photo URL"
+                  value={transformationForm.photo_url}
+                  onChange={(e) => setTransformationForm((p) => ({ ...p, photo_url: e.target.value }))}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={addTransformation}
+                  disabled={savingTransformation}
+                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {savingTransformation ? "Saving..." : "Add Timeline Entry"}
+                </button>
+              </div>
+              <textarea
+                placeholder="Milestone notes"
+                value={transformationForm.milestone_notes}
+                onChange={(e) => setTransformationForm((p) => ({ ...p, milestone_notes: e.target.value }))}
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+              />
+
+              {loadingProfileExtras ? <p className="text-xs text-zinc-500">Loading timeline...</p> : null}
+              {transformations.length === 0 ? <p className="text-xs text-zinc-500">No transformation timeline yet.</p> : null}
+              {transformations.map((t) => (
+                <div key={t.id} className="rounded-lg border border-zinc-200 p-3 text-sm text-zinc-700">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold">{t.milestone_title || "Milestone"}</div>
+                    <button
+                      type="button"
+                      onClick={() => deleteTransformation(t.id)}
+                      className="rounded bg-red-500/15 px-2 py-1 text-xs font-semibold text-red-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-1">{t.captured_at}</div>
+                  {t.milestone_notes ? <div className="text-xs mt-1">{t.milestone_notes}</div> : null}
+                  {t.photo_url ? (
+                    <a href={t.photo_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-blue-700 underline">
+                      Open Photo
+                    </a>
+                  ) : null}
+                </div>
+              ))}
             </div>
 
             <div className="flex gap-2">
