@@ -1,37 +1,26 @@
+import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring, useTransform } from "framer-motion";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  Activity,
-  BarChart3,
-  ChevronRight,
-  Clock3,
-  Dumbbell,
-  ShieldCheck,
-  Star,
-  Trophy,
-  type LucideIcon,
-} from "lucide-react";
-
-import { getHomeRequest } from "@src/redux/actions/home";
+import { Clock3, Dumbbell, ShieldCheck, Star, Trophy, Users } from "lucide-react";
 import { getFacilitiesRequest } from "@src/redux/actions/facilities";
-import { getTrainersRequest } from "@src/redux/actions/trainers";
+import { getHomeRequest } from "@src/redux/actions/home";
 import { getTestimonialsRequest } from "@src/redux/actions/testimonials";
-
-import { PageRoot, Section, Surface, PrimaryCTA, SecondaryCTA } from "./PageKit";
-import { motionTokens } from "@src/motion/tokens";
-import { revealUpVariants } from "@src/motion/variants";
-import { gsap, initGsap } from "@src/motion/gsap";
-import { useAppReducedMotion } from "@src/motion/preferences";
-
-type Testimonial = {
-  id: number;
-  name: string;
-  goal: string;
-  quote: string;
-  image: string;
-};
+import { getTrainersRequest } from "@src/redux/actions/trainers";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ImageFrame,
+  PageRoot,
+  PrimaryCTA,
+  PublicSEO,
+  Section,
+  SectionHeading,
+  SecondaryCTA,
+  SplitFeature,
+  Surface,
+  TextLink,
+} from "./PageKit";
 
 type HeroMetric = {
   label: string;
@@ -76,109 +65,122 @@ type HomeContent = {
   final_secondary_cta_link?: string;
 };
 
-const iconMap: Record<string, LucideIcon> = {
-  Dumbbell,
-  ShieldCheck,
-  Star,
-  Trophy,
-  Clock3,
-  Activity,
-  BarChart3,
+type FacilityItem = {
+  id: number;
+  kind: "zone" | "amenity";
+  title: string;
+  description: string;
+  tag?: string;
+  image?: string;
+  sort_order: number;
+  is_active: boolean;
 };
 
-const homeFallback: HomeContent = {
+type TrainerItem = {
+  id: number;
+  name: string;
+  role: string;
+  image?: string;
+  specialties?: string[];
+};
+
+type Testimonial = {
+  id: number;
+  name: string;
+  goal: string;
+  quote: string;
+  image?: string;
+};
+
+type HomeState = {
+  home?: {
+    content?: Partial<HomeContent> | null;
+    status?: Array<{ label: string; value: string; icon?: string }>;
+    points?: Array<{ point: string }>;
+  };
+  facilities?: {
+    items?: FacilityItem[];
+  };
+  trainers?: {
+    items?: TrainerItem[];
+  };
+  testimonials?: {
+    items?: Testimonial[];
+    loading?: boolean;
+  };
+};
+
+const fallbackHome: HomeContent = {
   hero_badge: "A&A Health Club | Butwal, Rupandehi",
-  hero_title: "Train hard. Lift right. Stay consistent.",
+  hero_title: "Serious training, coached with structure.",
   hero_description:
-    "A serious training environment with proper coaching, modern equipment, and programs for strength, fat loss, and performance.",
+    "A disciplined gym environment for strength, fat loss and performance training in Butwal.",
   hero_image:
     "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1800&auto=format&fit=crop",
-  hero_primary_cta_text: "Book trial session",
+  hero_primary_cta_text: "Book a Free Trial",
   hero_primary_cta_link: "/contact",
-  hero_secondary_cta_text: "View membership",
+  hero_secondary_cta_text: "View Memberships",
   hero_secondary_cta_link: "/pricing",
   status_title: "Today at A&A",
-  zones_title: "Training Zones",
-  coaches_title: "Coaches on Floor",
-  coaches_subtitle: "Train with experienced coaches for strength, fat loss, and functional performance.",
+  zones_title: "Training zones",
+  coaches_title: "Coaching that keeps training focused",
+  coaches_subtitle: "Train with experienced coaches across strength, conditioning and body recomposition.",
   maximus_badge: "Maximus Strength",
-  maximus_title: "Powerlifting Group",
+  maximus_title: "Powerlifting group at A&A",
   maximus_description:
-    "Dedicated powerlifting training for lifters focused on Squat, Bench, and Deadlift progression.",
+    "A focused strength community for lifters who want better Squat, Bench and Deadlift progression.",
   maximus_image:
     "https://images.unsplash.com/photo-1574680096145-d05b474e2155?q=80&w=1600&auto=format&fit=crop",
   maximus_learn_more_link: "/about#maximus-strength",
   maximus_instagram_link: "https://www.instagram.com/teammaximusstrength/",
-  testimonials_title: "What Members Say",
-  testimonials_subtitle: "Real feedback from A&A members.",
-  hero_metrics: [],
-  gallery_title: "Inside Our Gym",
-  gallery_images: [],
-  final_cta_title: "Ready to start your transformation?",
-  final_cta_description: "Book a trial session and get a personalized training roadmap.",
-  final_primary_cta_text: "Book trial",
+  testimonials_title: "Member feedback",
+  testimonials_subtitle: "Real words from people training at A&A.",
+  gallery_title: "Inside the gym",
+  final_cta_title: "Ready to train with more structure?",
+  final_cta_description: "Book a trial or visit the gym to see the floor, coaches and membership options.",
+  final_primary_cta_text: "Book a trial",
   final_primary_cta_link: "/contact",
-  final_secondary_cta_text: "View pricing",
+  final_secondary_cta_text: "Explore pricing",
   final_secondary_cta_link: "/pricing",
 };
 
+const fallbackZones: FacilityItem[] = [
+  {
+    id: -1,
+    kind: "zone",
+    title: "Strength Floor",
+    description: "Racks, benches, barbells, dumbbells and platforms for progressive strength work.",
+    tag: "Strength",
+    image: "https://images.unsplash.com/photo-1574680096145-d05b474e2155?q=80&w=1600&auto=format&fit=crop",
+    sort_order: 1,
+    is_active: true,
+  },
+  {
+    id: -2,
+    kind: "zone",
+    title: "Cardio Zone",
+    description: "Conditioning equipment for endurance, fat loss and warm-up work.",
+    tag: "Conditioning",
+    image: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=1600&auto=format&fit=crop",
+    sort_order: 2,
+    is_active: true,
+  },
+  {
+    id: -3,
+    kind: "zone",
+    title: "Functional Area",
+    description: "Open training space for mobility, kettlebells, carries and athletic work.",
+    tag: "Functional",
+    image: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=1600&auto=format&fit=crop",
+    sort_order: 3,
+    is_active: true,
+  },
+];
+
 const fallbackStatus = [
-  { label: "Open Gym", value: "5:00 AM - 9:00 PM", icon: Clock3 },
-  { label: "Peak Hours", value: "6:00 AM - 9:00 AM / 5:00 PM - 8:00 PM", icon: Star },
-  { label: "Powerlifting Session", value: "Mon, Wed, Fri - 6:30 PM", icon: Trophy },
-  { label: "Trial Session", value: "Available Daily", icon: ShieldCheck },
-];
-
-const fallbackZones = [
-  {
-    name: "Strength Floor",
-    desc: "Racks, benches, barbells, dumbbells, and platforms for progressive strength work.",
-    image:
-      "https://images.unsplash.com/photo-1574680096145-d05b474e2155?q=80&w=1600&auto=format&fit=crop",
-  },
-  {
-    name: "Cardio Zone",
-    desc: "Treadmills, bikes, rowers, and conditioning equipment for endurance and fat loss.",
-    image:
-      "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=1600&auto=format&fit=crop",
-  },
-  {
-    name: "Functional Area",
-    desc: "Kettlebells, ropes, mobility tools, and bodyweight stations for athletic training.",
-    image:
-      "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=1600&auto=format&fit=crop",
-  },
-];
-
-const fallbackCoaches = [
-  {
-    name: "Keshab B. Shakya",
-    role: "Strength Coach",
-    focus: "Barbell Technique, Power",
-    image:
-      "https://images.unsplash.com/photo-1567013127542-490d757e6349?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    name: "Anmol Shakya",
-    role: "Fat Loss Coach",
-    focus: "Body Recomposition, Habit Coaching",
-    image:
-      "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    name: "Niraj T.",
-    role: "Functional Trainer",
-    focus: "Mobility, Conditioning",
-    image:
-      "https://images.unsplash.com/photo-1594737625785-a6cbdabd333c?q=80&w=1200&auto=format&fit=crop",
-  },
-];
-
-const fallbackMaximusPoints = [
-  "Squat, Bench, Deadlift focused programming",
-  "Meet-prep cycles and peaking blocks",
-  "Technique breakdown with competition standards",
-  "Team sessions for beginner to advanced lifters",
+  { label: "Open Gym", value: "5:00 AM - 9:00 PM", icon: "Clock3" },
+  { label: "Trial Sessions", value: "Available daily", icon: "ShieldCheck" },
+  { label: "Training Focus", value: "Strength + Conditioning", icon: "Dumbbell" },
 ];
 
 const fallbackGallery = [
@@ -188,219 +190,27 @@ const fallbackGallery = [
   "https://images.unsplash.com/photo-1549476464-37392f717541?q=80&w=1600&auto=format&fit=crop",
 ];
 
-const trustedBy = ["Team Maximus", "Butwal Runners", "Local Athletes", "Corporate Wellness"];
+const iconMap = {
+  Clock3,
+  ShieldCheck,
+  Dumbbell,
+  Trophy,
+  Star,
+  Users,
+};
 
-const storySteps = [
-  {
-    eyebrow: "Why A&A",
-    title: "World-Class Training Facilities",
-    description:
-      "Our gym floor is purpose-built for strength, conditioning, and functional training with clean, premium-grade equipment.",
-    bullets: ["Dedicated strength floor", "Functional + conditioning zones", "Hygienic, organized environment"],
-    metric: "Built for serious training",
-  },
-  {
-    eyebrow: "Why A&A",
-    title: "Motivating Community & Coaching",
-    description:
-      "You train alongside committed members with coaches who guide, correct, and keep your momentum high every week.",
-    bullets: ["Supportive training culture", "Coach-led floor feedback", "High-accountability environment"],
-    metric: "Consistency without burnout",
-  },
-  {
-    eyebrow: "Why A&A",
-    title: "Proven Member Results",
-    description:
-      "Our focus is measurable progress, whether your goal is fat loss, strength gain, athletic performance, or confidence.",
-    bullets: ["Visible body transformations", "Strength progression milestones", "Data-backed plan updates"],
-    metric: "Results you can measure",
-  },
-];
-
-const storyThemes = [
-  {
-    glow: "from-amber-400/22 via-orange-500/14 to-transparent",
-    chip: "Begin with certainty",
-  },
-  {
-    glow: "from-sky-400/22 via-cyan-500/14 to-transparent",
-    chip: "Execute with structure",
-  },
-  {
-    glow: "from-emerald-400/22 via-teal-500/14 to-transparent",
-    chip: "Improve with data",
-  },
-];
-
-function RevealSection({
-  children,
-  delay = 0,
-  className = "",
-}: {
-  children: ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  const reduceMotion = useAppReducedMotion();
-  const variants = revealUpVariants(Boolean(reduceMotion), motionTokens.distance.md);
-
-  return (
-    <motion.div
-      className={className}
-      variants={variants}
-      initial={reduceMotion ? "show" : "hidden"}
-      animate="show"
-      transition={{
-        duration: motionTokens.duration.slow,
-        delay,
-        ease: motionTokens.easing.smoothOut,
-      }}
-    >
-      {children}
-    </motion.div>
-  );
+function metricIcon(name?: string) {
+  return iconMap[name as keyof typeof iconMap] ?? Dumbbell;
 }
 
 export default function Home() {
   const dispatch = useDispatch();
-  const reduceMotion = useAppReducedMotion();
-  const heroSectionRef = useRef<HTMLElement | null>(null);
-  const heroGridOverlayRef = useRef<HTMLDivElement | null>(null);
-  const heroSpotlightRef = useRef<HTMLDivElement | null>(null);
-  const heroIntroVeilRef = useRef<HTMLDivElement | null>(null);
-  const storySectionRef = useRef<HTMLElement | null>(null);
-  const [activeStoryIndex, setActiveStoryIndex] = useState(0);
-  const [storyDirection, setStoryDirection] = useState(1);
-  const prevStoryIndexRef = useRef(0);
-  const activeStep = storySteps[activeStoryIndex];
-  const activeTheme = storyThemes[activeStoryIndex] ?? storyThemes[0];
-
-  const { scrollYProgress: storyProgress } = useScroll({
-    target: storySectionRef,
-    offset: ["start start", "end end"],
-  });
-
-  useMotionValueEvent(storyProgress, "change", (v) => {
-    if (reduceMotion) return;
-
-    const total = storySteps.length;
-    const next = Math.min(total - 1, Math.max(0, Math.floor(v * total)));
-
-    if (next !== prevStoryIndexRef.current) {
-      setStoryDirection(next > prevStoryIndexRef.current ? 1 : -1);
-      prevStoryIndexRef.current = next;
-      setActiveStoryIndex(next);
-    }
-  });
-
-  const { scrollY } = useScroll();
-  const heroImageYRaw = useTransform(scrollY, [0, 900], [0, reduceMotion ? 0 : 42]);
-  const heroImageScaleRaw = useTransform(scrollY, [0, 900], [1, reduceMotion ? 1 : 1.015]);
-  const heroOverlayYRaw = useTransform(scrollY, [0, 900], [0, reduceMotion ? 0 : 14]);
-  const heroContentYRaw = useTransform(scrollY, [0, 760], [0, reduceMotion ? 0 : 16]);
-  const heroContentOpacityRaw = useTransform(scrollY, [0, 760], [1, reduceMotion ? 1 : 0.92]);
-
-  const springConfig = { stiffness: 80, damping: 26, mass: 0.45 };
-  const heroImageY = useSpring(heroImageYRaw, springConfig);
-  const heroImageScale = useSpring(heroImageScaleRaw, springConfig);
-  const heroOverlayY = useSpring(heroOverlayYRaw, springConfig);
-  const heroContentY = useSpring(heroContentYRaw, springConfig);
-  const heroContentOpacity = useSpring(heroContentOpacityRaw, springConfig);
-
-  const { content: homeContent, status: homeStatus, points: homePoints, loading: homeLoading } = useSelector(
-    (s: any) => s.home ?? { content: null, status: [], points: [], loading: false }
-  );
-  const { items: facilitiesItems } = useSelector((s: any) => s.facilities ?? { items: [] });
-  const { items: trainerItems } = useSelector((s: any) => s.trainers ?? { items: [] });
-  const { items: testimonialItems, loading: testimonialsLoading } = useSelector(
-    (s: any) => s.testimonials ?? { items: [], loading: false }
-  );
-
-  const home: HomeContent = { ...homeFallback, ...(homeContent || {}) };
-  const hasDynamicHeroImage =
-    typeof homeContent?.hero_image === "string" && homeContent.hero_image.trim().length > 0;
-
-  const heroImageSrc: string | null = hasDynamicHeroImage
-    ? homeContent.hero_image
-    : homeLoading
-      ? null
-      : homeFallback.hero_image;
-  const testimonials: Testimonial[] = Array.isArray(testimonialItems) ? testimonialItems : [];
-
-  const gymStatus =
-    Array.isArray(homeStatus) && homeStatus.length
-      ? homeStatus
-        .map((item: any, idx: number) => ({
-          label: item?.label ?? "",
-          value: item?.value ?? "",
-          icon: iconMap[item?.icon] || fallbackStatus[idx % fallbackStatus.length].icon,
-        }))
-        .filter((item: any) => item.label && item.value)
-      : fallbackStatus;
-
-  const zoneCards =
-    Array.isArray(facilitiesItems) && facilitiesItems.length
-      ? facilitiesItems
-        .filter((item: any) => item?.kind === "zone" && item?.is_active !== false)
-        .slice(0, 3)
-        .map((item: any) => ({
-          name: item?.title ?? "Zone",
-          desc: item?.description ?? "",
-          image: item?.image || fallbackZones[0].image,
-        }))
-      : fallbackZones;
-
-  const coachCards =
-    Array.isArray(trainerItems) && trainerItems.length
-      ? trainerItems.slice(0, 3).map((item: any, idx: number) => ({
-        name: item?.name ?? "Coach",
-        role: item?.role ?? "Trainer",
-        focus: Array.isArray(item?.specialties) ? item.specialties.join(", ") : "",
-        image: item?.image || fallbackCoaches[idx % fallbackCoaches.length].image,
-      }))
-      : fallbackCoaches;
-
-  const maximusPoints =
-    Array.isArray(homePoints) && homePoints.length
-      ? homePoints.map((item: any) => item?.point ?? "").filter((p: string) => p)
-      : fallbackMaximusPoints;
-
-  const fallbackHeroMetrics = [
-    { label: "Dumbbell Range", value: "2.5kg-50kg", icon: "Dumbbell" },
-    { label: "Power Racks", value: "8", icon: "ShieldCheck" },
-    { label: "Coaches", value: String(coachCards.length || 3), icon: "Star" },
-    { label: "Active Members", value: "500+", icon: "Trophy" },
-  ];
-
-  const heroMetrics =
-    Array.isArray(home.hero_metrics) && home.hero_metrics.length
-      ? home.hero_metrics
-      : fallbackHeroMetrics;
-
-  const galleryFromContent =
-    Array.isArray(home.gallery_images) && home.gallery_images.length
-      ? home.gallery_images
-        .map((g: any) => (typeof g === "string" ? g : g?.url))
-        .filter(Boolean)
-      : [];
-
-  const galleryImages =
-    galleryFromContent.length > 0
-      ? galleryFromContent
-      : Array.isArray(facilitiesItems) && facilitiesItems.length
-        ? facilitiesItems
-          .filter((item: any) => item?.image)
-          .slice(0, 4)
-          .map((item: any) => item.image)
-        : fallbackGallery;
-
-  const trustStats = [
-    { label: "Avg response", value: "<24 hrs" },
-    { label: "Coaches", value: String(coachCards.length || 3) },
-    { label: "Training zones", value: String(zoneCards.length || 3) },
-    { label: "Member rating", value: "4.9/5" },
-  ];
-
+  const { homeSlice, facilitiesSlice, trainersSlice, testimonialsSlice } = useSelector((state: HomeState) => ({
+    homeSlice: state.home,
+    facilitiesSlice: state.facilities,
+    trainersSlice: state.trainers,
+    testimonialsSlice: state.testimonials,
+  }));
 
   useEffect(() => {
     dispatch(getHomeRequest());
@@ -409,558 +219,253 @@ export default function Home() {
     dispatch(getTestimonialsRequest());
   }, [dispatch]);
 
-  useEffect(() => {
-    if (reduceMotion || !heroSectionRef.current) return;
+  const home = { ...fallbackHome, ...(homeSlice?.content ?? {}) };
+  const statusItems = homeSlice?.status?.length ? homeSlice.status : fallbackStatus;
+  const points = homeSlice?.points?.map((item) => item.point).filter(Boolean) ?? [
+    "Squat, Bench and Deadlift focused training",
+    "Technique feedback and progression planning",
+    "Team sessions for beginner to advanced lifters",
+  ];
 
-    initGsap();
+  const zones = useMemo(() => {
+    const items = facilitiesSlice?.items ?? [];
+    const activeZones = items.filter((item) => item.kind === "zone" && item.is_active !== false).slice(0, 3);
+    return activeZones.length ? activeZones : fallbackZones;
+  }, [facilitiesSlice?.items]);
 
-    const section = heroSectionRef.current;
-    const ctx = gsap.context(() => {
-      const introTimeline = gsap.timeline();
-      introTimeline.set("[data-hero-reveal]", {
-        autoAlpha: 0,
-        y: 52,
-      });
+  const trainers = (trainersSlice?.items ?? []).slice(0, 3);
+  const testimonials = testimonialsSlice?.items ?? [];
 
-      if (heroIntroVeilRef.current) {
-        introTimeline.to(
-          heroIntroVeilRef.current,
-          {
-            autoAlpha: 0,
-            scaleY: 0,
-            transformOrigin: "top center",
-            duration: 0.76,
-            ease: "power3.inOut",
-          },
-          0
-        );
-      }
+  const heroMetrics =
+    home.hero_metrics?.length
+      ? home.hero_metrics
+      : [
+          { label: "Training Zones", value: String(zones.length), icon: "Dumbbell" },
+          { label: "Coaches", value: String(Math.max(trainers.length, 1)), icon: "Users" },
+          { label: "Location", value: "Butwal", icon: "ShieldCheck" },
+        ];
 
-      introTimeline.to(
-        "[data-hero-reveal]",
-        {
-          autoAlpha: 1,
-          y: 0,
-          duration: 0.78,
-          stagger: 0.1,
-          ease: "power3.out",
-        },
-        0.14
-      );
-
-      // Keep hero scroll behavior controlled by Framer Motion springs for smoother motion.
-      if (heroGridOverlayRef.current) {
-        gsap.set(heroGridOverlayRef.current, { opacity: 0.3 });
-      }
-      if (heroSpotlightRef.current) {
-        gsap.set(heroSpotlightRef.current, { opacity: 0.9, scale: 1 });
-      }
-    }, section);
-
-    return () => {
-      ctx.revert();
-    };
-  }, [reduceMotion]);
-
+  const cmsGalleryImages =
+    home.gallery_images
+      ?.map((item) => (typeof item === "string" ? item : item.url))
+      .filter(Boolean) ?? [];
+  const zoneGalleryImages = zones.map((zone) => zone.image).filter((image): image is string => Boolean(image));
+  const galleryImages = cmsGalleryImages.length
+    ? cmsGalleryImages
+    : zoneGalleryImages.length >= 3
+      ? zoneGalleryImages
+      : fallbackGallery;
 
   return (
     <PageRoot>
-      <section className="relative" ref={heroSectionRef}>
-        <div className="relative h-[calc(100dvh-4rem)] min-h-[680px] w-full overflow-hidden rounded-none">
-          {heroImageSrc ? (
-            <motion.img
-              src={heroImageSrc}
-              alt="Gym interior"
-              className="absolute inset-0 h-full w-full object-cover brightness-[0.68] saturate-[0.95]"
-              style={reduceMotion ? undefined : { y: heroImageY, scale: heroImageScale }}
-            />
-          ) : (
-            <div
-              aria-hidden
-              className="absolute inset-0 bg-[radial-gradient(70%_55%_at_20%_10%,rgba(245,158,11,0.28),transparent_65%),linear-gradient(180deg,#111821_0%,#090d13_100%)]"
-            />
-          )}
-          <motion.div
-            className="absolute inset-0 bg-black/45"
-            style={reduceMotion ? undefined : { y: heroOverlayY }}
-          />
-          <div ref={heroGridOverlayRef} className="hero-grid-overlay absolute inset-0 opacity-35" />
-          <div ref={heroSpotlightRef} className="hero-spotlight absolute inset-0" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/72 to-black/58" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/22 to-black/36" />
-          {!reduceMotion && (
-            <div
-              ref={heroIntroVeilRef}
-              className="pointer-events-none absolute inset-0 z-30 bg-[#05080f]"
-            />
-          )}
-          <motion.div
-            className="relative z-20 h-full px-6 py-8 sm:px-9 sm:py-10 lg:px-12 xl:px-20"
-            style={reduceMotion ? undefined : { y: heroContentY, opacity: heroContentOpacity }}
-          >
-            <div className="mx-auto flex h-full w-full max-w-6xl flex-col justify-between">
-              <div className="max-w-3xl pt-2 sm:pt-4">
-                <div data-hero-reveal className="label-chip">{home.hero_badge}</div>
-                <h1 data-hero-reveal className="premium-heading mt-5 text-4xl font-bold leading-[1.03] tracking-tight text-white sm:text-5xl lg:text-7xl">
-                  {home.hero_title}
-                </h1>
-                <p data-hero-reveal className="mt-4 max-w-2xl text-lg leading-relaxed text-zinc-200">{home.hero_description}</p>
+      <PublicSEO
+        title="A&A Health Club Butwal | Strength, Coaching and Fitness"
+        description="A&A Health Club in Butwal, Rupandehi offers structured strength training, coaching, facilities, memberships and trial sessions."
+      />
 
-                <div data-hero-reveal className="mt-7 flex flex-col gap-3 sm:flex-row">
-                  <PrimaryCTA to={home.hero_primary_cta_link || "/contact"}>
-                    {home.hero_primary_cta_text}
-                  </PrimaryCTA>
-                  <SecondaryCTA to={home.hero_secondary_cta_link || "/pricing"}>
-                    {home.hero_secondary_cta_text}
-                  </SecondaryCTA>
-                </div>
-              </div>
-
-              <div data-hero-reveal className="grid grid-cols-2 gap-3 pb-2 sm:pb-4 md:grid-cols-4">
-                {heroMetrics.map((item: any, idx: number) => {
-                  const Icon: LucideIcon = iconMap[String(item?.icon)] ?? Dumbbell;
-                  return (
-                    <motion.div
-                      key={`${item?.label}-${idx}`}
-                      initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 22 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, amount: 0.3 }}
-                      transition={{ duration: 0.46, delay: idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
-                      className="tilt-card card-glow parallax-float rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-md"
-                    >
-                      <div className="tilt-content">
-                        <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
-                          <Icon className="h-4 w-4 text-accent" />
-                        </div>
-                        <div className="mt-3 text-2xl font-bold text-white">{item?.value}</div>
-                        <div className="text-xs text-zinc-300">{item?.label}</div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-          </motion.div>
+      <section className="relative overflow-hidden border-b border-[var(--public-line)]">
+        <div className="absolute inset-0">
+          <img src={home.hero_image} alt="A&A Health Club training floor" className="h-full w-full object-cover opacity-64" loading="eager" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,16,14,0.96),rgba(16,16,14,0.74)_48%,rgba(16,16,14,0.48))]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,16,14,0.1),rgba(16,16,14,0.9))]" />
         </div>
-      </section>
 
-      <Section animated={false}>
-        <RevealSection delay={0.02}>
-          <Surface className="surface-premium">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="label-chip">Trusted Training Ecosystem</div>
-                <h2 className="mt-3 text-3xl font-bold text-white">Trusted by local athletes and serious lifters</h2>
-                <p className="mt-2 text-muted">
-                  Real coaching, clean floor culture, and measurable progression standards.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {trustStats.map((s) => (
-                  <div key={s.label} className="surface-card-soft p-4 text-center">
-                    <div className="text-2xl font-bold text-white">{s.value}</div>
-                    <div className="mt-1 text-xs text-muted">{s.label}</div>
-                  </div>
-                ))}
-              </div>
+        <div className="relative mx-auto grid min-h-[calc(100svh-72px)] max-w-7xl grid-cols-1 items-end gap-10 px-5 py-10 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:py-16">
+          <div className="max-w-3xl pb-6">
+            <Badge tone="accent">{home.hero_badge}</Badge>
+            <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[1.02] tracking-normal text-[var(--public-text)] sm:text-5xl lg:text-7xl">
+              {home.hero_title}
+            </h1>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--public-muted)] sm:text-lg">{home.hero_description}</p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <PrimaryCTA to={home.hero_primary_cta_link || "/contact"}>{home.hero_primary_cta_text}</PrimaryCTA>
+              <SecondaryCTA to={home.hero_secondary_cta_link || "/pricing"}>{home.hero_secondary_cta_text}</SecondaryCTA>
             </div>
+          </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
-              {trustedBy.map((brand) => (
-                <span
-                  key={brand}
-                  className="inline-flex rounded-full border border-line/20 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200"
-                >
-                  {brand}
-                </span>
-              ))}
-            </div>
-          </Surface>
-        </RevealSection>
-      </Section>
-
-      <section ref={storySectionRef} className="section-pad relative h-[320vh] sm:h-[300vh]">
-        <div className="sticky top-14 h-[calc(100vh-3.5rem)] sm:top-16 sm:h-[calc(100vh-4rem)]">
-          <div className="h-full overflow-hidden rounded-[28px] border border-line/20 bg-[#090f17]">
-            <div className="px-5 py-6 sm:px-8 sm:py-7">
-              <div className="label-chip">Why A&A</div>
-              <h2 className="mt-3 text-3xl font-bold leading-tight text-white sm:text-4xl">Why Members Choose A&A Health Club</h2>
-              <p className="mt-2 max-w-3xl text-sm text-muted">
-                Facilities, coaching culture, and measurable progress that set A&A apart.
-              </p>
-              <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                <motion.div
-                  className="h-full rounded-full bg-accent"
-                  animate={{ width: `${((activeStoryIndex + 1) / storySteps.length) * 100}%` }}
-                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                />
-              </div>
-            </div>
-
-            <div className="px-5 pb-5 sm:px-8 sm:pb-8">
-              <div className="relative h-[64vh] min-h-[500px] overflow-hidden rounded-2xl border border-line/15 bg-[#0a1018] sm:h-[58vh] sm:min-h-[380px]">
-                <motion.div
-                  key={`bg-${activeStoryIndex}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.45 }}
-                  className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${activeTheme.glow}`}
-                />
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.08),transparent_45%)]" />
-
-                <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
-                  {storySteps.map((_, i) => (
-                    <motion.span
-                      key={i}
-                      className="h-1.5 rounded-full bg-white/25"
-                      animate={{ width: i === activeStoryIndex ? 44 : 18, opacity: i <= activeStoryIndex ? 1 : 0.45 }}
-                      transition={{ duration: 0.28 }}
-                    />
-                  ))}
+          <div className="grid grid-cols-1 gap-3 pb-6 sm:grid-cols-3 lg:grid-cols-1">
+            {heroMetrics.slice(0, 3).map((metric) => {
+              const Icon = metricIcon(metric.icon);
+              return (
+                <div key={metric.label} className="rounded-2xl border border-white/16 bg-[#11100e]/72 p-4 backdrop-blur-sm">
+                  <Icon className="h-5 w-5 text-[var(--public-accent-strong)]" />
+                  <div className="mt-3 text-2xl font-semibold text-[var(--public-text)]">{metric.value}</div>
+                  <div className="text-sm text-[var(--public-muted)]">{metric.label}</div>
                 </div>
-
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.article
-                    key={activeStoryIndex}
-                    initial={{ opacity: 0, y: storyDirection > 0 ? 24 : -24, filter: "blur(6px)" }}
-                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                    exit={{ opacity: 0, y: storyDirection > 0 ? -18 : 18, filter: "blur(4px)" }}
-                    transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                    className="absolute inset-0 overflow-y-auto p-5 pt-8 sm:p-8"
-                  >
-                    <div className="grid min-h-full grid-cols-1 items-start gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-                      <div>
-                        <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-zinc-100">
-                          {activeTheme.chip}
-                        </div>
-
-                        <div className="mt-4 flex items-end gap-3">
-                          <motion.div
-                            key={`num-${activeStoryIndex}`}
-                            initial={{ y: 16, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            className="text-4xl font-black tracking-tight text-white/90 sm:text-5xl"
-                          >
-                            {String(activeStoryIndex + 1).padStart(2, "0")}
-                          </motion.div>
-                          <div className="pb-1 text-xs font-semibold tracking-[0.14em] text-zinc-400">{activeStep.eyebrow}</div>
-                        </div>
-
-                        <h3 className="mt-3 text-2xl font-bold leading-tight text-white sm:text-4xl">{activeStep.title}</h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-300 sm:text-base">{activeStep.description}</p>
-                      </div>
-
-                      <div className="rounded-2xl border border-line/15 bg-white/[0.04] p-5 backdrop-blur-sm">
-                        <div className="space-y-2">
-                          {activeStep.bullets.map((b) => (
-                            <div key={b} className="rounded-lg border border-line/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
-                              {b}
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-4 inline-flex rounded-full border border-accent/35 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
-                          {activeStep.metric}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.article>
-                </AnimatePresence>
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      <Section animated={false}>
-        <RevealSection delay={0.02}>
-          <Surface className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-2xl font-bold text-white">Ready to start with a structured plan?</h3>
-              <p className="mt-1 text-sm text-muted">Book a trial and get your personalized roadmap from day one.</p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <PrimaryCTA to="/contact">Book trial now</PrimaryCTA>
-              <SecondaryCTA to="/pricing">See pricing</SecondaryCTA>
-            </div>
-          </Surface>
-        </RevealSection>
+      <Section>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {statusItems.slice(0, 3).map((item) => {
+            const Icon = metricIcon(item.icon);
+            return (
+              <Card key={item.label}>
+                <Icon className="h-5 w-5 text-[var(--public-accent-strong)]" />
+                <h2 className="mt-4 text-xl font-semibold text-[var(--public-text)]">{item.label}</h2>
+                <p className="mt-2 text-sm leading-6 text-[var(--public-muted)]">{item.value}</p>
+              </Card>
+            );
+          })}
+        </div>
       </Section>
 
-      <Section animated={false}>
-        <RevealSection>
-          <Surface>
-            <h2 className="text-3xl font-bold text-white">{home.status_title}</h2>
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {gymStatus.map((item: any, idx: number) => {
-                const Icon: LucideIcon = item.icon ?? Clock3;
-                return (
-                  <motion.div
-                    key={item.label}
-                    initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, amount: 0.3 }}
-                    transition={{ duration: 0.44, delay: idx * 0.05 }}
-                    className="tilt-card card-glow surface-card-soft p-4"
-                  >
-                    <div className="tilt-content">
-                      <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
-                        <Icon className="h-4 w-4 text-accent" />
-                      </div>
-                      <div className="mt-3 text-sm font-bold text-white">{item.label}</div>
-                      <div className="mt-1 text-sm text-muted">{item.value}</div>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </Surface>
-        </RevealSection>
-      </Section>
-
-      <Section animated={false}>
-        <RevealSection delay={0.03}>
-          <div className="flex items-end justify-between gap-4">
-            <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.zones_title}</h2>
-            <Link to="/facilities" className="btn-secondary text-sm">
-              View all zones
+      <Section className="bg-[var(--public-bg-soft)]">
+        <SectionHeading
+          eyebrow="Facilities"
+          title={home.zones_title || "Training zones built for focused work"}
+          description="The gym floor is organized around strength, conditioning and practical movement so members can train with purpose."
+          action={<TextLink to="/facilities">Explore facilities</TextLink>}
+        />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {zones.map((zone, index) => (
+            <Link key={zone.id} to="/facilities" className={index === 0 ? "lg:col-span-2" : ""}>
+              <ImageFrame src={zone.image} alt={zone.title} className={index === 0 ? "aspect-[16/10]" : "aspect-[4/3]"} />
+              <div className="mt-4">
+                {zone.tag ? <Badge>{zone.tag}</Badge> : null}
+                <h3 className="mt-3 text-2xl font-semibold text-[var(--public-text)]">{zone.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-[var(--public-muted)]">{zone.description}</p>
+              </div>
             </Link>
-          </div>
+          ))}
+        </div>
+      </Section>
 
-          <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
-            {zoneCards.map((zone: any, idx: number) => (
-              <motion.article
-                key={zone.name}
-                initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.2 }}
-                transition={{ duration: 0.48, delay: idx * 0.06 }}
-                className="group tilt-card surface-card-soft p-4"
-              >
-                <div className="tilt-content">
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-white/5">
-                    <img
-                      src={zone.image}
-                      alt={zone.name}
-                      className="absolute inset-0 h-full w-full object-cover transition duration-700 ease-out group-hover:scale-110"
-                    />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-85" />
-                  </div>
-                  <h3 className="mt-4 text-2xl font-bold text-white">{zone.name}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted">{zone.desc}</p>
+      <Section>
+        <SectionHeading
+          eyebrow="Coaching"
+          title={home.coaches_title}
+          description={home.coaches_subtitle}
+          action={<TextLink to="/trainers">Meet trainers</TextLink>}
+        />
+        {trainers.length ? (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            {trainers.map((trainer) => (
+              <Card key={trainer.id} className="p-0">
+                <ImageFrame src={trainer.image} alt={trainer.name} className="aspect-[4/5] rounded-b-none border-0" />
+                <div className="p-5">
+                  <h3 className="text-xl font-semibold text-[var(--public-text)]">{trainer.name}</h3>
+                  <p className="mt-1 text-sm text-[var(--public-muted)]">{trainer.role}</p>
+                  {trainer.specialties?.length ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {trainer.specialties.slice(0, 3).map((specialty) => (
+                        <Badge key={specialty}>{specialty}</Badge>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-              </motion.article>
+              </Card>
             ))}
           </div>
-        </RevealSection>
+        ) : (
+          <EmptyState title="Trainer profiles are being prepared" description="Trainer data can be managed from the existing admin content tools." />
+        )}
       </Section>
 
-      <Section animated={false}>
-        <RevealSection delay={0.04}>
-          <Surface className="surface-premium">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.coaches_title}</h2>
-                <p className="mt-2 text-muted">{home.coaches_subtitle}</p>
+      <Section className="bg-[var(--public-bg-soft)]">
+        <SplitFeature
+          eyebrow={home.maximus_badge}
+          title={home.maximus_title}
+          description={home.maximus_description}
+          image={home.maximus_image}
+          imageAlt="Maximus Strength powerlifting training"
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {points.slice(0, 4).map((point) => (
+              <div key={point} className="rounded-xl border border-[var(--public-line)] bg-white/[0.03] p-4 text-sm leading-6 text-[var(--public-muted)]">
+                {point}
               </div>
-              <Link to="/trainers" className="btn-primary inline-flex items-center gap-2">
-                View all trainers
-                <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-              {coachCards.map((coach: any, idx: number) => (
-                <motion.article
-                  key={coach.name}
-                  initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.2 }}
-                  transition={{ duration: 0.48, delay: idx * 0.06 }}
-                  className="group tilt-card surface-card-soft p-4"
-                >
-                  <div className="tilt-content">
-                    <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-white/5">
-                      <img
-                        src={coach.image}
-                        alt={coach.name}
-                        className="absolute inset-0 h-full w-full object-cover transition duration-700 ease-out group-hover:scale-110"
-                      />
-                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-80" />
-                    </div>
-                    <h3 className="mt-4 text-2xl font-bold text-white">{coach.name}</h3>
-                    <p className="mt-1 text-sm text-zinc-300">{coach.role}</p>
-                    <p className="mt-2 text-sm text-muted">{coach.focus}</p>
-                  </div>
-                </motion.article>
-              ))}
-            </div>
-          </Surface>
-        </RevealSection>
-      </Section>
-
-      <Section animated={false}>
-        <RevealSection delay={0.03}>
-          <Surface className="surface-premium bg-gradient-to-r from-white/10 via-white/5 to-white/10">
-            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-              <div>
-                <div className="label-chip">{home.maximus_badge}</div>
-                <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">{home.maximus_title}</h2>
-                <p className="mt-3 leading-relaxed text-muted">{home.maximus_description}</p>
-
-                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {maximusPoints.map((point: string, idx: number) => (
-                    <motion.div
-                      key={point}
-                      initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, amount: 0.4 }}
-                      transition={{ duration: 0.42, delay: idx * 0.04 }}
-                      className="tilt-card surface-card-soft p-3 text-sm text-zinc-200"
-                    >
-                      <div className="tilt-content">{point}</div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <PrimaryCTA to={home.maximus_learn_more_link || "/about#maximus-strength"}>
-                    Learn more
-                  </PrimaryCTA>
-                  <a
-                    href={home.maximus_instagram_link || "https://www.instagram.com/teammaximusstrength/"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-secondary text-center"
-                  >
-                    Instagram
-                  </a>
-                </div>
-              </div>
-
-              <div className="tilt-card relative aspect-[16/10] overflow-hidden rounded-2xl bg-white/5">
-                <div className="tilt-content h-full w-full">
-                  <img
-                    src={home.maximus_image}
-                    alt="Maximus Strength powerlifting"
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-80" />
-                </div>
-              </div>
-            </div>
-          </Surface>
-        </RevealSection>
-      </Section>
-
-      <Section animated={false}>
-        <RevealSection delay={0.03}>
-          <h2 className="text-3xl font-bold text-white sm:text-4xl">{home.gallery_title || "Inside Our Gym"}</h2>
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {galleryImages.map((img: string, idx: number) => (
-              <motion.div
-                key={`${img}-${idx}`}
-                initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.28 }}
-                transition={{ duration: 0.45, delay: idx * 0.05 }}
-                className="group tilt-card relative aspect-[4/5] overflow-hidden rounded-2xl bg-white/5"
-              >
-                <div className="tilt-content h-full w-full">
-                  <img
-                    src={img}
-                    alt={`Gym gallery ${idx + 1}`}
-                    className="absolute inset-0 h-full w-full object-cover transition duration-700 ease-out group-hover:scale-110"
-                  />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-70" />
-                </div>
-              </motion.div>
             ))}
           </div>
-        </RevealSection>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <PrimaryCTA to={home.maximus_learn_more_link || "/about#maximus-strength"}>Learn more</PrimaryCTA>
+            <a
+              href={home.maximus_instagram_link || "https://www.instagram.com/teammaximusstrength/"}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-11 items-center justify-center rounded-full border border-[var(--public-line-strong)] px-5 py-3 text-sm font-semibold text-[var(--public-text)] transition hover:border-[var(--public-accent)]"
+            >
+              Instagram
+            </a>
+          </div>
+        </SplitFeature>
       </Section>
 
-      <Section animated={false}>
-        <RevealSection delay={0.03}>
-          <Surface>
-            <h2 className="text-3xl font-bold text-white">{home.testimonials_title}</h2>
-            <p className="mt-2 text-muted">{home.testimonials_subtitle}</p>
-
-            {testimonialsLoading ? (
-              <div className="mt-6 text-zinc-300">Loading testimonials...</div>
-            ) : testimonials.length === 0 ? (
-              <div className="mt-6 text-zinc-400">No testimonials yet.</div>
-            ) : (
-              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {testimonials.slice(0, 3).map((t, idx) => (
-                  <motion.article
-                    key={t.id}
-                    initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 16 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, amount: 0.3 }}
-                    transition={{ duration: 0.45, delay: idx * 0.05 }}
-                    className="tilt-card card-glow surface-card-soft p-5"
-                  >
-                    <div className="tilt-content">
-                      <div className="flex items-center gap-3">
-                        {t.image ? (
-                          <img
-                            src={t.image}
-                            alt={t.name}
-                            className="h-12 w-12 rounded-full object-cover ring-2 ring-white/20"
-                          />
-                        ) : (
-                          <div className="h-12 w-12 rounded-full bg-white/10" />
-                        )}
-                        <div>
-                          <div className="text-sm font-bold text-white">{t.name}</div>
-                          <div className="text-xs text-zinc-400">{t.goal}</div>
-                        </div>
-                      </div>
-                      <p className="mt-4 text-sm leading-relaxed text-zinc-200">"{t.quote}"</p>
-                    </div>
-                  </motion.article>
-                ))}
-              </div>
-            )}
-          </Surface>
-        </RevealSection>
-      </Section>
-
-      <Section animated={false} className="pb-10">
-        <RevealSection delay={0.02}>
-          <Surface className="surface-premium flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+      <Section>
+        <Surface>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
-              <h3 className="premium-heading text-3xl font-bold text-white">
-                {home.final_cta_title || "Ready to start your transformation?"}
-              </h3>
-              <p className="mt-2 text-muted">
-                {home.final_cta_description || "Book a trial session and get a personalized training roadmap."}
+              <Badge tone="accent">Membership</Badge>
+              <h2 className="mt-4 text-3xl font-semibold text-[var(--public-text)]">Choose a plan that matches your training routine.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--public-muted)]">
+                Compare memberships, then contact the team for the plan that fits your goals, schedule and current level.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <PrimaryCTA to={home.final_primary_cta_link || "/contact"}>
-                {home.final_primary_cta_text || "Book trial"}
-              </PrimaryCTA>
-              <SecondaryCTA to={home.final_secondary_cta_link || "/pricing"}>
-                {home.final_secondary_cta_text || "View pricing"}
-              </SecondaryCTA>
+              <PrimaryCTA to="/pricing">View memberships</PrimaryCTA>
+              <SecondaryCTA to="/contact">Ask for guidance</SecondaryCTA>
             </div>
-          </Surface>
-        </RevealSection>
+          </div>
+        </Surface>
       </Section>
 
-      <div className="fixed inset-x-0 bottom-3 z-[75] px-4 sm:hidden">
-        <div className="mx-auto flex max-w-md items-center gap-2 rounded-2xl border border-line/25 bg-[#080d14]/95 p-2 backdrop-blur-xl">
-          <Link to="/contact" className="btn-primary !py-2.5 flex-1 text-center text-xs">
+      <Section className="bg-[var(--public-bg-soft)]">
+        <SectionHeading eyebrow="Proof" title={home.testimonials_title} description={home.testimonials_subtitle} />
+        {testimonials.length ? (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            {testimonials.slice(0, 3).map((testimonial) => (
+              <Card key={testimonial.id}>
+                <div className="flex items-center gap-3">
+                  <ImageFrame src={testimonial.image} alt={testimonial.name} className="h-12 w-12 shrink-0 rounded-full" />
+                  <div>
+                    <h3 className="font-semibold text-[var(--public-text)]">{testimonial.name}</h3>
+                    <p className="text-xs text-[var(--public-muted)]">{testimonial.goal}</p>
+                  </div>
+                </div>
+                <p className="mt-5 text-sm leading-6 text-[var(--public-muted)]">"{testimonial.quote}"</p>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No testimonials added yet" description="The page will show testimonials once they are available in the CMS." />
+        )}
+      </Section>
+
+      <Section>
+        <SectionHeading eyebrow="Gallery" title={home.gallery_title || "Inside A&A Health Club"} />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {galleryImages.slice(0, 4).map((image, index) => (
+            <ImageFrame key={`${image}-${index}`} src={image} alt={`A&A Health Club gallery ${index + 1}`} className="aspect-[4/5]" />
+          ))}
+        </div>
+      </Section>
+
+      <Section className="pt-0">
+        <Surface className="text-center">
+          <h2 className="mx-auto max-w-3xl text-3xl font-semibold leading-tight text-[var(--public-text)] sm:text-4xl">
+            {home.final_cta_title}
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-[var(--public-muted)]">{home.final_cta_description}</p>
+          <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+            <PrimaryCTA to={home.final_primary_cta_link || "/contact"}>{home.final_primary_cta_text}</PrimaryCTA>
+            <SecondaryCTA to={home.final_secondary_cta_link || "/pricing"}>{home.final_secondary_cta_text}</SecondaryCTA>
+          </div>
+        </Surface>
+      </Section>
+
+      <div className="fixed inset-x-0 bottom-3 z-[55] px-4 sm:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-2 gap-2 rounded-full border border-[var(--public-line)] bg-[#11100e]/94 p-1.5 backdrop-blur-xl">
+          <Link to="/contact" className="rounded-full bg-[var(--public-accent)] px-4 py-2.5 text-center text-xs font-extrabold text-[#14110d]">
             Book Trial
           </Link>
-          <Link to="/pricing" className="btn-secondary !py-2.5 flex-1 text-center text-xs">
-            View Plans
+          <Link to="/pricing" className="rounded-full border border-[var(--public-line)] px-4 py-2.5 text-center text-xs font-semibold text-[var(--public-text)]">
+            Plans
           </Link>
         </div>
       </div>
-
     </PageRoot>
   );
 }

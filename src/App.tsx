@@ -11,7 +11,7 @@ export default function App() {
   const isAdminRoute = location.pathname.startsWith("/admin");
 
   return (
-    <div className="min-h-screen">
+    <div className={isAdminRoute ? "min-h-screen" : "public-site min-h-screen"}>
       <ScrollToTop />
       {!isAdminRoute ? <Navbar /> : null}
       <GlobalLoader />

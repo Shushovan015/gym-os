@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from "react";
-import type { ElementType } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ElementType, FormEvent } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
+  CheckCircle2,
   Clock3,
   Mail,
   MapPin,
@@ -12,7 +13,21 @@ import {
   Users,
 } from "lucide-react";
 import { getContactRequest } from "@src/redux/actions/contact";
-import { PageRoot, Section, Surface, SurfaceSoft, PrimaryCTA, SecondaryCTA } from "./PageKit";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  ImageFrame,
+  LoadingState,
+  PageRoot,
+  PrimaryCTA,
+  PublicSEO,
+  Section,
+  SectionHeading,
+  SecondaryCTA,
+  Surface,
+} from "./PageKit";
 
 type SummaryCard = {
   label: string;
@@ -50,6 +65,29 @@ type ContactContent = {
   bottom_secondary_cta_text: string;
   bottom_secondary_cta_link: string;
   summary_cards: SummaryCard[];
+};
+
+type FaqRow = {
+  id: number;
+  question: string;
+  answer: string;
+  is_active?: boolean;
+};
+
+type ContactState = {
+  contact?: {
+    content?: Partial<ContactContent> | null;
+    faqs?: FaqRow[];
+    loading?: boolean;
+    error?: string | null;
+  };
+};
+
+type ContactForm = {
+  name: string;
+  phone: string;
+  email: string;
+  message: string;
 };
 
 const iconMap: Record<string, ElementType> = {
@@ -91,211 +129,298 @@ const fallback: ContactContent = {
   bottom_primary_cta_link: "/contact",
   bottom_secondary_cta_text: "See memberships",
   bottom_secondary_cta_link: "/pricing",
-  summary_cards: [],
+  summary_cards: [
+    { label: "Response Time", value: "< 24 hrs", icon: "MessageCircle" },
+    { label: "Open Daily", value: "5AM - 9PM", icon: "Clock3" },
+    { label: "Coaches Available", value: "3+", icon: "Users" },
+    { label: "Location", value: "Butwal", icon: "MapPin" },
+  ],
 };
 
-const fallbackSummaryCards: SummaryCard[] = [
-  { label: "Response Time", value: "< 24 hrs", icon: "MessageCircle" },
-  { label: "Open Daily", value: "5AM - 9PM", icon: "Clock3" },
-  { label: "Coaches Available", value: "3+", icon: "Users" },
-  { label: "Location", value: "Butwal", icon: "MapPin" },
-];
+function normalizeSummaryCards(value: SummaryCard[] | undefined) {
+  const cards = Array.isArray(value) ? value : [];
+  const cleaned = cards
+    .map((card) => ({
+      label: String(card?.label ?? "").trim(),
+      value: String(card?.value ?? "").trim(),
+      icon: String(card?.icon ?? "MessageCircle").trim() || "MessageCircle",
+    }))
+    .filter((card) => card.label && card.value);
+
+  return cleaned.length ? cleaned : fallback.summary_cards;
+}
+
+function contactHref(kind: "phone" | "email", value: string) {
+  const cleanValue = value.trim();
+  if (!cleanValue || cleanValue.includes("X")) return "";
+  return kind === "phone"
+    ? `tel:${cleanValue.replace(/[^\d+]/g, "")}`
+    : `mailto:${cleanValue}`;
+}
 
 export default function Contact() {
   const dispatch = useDispatch();
-  const { content, faqs, loading, error } = useSelector(
-    (s: any) => s.contact ?? { content: null, faqs: [], loading: false, error: null }
+  const { content, faqs = [], loading = false, error = null } = useSelector(
+    (state: ContactState) => state.contact ?? {}
   );
+  const [form, setForm] = useState<ContactForm>({
+    name: "",
+    phone: "",
+    email: "",
+    message: "",
+  });
+  const [formMessage, setFormMessage] = useState("");
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     dispatch(getContactRequest());
   }, [dispatch]);
 
-  const c: ContactContent = { ...fallback, ...(content || {}) };
-
-  const summaryCards = useMemo(() => {
-    const raw = Array.isArray(c.summary_cards) ? c.summary_cards : [];
-    return raw.length
-      ? raw.map((card) => ({
-          label: card?.label || "",
-          value: card?.value || "",
-          icon: card?.icon || "MessageCircle",
-        }))
-      : fallbackSummaryCards;
-  }, [c.summary_cards]);
+  const page = { ...fallback, ...(content || {}) };
+  const summaryCards = useMemo(
+    () => normalizeSummaryCards(page.summary_cards),
+    [page.summary_cards]
+  );
+  const activeFaqs = faqs.filter((faq) => faq.is_active !== false);
+  const phoneHref = contactHref("phone", page.phone);
+  const emailHref = contactHref("email", page.email);
 
   const contactCards = [
-    { label: "Phone", value: c.phone, icon: Phone, href: `tel:${c.phone}` },
-    { label: "Email", value: c.email, icon: Mail, href: `mailto:${c.email}` },
-    { label: "Hours", value: c.hours, icon: Clock3 },
-    { label: "Location", value: c.location, icon: Navigation },
+    { label: "Phone", value: page.phone, icon: Phone, href: phoneHref },
+    { label: "Email", value: page.email, icon: Mail, href: emailHref },
+    { label: "Hours", value: page.hours, icon: Clock3 },
+    { label: "Location", value: page.location, icon: Navigation },
   ];
+
+  const updateForm = (key: keyof ContactForm, value: string) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setFormError("");
+    setFormMessage("");
+  };
+
+  const submitForm = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!form.name.trim() || !form.phone.trim() || !form.message.trim()) {
+      setFormMessage("");
+      setFormError("Name, phone and message are required before we can guide you.");
+      return;
+    }
+
+    setFormError("");
+    setFormMessage(
+      "Your inquiry details are ready, but online submission is not connected yet. Please call or email the gym team using the contact details on this page."
+    );
+  };
 
   return (
     <PageRoot>
-      <Section>
-        <div className="surface-card relative overflow-hidden p-0">
-          <img
-            src={c.hero_image}
-            alt="Contact A&A"
-            className="absolute inset-0 h-full w-full object-cover brightness-[0.45] saturate-[0.85]"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/70 to-black/55" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/45" />
+      <PublicSEO
+        title="Contact A&A Health Club | Trial Sessions and Membership Help"
+        description="Contact A&A Health Club in Butwal for gym visits, trial sessions, coaching questions and membership support."
+      />
 
-          <div className="relative z-10 p-7 sm:p-9 lg:p-10">
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-              <div>
-                <div className="label-chip">{c.hero_badge}</div>
-                <h1 className="mt-5 text-4xl sm:text-5xl font-bold leading-[1.05] tracking-tight text-white">
-                  {c.hero_title}
-                </h1>
-                <p className="mt-4 max-w-2xl text-zinc-200 leading-relaxed">{c.hero_description}</p>
+      <Section animated={false} className="pt-10 sm:pt-14">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+          <div>
+            <Badge tone="accent">{page.hero_badge}</Badge>
+            <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight tracking-normal text-[var(--public-text)] sm:text-5xl lg:text-6xl">
+              {page.hero_title}
+            </h1>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--public-muted)]">
+              {page.hero_description}
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <PrimaryCTA to={page.cta_primary_link || "/contact"}>{page.cta_primary_text}</PrimaryCTA>
+              <SecondaryCTA to={page.cta_secondary_link || "/pricing"}>{page.cta_secondary_text}</SecondaryCTA>
+            </div>
+          </div>
 
-                <div className="mt-7 flex flex-col sm:flex-row gap-3">
-                  <PrimaryCTA to={c.cta_primary_link || "/contact"}>{c.cta_primary_text}</PrimaryCTA>
-                  <SecondaryCTA to={c.cta_secondary_link || "/pricing"}>
-                    {c.cta_secondary_text}
-                  </SecondaryCTA>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {summaryCards.map((card, idx) => {
-                  const Icon = iconMap[card.icon] || MessageCircle;
-                  return (
-                    <div
-                      key={`${card.label}-${idx}`}
-                      className="mini-glow rounded-xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
-                    >
-                      <Icon className="h-5 w-5 text-accent" />
-                      <div className="mt-3 text-2xl font-bold text-white">{card.value}</div>
-                      <div className="text-xs text-zinc-300">{card.label}</div>
-                    </div>
-                  );
-                })}
-              </div>
+          <div className="space-y-4">
+            <ImageFrame
+              src={page.hero_image}
+              alt="A&A Health Club contact"
+              className="aspect-[4/3]"
+              loading="eager"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              {summaryCards.slice(0, 4).map((card) => {
+                const Icon = iconMap[card.icon] || MessageCircle;
+                return (
+                  <Card key={card.label}>
+                    <Icon className="h-5 w-5 text-[var(--public-accent-strong)]" />
+                    <div className="mt-3 text-xl font-semibold text-[var(--public-text)]">{card.value}</div>
+                    <div className="text-xs text-[var(--public-muted)]">{card.label}</div>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         </div>
       </Section>
 
-      <Section>
-        {loading ? <Surface className="text-zinc-300">Loading contact info...</Surface> : null}
-        {error ? <Surface className="text-red-300">{error}</Surface> : null}
+      <Section className="bg-[var(--public-bg-soft)]">
+        <SectionHeading
+          eyebrow="Visit or Message"
+          title={page.info_title}
+          description={page.info_description}
+        />
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
-          <SurfaceSoft className="p-6">
-            <h2 className="text-2xl font-bold text-white">{c.info_title}</h2>
-            <p className="mt-2 text-sm text-muted">{c.info_description}</p>
+        {loading ? <LoadingState label="Loading contact details..." /> : null}
+        {error ? <div className="mt-4"><ErrorState message={error} /></div> : null}
 
-            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <Surface>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {contactCards.map((card) => (
-                <article key={card.label} className="surface-card-soft mini-glow p-4">
-                  <card.icon className="h-4 w-4 text-accent" />
-                  <div className="mt-2 text-xs uppercase tracking-[0.12em] text-zinc-400">{card.label}</div>
+                <Card key={card.label} className="h-full">
+                  <card.icon className="h-5 w-5 text-[var(--public-accent-strong)]" />
+                  <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--public-muted)]">
+                    {card.label}
+                  </div>
                   {card.href ? (
-                    <a href={card.href} className="mt-1 block text-sm font-semibold text-white hover:text-accent transition">
+                    <a
+                      href={card.href}
+                      className="mt-1 block break-words text-sm font-semibold text-[var(--public-text)] transition hover:text-[var(--public-accent-strong)]"
+                    >
                       {card.value}
                     </a>
                   ) : (
-                    <div className="mt-1 text-sm font-semibold text-white">{card.value}</div>
+                    <div className="mt-1 break-words text-sm font-semibold text-[var(--public-text)]">
+                      {card.value}
+                    </div>
                   )}
-                </article>
+                </Card>
               ))}
             </div>
 
-            <div className="mt-5 rounded-xl border border-line/10 bg-black/30 p-4">
-              <div className="text-sm text-zinc-200">{c.visit_text}</div>
+            <div className="mt-5 rounded-2xl border border-[var(--public-line)] bg-white/[0.03] p-4 text-sm leading-6 text-[var(--public-muted)]">
+              {page.visit_text}
             </div>
 
-            <div className="mt-5 rounded-xl overflow-hidden border border-line/10 bg-white/5 h-60">
-              {c.map_embed_url ? (
+            <div className="mt-5 h-72 overflow-hidden rounded-2xl border border-[var(--public-line)] bg-[#11100e]">
+              {page.map_embed_url ? (
                 <iframe
-                  title="Gym location map"
-                  src={c.map_embed_url}
+                  title="A&A Health Club location map"
+                  src={page.map_embed_url}
                   className="h-full w-full border-0"
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
                 />
               ) : (
-                <div className="h-full w-full grid place-items-center text-sm text-zinc-300">
-                  Add Google Maps embed URL in Admin Contact
+                <div className="grid h-full place-items-center px-5 text-center text-sm text-[var(--public-muted)]">
+                  Add the Google Maps embed URL from the existing admin Contact content.
                 </div>
               )}
             </div>
-          </SurfaceSoft>
+          </Surface>
 
-          <Surface className="p-6">
-            <h2 className="text-2xl font-bold text-white">{c.form_title}</h2>
-            <p className="mt-2 text-sm text-muted">{c.form_description}</p>
+          <Surface>
+            <Badge>Inquiry</Badge>
+            <h2 className="mt-4 text-3xl font-semibold text-[var(--public-text)]">{page.form_title}</h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--public-muted)]">{page.form_description}</p>
 
-            <form className="mt-5 space-y-3">
-              <input
-                className="w-full rounded-xl bg-white/10 px-4 py-3 text-sm text-white placeholder:text-zinc-400 outline-none focus:bg-white/15"
-                placeholder="Full name"
-              />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <form className="mt-6 space-y-4" onSubmit={submitForm}>
+              <label className="block">
+                <span className="text-xs font-semibold text-[var(--public-muted)]">Full name</span>
                 <input
-                  className="w-full rounded-xl bg-white/10 px-4 py-3 text-sm text-white placeholder:text-zinc-400 outline-none focus:bg-white/15"
-                  placeholder="Phone number"
+                  value={form.name}
+                  onChange={(event) => updateForm("name", event.target.value)}
+                  className="mt-2 min-h-12 w-full rounded-xl border border-[var(--public-line)] bg-[#11100e] px-4 text-sm text-[var(--public-text)] placeholder:text-[var(--public-muted)]"
+                  placeholder="Your name"
                 />
-                <input
-                  className="w-full rounded-xl bg-white/10 px-4 py-3 text-sm text-white placeholder:text-zinc-400 outline-none focus:bg-white/15"
-                  placeholder="Email address"
-                />
+              </label>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-semibold text-[var(--public-muted)]">Phone number</span>
+                  <input
+                    value={form.phone}
+                    onChange={(event) => updateForm("phone", event.target.value)}
+                    className="mt-2 min-h-12 w-full rounded-xl border border-[var(--public-line)] bg-[#11100e] px-4 text-sm text-[var(--public-text)] placeholder:text-[var(--public-muted)]"
+                    placeholder="98..."
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-[var(--public-muted)]">Email address</span>
+                  <input
+                    value={form.email}
+                    onChange={(event) => updateForm("email", event.target.value)}
+                    className="mt-2 min-h-12 w-full rounded-xl border border-[var(--public-line)] bg-[#11100e] px-4 text-sm text-[var(--public-text)] placeholder:text-[var(--public-muted)]"
+                    placeholder="you@example.com"
+                  />
+                </label>
               </div>
-              <textarea
-                rows={5}
-                className="w-full rounded-xl bg-white/10 px-4 py-3 text-sm text-white placeholder:text-zinc-400 outline-none focus:bg-white/15"
-                placeholder="Tell us your goal, experience, and preferred training time"
-              />
+
+              <label className="block">
+                <span className="text-xs font-semibold text-[var(--public-muted)]">Training goal</span>
+                <textarea
+                  value={form.message}
+                  onChange={(event) => updateForm("message", event.target.value)}
+                  rows={5}
+                  className="mt-2 w-full rounded-xl border border-[var(--public-line)] bg-[#11100e] px-4 py-3 text-sm text-[var(--public-text)] placeholder:text-[var(--public-muted)]"
+                  placeholder="Tell us your goal, experience level and preferred training time"
+                />
+              </label>
+
+              {formError ? (
+                <div className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-100" role="alert">
+                  {formError}
+                </div>
+              ) : null}
+              {formMessage ? (
+                <div className="flex gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm leading-6 text-emerald-100" role="status">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{formMessage}</span>
+                </div>
+              ) : null}
+
               <button
-                type="button"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-black hover:bg-accent2 transition"
+                type="submit"
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--public-accent)] px-5 py-3 text-sm font-extrabold text-[#14110d] transition hover:bg-[var(--public-accent-strong)]"
               >
-                {c.form_button_text}
+                {page.form_button_text}
                 <Send className="h-4 w-4" />
               </button>
-              <p className="text-xs text-zinc-400">{c.form_note}</p>
+              <p className="text-xs leading-5 text-[var(--public-muted)]">{page.form_note}</p>
             </form>
           </Surface>
         </div>
       </Section>
 
       <Section>
-        <Surface>
-          <h3 className="text-3xl font-bold text-white">{c.faq_title}</h3>
-          <p className="mt-2 text-muted">{c.faq_description}</p>
-
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {(faqs || []).length ? (
-              (faqs || []).map((f: any) => (
-                <article key={f.id} className="surface-card-soft mini-glow p-5">
-                  <h4 className="text-base font-bold text-white">{f.question}</h4>
-                  <p className="mt-2 text-sm text-zinc-300 leading-relaxed">{f.answer}</p>
-                </article>
-              ))
-            ) : (
-              <div className="text-sm text-zinc-400">No FAQs added yet.</div>
-            )}
+        <SectionHeading
+          eyebrow="FAQ"
+          title={page.faq_title}
+          description={page.faq_description}
+        />
+        {activeFaqs.length ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {activeFaqs.map((faq) => (
+              <Card key={faq.id}>
+                <h3 className="text-lg font-semibold text-[var(--public-text)]">{faq.question}</h3>
+                <p className="mt-3 text-sm leading-6 text-[var(--public-muted)]">{faq.answer}</p>
+              </Card>
+            ))}
           </div>
-        </Surface>
+        ) : (
+          <EmptyState title="No FAQs added yet" description="FAQs can be managed from the existing admin Contact tools." />
+        )}
       </Section>
 
-      <Section className="pb-10">
-        <Surface className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          <div>
-            <h3 className="text-3xl font-bold text-white">{c.bottom_cta_title}</h3>
-            <p className="mt-2 text-muted">{c.bottom_cta_description}</p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <PrimaryCTA to={c.bottom_primary_cta_link || "/contact"}>
-              {c.bottom_primary_cta_text}
-            </PrimaryCTA>
-            <SecondaryCTA to={c.bottom_secondary_cta_link || "/pricing"}>
-              {c.bottom_secondary_cta_text}
-            </SecondaryCTA>
+      <Section className="pt-0">
+        <Surface>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <h2 className="text-3xl font-semibold text-[var(--public-text)]">{page.bottom_cta_title}</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--public-muted)]">
+                {page.bottom_cta_description}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <PrimaryCTA to={page.bottom_primary_cta_link || "/contact"}>{page.bottom_primary_cta_text}</PrimaryCTA>
+              <SecondaryCTA to={page.bottom_secondary_cta_link || "/pricing"}>{page.bottom_secondary_cta_text}</SecondaryCTA>
+            </div>
           </div>
         </Surface>
       </Section>

@@ -254,3 +254,34 @@ html.force-reduced-motion *::after {
   transition: none !important;
   scroll-behavior: auto !important;
 }
+
+.public-site {
+  --public-bg: #10100e;
+  --public-bg-soft: #151411;
+  --public-surface: #1b1915;
+  --public-surface-2: #232019;
+  --public-line: rgba(245, 239, 226, 0.12);
+  --public-line-strong: rgba(245, 239, 226, 0.2);
+  --public-text: #f5efe2;
+  --public-muted: #bdb3a1;
+  --public-accent: #d99a28;
+  --public-accent-strong: #f0b23d;
+  --public-danger: #ef6358;
+  color: var(--public-text);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(217, 154, 40, 0.08), transparent 34rem),
+    linear-gradient(180deg, var(--public-bg) 0%, #0b0b0a 100%);
+}
+
+.public-site a,
+.public-site button,
+.public-site input,
+.public-site textarea,
+.public-site select {
+  outline-color: var(--public-accent-strong);
+}
+
+.public-site :focus-visible {
+  outline: 2px solid var(--public-accent-strong);
+  outline-offset: 3px;
+}
