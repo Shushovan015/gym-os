@@ -1,331 +1,222 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import NepaliDate from "nepali-date-converter";
+import { CalendarDays, Check, Info, RotateCcw, Search, UserRound, X } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import {
+  AdminBadge,
+  AdminButton,
+  AdminCard,
+  AdminDrawer,
+  AdminEmptyState,
+  AdminInput,
+  AdminLoading,
+  AdminNotice,
+  AdminPageHeader,
+  AdminSectionTitle,
+  AdminSelect,
+  AdminTableScroll,
+  AdminTableShell,
+} from "@src/components/admin/AdminUI";
+import type { AdminSettings, AttendanceRow, HolidayRow, MemberRow } from "./adminTypes";
+import {
+  BS_MONTHS,
+  buildBsMonthDays,
+  cx,
+  defaultAdminSettings,
+  formatDisplayDate,
+  getNepalTodayAdDate,
+  statusLabel,
+} from "./adminUtils";
 
-type AttendanceStatus = "present" | "late" | "absent" | "excused";
+type ViewMode = "month" | "week" | "day";
+type DayCell = ReturnType<typeof buildBsMonthDays>[number];
 
-type MemberOption = {
-  id: number;
-  member_id: string;
-  full_name: string;
-  email: string | null;
-  phone: string | null;
-  membership_type: string | null;
-  membership_status: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  payment_status: string | null;
-  payment_due_date: string | null;
-  notes: string | null;
-};
-
-type AttendanceRow = {
-  id: number;
-  member_ref: number;
-  attendance_date: string;
-  status: AttendanceStatus;
-  deleted_at: string | null;
-};
-
-type HolidayRow = {
-  id: number;
-  holiday_date: string;
-  name: string | null;
-};
-
-type BsDayCell = {
-  bsDay: number;
-  adDate: string;
-  weekday: string;
-  isSaturday: boolean;
-};
-
-const BS_MONTHS = [
-  "बैशाख",
-  "जेठ",
-  "असार",
-  "साउन",
-  "भदौ",
-  "असोज",
-  "कार्तिक",
-  "मंसिर",
-  "पुष",
-  "माघ",
-  "फागुन",
-  "चैत",
-];
-
-function pad2(value: number) {
-  return value.toString().padStart(2, "0");
+function cellKey(memberId: number, adDate: string) {
+  return `${memberId}:${adDate}`;
 }
 
-function formatAdDate(date: Date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+function todayBsDate(todayAd: string) {
+  return new NepaliDate(new Date(`${todayAd}T00:00:00`));
 }
 
 function formatNepaliNumber(value: number) {
   return value.toLocaleString("ne-NP-u-nu-deva");
 }
 
-function formatBsFromAd(adDate: string | null) {
-  if (!adDate) return "-";
-  try {
-    return new NepaliDate(new Date(`${adDate}T00:00:00`)).format("YYYY-MM-DD");
-  } catch {
-    return adDate;
-  }
-}
-
-function cellKey(memberId: number, adDate: string) {
-  return `${memberId}:${adDate}`;
-}
-
-function buildBsMonthDays(bsYear: number, bsMonthIndex: number) {
-  const result: BsDayCell[] = [];
-
-  for (let day = 1; day <= 32; day += 1) {
-    const bsDate = new NepaliDate(bsYear, bsMonthIndex, day);
-    if (bsDate.getYear() !== bsYear || bsDate.getMonth() !== bsMonthIndex) {
-      break;
-    }
-
-    result.push({
-      bsDay: day,
-      adDate: formatAdDate(bsDate.toJsDate()),
-      weekday: bsDate.format("dd", "np"),
-      isSaturday: bsDate.getDay() === 6,
-    });
-  }
-
-  return result;
-}
-
 export default function AdminAttendance() {
-  const todayBs = new NepaliDate();
-  const [members, setMembers] = useState<MemberOption[]>([]);
+  const todayAd = useMemo(() => getNepalTodayAdDate(), []);
+  const initialBs = useMemo(() => todayBsDate(todayAd), [todayAd]);
+
+  const [settings, setSettings] = useState<AdminSettings>(defaultAdminSettings);
+  const [members, setMembers] = useState<MemberRow[]>([]);
   const [records, setRecords] = useState<AttendanceRow[]>([]);
-  const [holidays, setHolidays] = useState<HolidayRow[]>([]);
-  const [selectedBsYear, setSelectedBsYear] = useState<number>(todayBs.getYear());
-  const [selectedBsMonth, setSelectedBsMonth] = useState<number>(todayBs.getMonth());
-  const [loading, setLoading] = useState(true);
-  const [activeCell, setActiveCell] = useState<string>("");
-  const [activeHolidayDate, setActiveHolidayDate] = useState<string>("");
-  const [message, setMessage] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [profileMember, setProfileMember] = useState<MemberOption | null>(null);
   const [deletedRecords, setDeletedRecords] = useState<AttendanceRow[]>([]);
-  const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
-  const [focusDay, setFocusDay] = useState<number>(1);
+  const [holidays, setHolidays] = useState<HolidayRow[]>([]);
+  const [selectedBsYear, setSelectedBsYear] = useState(initialBs.getYear());
+  const [selectedBsMonth, setSelectedBsMonth] = useState(initialBs.getMonth());
+  const [focusDay, setFocusDay] = useState(initialBs.getDate());
+  const [viewMode, setViewMode] = useState<ViewMode>("day");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [activeCell, setActiveCell] = useState("");
+  const [activeHolidayDate, setActiveHolidayDate] = useState("");
+  const [profileMember, setProfileMember] = useState<MemberRow | null>(null);
 
   const bsDays = useMemo(
-    () => buildBsMonthDays(selectedBsYear, selectedBsMonth),
-    [selectedBsYear, selectedBsMonth]
+    () => buildBsMonthDays(selectedBsYear, selectedBsMonth, settings.weekly_closing_day),
+    [selectedBsMonth, selectedBsYear, settings.weekly_closing_day]
   );
 
+  const todayDay = bsDays.find((day) => day.adDate === todayAd);
+  const selectedMonthStart = bsDays[0]?.adDate ?? todayAd;
+  const selectedMonthEnd = bsDays[bsDays.length - 1]?.adDate ?? todayAd;
+
   const yearOptions = useMemo(() => {
-    const startYear = todayBs.getYear() - 6;
-    const endYear = todayBs.getYear() + 3;
-    const values: number[] = [];
-    for (let year = startYear; year <= endYear; year += 1) {
-      values.push(year);
-    }
-    return values;
-  }, [todayBs]);
+    const start = initialBs.getYear() - 6;
+    const end = initialBs.getYear() + 3;
+    const years: Array<{ value: number; label: string }> = [];
+    for (let year = start; year <= end; year += 1) years.push({ value: year, label: formatNepaliNumber(year) });
+    return years;
+  }, [initialBs]);
+
+  const monthOptions = BS_MONTHS.map((label, value) => ({ value, label }));
 
   const attendanceMap = useMemo(() => {
     const map = new Map<string, AttendanceRow>();
-    records.forEach((record) => {
-      map.set(cellKey(record.member_ref, record.attendance_date), record);
-    });
+    records.forEach((record) => map.set(cellKey(record.member_ref, record.attendance_date), record));
     return map;
   }, [records]);
 
-  const holidayDateSet = useMemo(() => new Set(holidays.map((h) => h.holiday_date)), [holidays]);
   const holidayByDate = useMemo(() => {
     const map = new Map<string, HolidayRow>();
-    holidays.forEach((h) => map.set(h.holiday_date, h));
+    holidays.forEach((holiday) => map.set(holiday.holiday_date, holiday));
     return map;
   }, [holidays]);
 
-  useEffect(() => {
-    if (bsDays.length === 0) return;
-    if (!bsDays.find((d) => d.bsDay === focusDay)) {
-      setFocusDay(bsDays[0].bsDay);
-    }
-  }, [bsDays, focusDay]);
-
   const visibleDays = useMemo(() => {
     if (viewMode === "month") return bsDays;
-    if (viewMode === "day") return bsDays.filter((d) => d.bsDay === focusDay);
+    if (viewMode === "day") return bsDays.filter((day) => day.bsDay === focusDay);
     const start = Math.floor((focusDay - 1) / 7) * 7 + 1;
-    const end = start + 6;
-    return bsDays.filter((d) => d.bsDay >= start && d.bsDay <= end);
+    return bsDays.filter((day) => day.bsDay >= start && day.bsDay <= start + 6);
   }, [bsDays, focusDay, viewMode]);
 
   const filteredMembers = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return members;
-    return members.filter(
-      (member) =>
-        member.full_name.toLowerCase().includes(query) || member.member_id.toLowerCase().includes(query)
+    const activeMembers = members.filter((member) => !member.deleted_at);
+    if (!query) return activeMembers;
+    return activeMembers.filter((member) =>
+      [member.full_name, member.member_id, member.phone, member.email ?? ""].join(" ").toLowerCase().includes(query)
     );
   }, [members, searchTerm]);
 
-  const loadMembers = async () => {
-    const { data, error } = await supabase
-      .from("members")
-      .select(
-        "id, member_id, full_name, email, phone, membership_type, membership_status, start_date, end_date, payment_status, payment_due_date, notes"
-      )
-      .order("full_name", { ascending: true })
-      .limit(1000);
+  const selectedDayInfo = visibleDays[0] ?? todayDay ?? bsDays[0];
+  const selectedHoliday = selectedDayInfo ? holidayByDate.get(selectedDayInfo.adDate) : undefined;
+  const selectedDayUnavailable = Boolean(selectedDayInfo?.isClosingDay || (settings.attendance_holiday_lock && selectedHoliday));
+  const todayHoliday = holidayByDate.get(todayAd);
 
-    if (error) {
-      setMessage(error.message);
+  const loadAttendanceData = async (bsYear: number, bsMonth: number, nextSettings = settings) => {
+    const days = buildBsMonthDays(bsYear, bsMonth, nextSettings.weekly_closing_day);
+    const start = days[0]?.adDate ?? todayAd;
+    const end = days[days.length - 1]?.adDate ?? todayAd;
+
+    const [recordsRes, deletedRes, holidaysRes] = await Promise.all([
+      supabase
+        .from("attendance_records")
+        .select("id, member_ref, attendance_date, status, deleted_at")
+        .gte("attendance_date", start)
+        .lte("attendance_date", end)
+        .is("deleted_at", null)
+        .order("attendance_date", { ascending: false })
+        .limit(10000),
+      supabase
+        .from("attendance_records")
+        .select("id, member_ref, attendance_date, status, deleted_at")
+        .gte("attendance_date", start)
+        .lte("attendance_date", end)
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false })
+        .limit(150),
+      supabase
+        .from("attendance_holidays")
+        .select("id, holiday_date, name")
+        .gte("holiday_date", start)
+        .lte("holiday_date", end)
+        .order("holiday_date", { ascending: true }),
+    ]);
+
+    if (recordsRes.error || deletedRes.error || holidaysRes.error) {
+      setMessage(recordsRes.error?.message || deletedRes.error?.message || holidaysRes.error?.message || "Attendance load failed.");
       return;
     }
 
-    setMembers((data as MemberOption[]) || []);
+    setRecords((recordsRes.data ?? []) as AttendanceRow[]);
+    setDeletedRecords((deletedRes.data ?? []) as AttendanceRow[]);
+    setHolidays((holidaysRes.data ?? []) as HolidayRow[]);
   };
 
   useEffect(() => {
-    if (!profileMember) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [profileMember]);
-
-  const loadRecords = async (bsYear: number, bsMonth: number) => {
-    const days = buildBsMonthDays(bsYear, bsMonth);
-    if (days.length === 0) {
-      setRecords([]);
-      return;
-    }
-
-    const startDate = days[0].adDate;
-    const endDate = days[days.length - 1].adDate;
-
-    const { data, error } = await supabase
-      .from("attendance_records")
-      .select("id, member_ref, attendance_date, status, deleted_at")
-      .gte("attendance_date", startDate)
-      .lte("attendance_date", endDate)
-      .is("deleted_at", null)
-      .order("attendance_date", { ascending: false })
-      .limit(5000);
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setRecords((data as AttendanceRow[]) || []);
-  };
-
-  const loadDeletedRecords = async (bsYear: number, bsMonth: number) => {
-    const days = buildBsMonthDays(bsYear, bsMonth);
-    if (!days.length) {
-      setDeletedRecords([]);
-      return;
-    }
-    const startDate = days[0].adDate;
-    const endDate = days[days.length - 1].adDate;
-    const { data, error } = await supabase
-      .from("attendance_records")
-      .select("id, member_ref, attendance_date, status, deleted_at")
-      .gte("attendance_date", startDate)
-      .lte("attendance_date", endDate)
-      .not("deleted_at", "is", null)
-      .order("deleted_at", { ascending: false })
-      .limit(100);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-    setDeletedRecords((data as AttendanceRow[]) || []);
-  };
-
-  const loadHolidays = async (bsYear: number, bsMonth: number) => {
-    const days = buildBsMonthDays(bsYear, bsMonth);
-    if (days.length === 0) {
-      setHolidays([]);
-      return;
-    }
-
-    const startDate = days[0].adDate;
-    const endDate = days[days.length - 1].adDate;
-
-    const { data, error } = await supabase
-      .from("attendance_holidays")
-      .select("id, holiday_date, name")
-      .gte("holiday_date", startDate)
-      .lte("holiday_date", endDate)
-      .order("holiday_date", { ascending: true });
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setHolidays((data as HolidayRow[]) || []);
-  };
-
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      setMessage("");
-      await loadMembers();
-      await loadRecords(selectedBsYear, selectedBsMonth);
-      await loadHolidays(selectedBsYear, selectedBsMonth);
-      await loadDeletedRecords(selectedBsYear, selectedBsMonth);
+    let alive = true;
+    Promise.all([
+      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("members").select("*").order("full_name", { ascending: true }).limit(5000),
+    ]).then(async ([settingsRes, membersRes]) => {
+      if (!alive) return;
+      const nextSettings = settingsRes.data ? { ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) } : defaultAdminSettings;
+      if (membersRes.error) {
+        setMessage(membersRes.error.message);
+      } else {
+        setSettings(nextSettings);
+        setMembers((membersRes.data ?? []) as MemberRow[]);
+        await loadAttendanceData(selectedBsYear, selectedBsMonth, nextSettings);
+      }
       setLoading(false);
-    };
+    });
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    init();
+    return () => {
+      alive = false;
+    };
+    // Initial load only. Month changes call loadAttendanceData through changeMonth to avoid duplicate reloads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onMonthOrYearChange = async (nextYear: number, nextMonth: number) => {
-    setSelectedBsYear(nextYear);
-    setSelectedBsMonth(nextMonth);
-    setMessage("");
+  const changeMonth = async (year: number, month: number) => {
     setLoading(true);
-    await loadRecords(nextYear, nextMonth);
-    await loadHolidays(nextYear, nextMonth);
-    await loadDeletedRecords(nextYear, nextMonth);
+    setMessage("");
+    setSelectedBsYear(year);
+    setSelectedBsMonth(month);
+    await loadAttendanceData(year, month);
     setLoading(false);
   };
 
-  const toggleAttendance = async (member: MemberOption, dayInfo: BsDayCell, checked: boolean) => {
-    if (dayInfo.isSaturday || holidayDateSet.has(dayInfo.adDate)) return;
+  const setAttendance = async (member: MemberRow, day: DayCell, present: boolean) => {
+    const holiday = holidayByDate.get(day.adDate);
+    const unavailable = day.isClosingDay || (settings.attendance_holiday_lock && Boolean(holiday));
+    if (unavailable) return;
 
-    const key = cellKey(member.id, dayInfo.adDate);
+    const key = cellKey(member.id, day.adDate);
     const existing = attendanceMap.get(key);
-
     setActiveCell(key);
     setMessage("");
 
-    if (checked) {
-      const payload = {
-        member_ref: member.id,
-        attendance_date: dayInfo.adDate,
-        status: "present" as AttendanceStatus,
-      };
-      const { error } = await supabase.from("attendance_records").upsert(payload, {
-        onConflict: "member_ref,attendance_date",
-      });
+    if (present) {
+      const { error } = await supabase.from("attendance_records").upsert(
+        {
+          member_ref: member.id,
+          attendance_date: day.adDate,
+          status: "present",
+          deleted_at: null,
+        },
+        { onConflict: "member_ref,attendance_date" }
+      );
       if (error) {
         setMessage(error.message);
         setActiveCell("");
         return;
       }
     } else if (existing) {
-      const { error } = await supabase
-        .from("attendance_records")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", existing.id);
+      const { error } = await supabase.from("attendance_records").update({ deleted_at: new Date().toISOString() }).eq("id", existing.id);
       if (error) {
         setMessage(error.message);
         setActiveCell("");
@@ -333,385 +224,373 @@ export default function AdminAttendance() {
       }
     }
 
-    await loadRecords(selectedBsYear, selectedBsMonth);
-    await loadDeletedRecords(selectedBsYear, selectedBsMonth);
+    await loadAttendanceData(selectedBsYear, selectedBsMonth);
+    setMessage(present ? "Attendance saved." : "Attendance removed and can be restored.");
     setActiveCell("");
   };
 
-  const restoreAttendance = async (id: number) => {
-    const { error } = await supabase.from("attendance_records").update({ deleted_at: null }).eq("id", id);
+  const restoreAttendance = async (record: AttendanceRow) => {
+    const { error } = await supabase.from("attendance_records").update({ deleted_at: null }).eq("id", record.id);
     if (error) {
       setMessage(error.message);
       return;
     }
     setMessage("Attendance restored.");
-    await loadRecords(selectedBsYear, selectedBsMonth);
-    await loadDeletedRecords(selectedBsYear, selectedBsMonth);
+    await loadAttendanceData(selectedBsYear, selectedBsMonth);
   };
 
-  const setHolidayOccasion = async (dayInfo: BsDayCell) => {
-    if (dayInfo.isSaturday) return;
-
-    setActiveHolidayDate(dayInfo.adDate);
-    setMessage("");
-
-    const existing = holidayByDate.get(dayInfo.adDate);
-    const defaultName = existing?.name || "";
-    const nameInput = window.prompt("Enter holiday occasion for this day:", defaultName);
-    if (nameInput === null) {
-      setActiveHolidayDate("");
-      return;
+  const setHoliday = async (day: DayCell) => {
+    if (day.isClosingDay) return;
+    const existing = holidayByDate.get(day.adDate);
+    const next = window.prompt("Holiday occasion:", existing?.name || "");
+    if (next === null) return;
+    const name = next.trim() || "Holiday";
+    setActiveHolidayDate(day.adDate);
+    const request = existing
+      ? supabase.from("attendance_holidays").update({ name }).eq("id", existing.id)
+      : supabase.from("attendance_holidays").insert({ holiday_date: day.adDate, name });
+    const { error } = await request;
+    if (error) setMessage(error.message);
+    else {
+      setMessage("Holiday saved.");
+      await loadAttendanceData(selectedBsYear, selectedBsMonth);
     }
-
-    const holidayName = nameInput.trim() || "Holiday";
-
-    if (existing) {
-      const { error } = await supabase
-        .from("attendance_holidays")
-        .update({ name: holidayName })
-        .eq("id", existing.id);
-      if (error) {
-        setMessage(error.message);
-        setActiveHolidayDate("");
-        return;
-      }
-    } else {
-      const payload = { holiday_date: dayInfo.adDate, name: holidayName };
-      const { error } = await supabase.from("attendance_holidays").insert(payload);
-      if (error) {
-        setMessage(error.message);
-        setActiveHolidayDate("");
-        return;
-      }
-    }
-
-    await loadHolidays(selectedBsYear, selectedBsMonth);
     setActiveHolidayDate("");
   };
 
-  const clearHoliday = async (dayInfo: BsDayCell) => {
-    if (dayInfo.isSaturday) return;
-    const existing = holidayByDate.get(dayInfo.adDate);
+  const clearHoliday = async (day: DayCell) => {
+    const existing = holidayByDate.get(day.adDate);
     if (!existing) return;
-
-    setActiveHolidayDate(dayInfo.adDate);
-    setMessage("");
-
+    setActiveHolidayDate(day.adDate);
     const { error } = await supabase.from("attendance_holidays").delete().eq("id", existing.id);
-    if (error) {
-      setMessage(error.message);
-      setActiveHolidayDate("");
-      return;
+    if (error) setMessage(error.message);
+    else {
+      setMessage("Holiday removed.");
+      await loadAttendanceData(selectedBsYear, selectedBsMonth);
     }
-
-    await loadHolidays(selectedBsYear, selectedBsMonth);
     setActiveHolidayDate("");
   };
 
-  if (loading) {
-    return <div className="rounded-2xl bg-black/35 p-6 text-zinc-200">हाजिरी लोड हुँदैछ...</div>;
-  }
+  const presentCountForSelectedDays = visibleDays.reduce((sum, day) => {
+    return (
+      sum +
+      filteredMembers.filter((member) => {
+        const record = attendanceMap.get(cellKey(member.id, day.adDate));
+        return record && (record.status === "present" || record.status === "late");
+      }).length
+    );
+  }, 0);
+
+  if (loading) return <AdminLoading label="Loading attendance..." />;
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-black/35 p-6 space-y-4">
-        <h2 className="text-xl font-black text-white">मासिक हाजिरी तालिका (BS)</h2>
-        <p className="text-xs text-zinc-400">यो फिचर केवल एडमिनका लागि मात्र उपलब्ध छ।</p>
+      <AdminPageHeader
+        eyebrow="Attendance"
+        title="Front-desk attendance"
+        description="Mark attendance deliberately. Present records save immediately; removed records are soft-deleted and restorable."
+        actions={
+          <Link to="/admin/holidays">
+            <AdminButton type="button" variant="secondary">
+              <CalendarDays className="h-4 w-4" />
+              Holiday templates
+            </AdminButton>
+          </Link>
+        }
+      />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-300">वर्ष (BS)</label>
-            <select
-              className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-              value={selectedBsYear}
-              onChange={(e) => onMonthOrYearChange(Number(e.target.value), selectedBsMonth)}
-            >
-              {yearOptions.map((year) => (
-                <option key={year} value={year} className="bg-black">
-                  {formatNepaliNumber(year)}
-                </option>
-              ))}
-            </select>
-          </div>
+      {message ? <AdminNotice tone={message.toLowerCase().includes("failed") || message.toLowerCase().includes("error") ? "danger" : "success"}>{message}</AdminNotice> : null}
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-300">महिना (BS)</label>
-            <select
-              className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-              value={selectedBsMonth}
-              onChange={(e) => onMonthOrYearChange(selectedBsYear, Number(e.target.value))}
-            >
-              {BS_MONTHS.map((monthName, idx) => (
-                <option key={monthName} value={idx} className="bg-black">
-                  {monthName}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <p className="text-xs text-zinc-400">
-          {BS_MONTHS[selectedBsMonth]} {formatNepaliNumber(selectedBsYear)} मा चेक गर्नुभयो भने उपस्थित चिन्ह
-          हुन्छ, अनचेक गर्नुभयो भने सो दिनको हाजिरी हट्छ।
-        </p>
-        {message ? <p className="text-sm text-zinc-300">{message}</p> : null}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <AdminNotice tone={todayHoliday ? "warning" : todayDay?.isClosingDay ? "warning" : "success"} title="Today">
+          {formatDisplayDate(todayAd, settings.date_display_preference)}
+          {todayHoliday ? ` | Holiday: ${todayHoliday.name || "Holiday"}` : todayDay?.isClosingDay ? " | Weekly closing day" : " | Open day"}
+        </AdminNotice>
+        <AdminNotice tone="neutral" title="Save behavior">
+          Attendance changes are saved immediately. There is no hidden draft state to discard.
+        </AdminNotice>
+        <AdminNotice tone="muted" title="Holiday behavior">
+          {settings.attendance_holiday_lock ? "Attendance is locked on holidays." : "Attendance can still be marked on holidays."}
+        </AdminNotice>
       </div>
 
-      <div className="rounded-2xl bg-black/35 p-6">
-        <div className="mb-4 max-w-md space-y-1">
-          <label className="text-xs font-semibold text-zinc-300">Search Member</label>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by member name or ID"
-            className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
+      <AdminCard>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_1.4fr]">
+          <AdminSelect<number> options={yearOptions} value={selectedBsYear} onChange={(event) => changeMonth(Number(event.target.value), selectedBsMonth)} />
+          <AdminSelect<number> options={monthOptions} value={selectedBsMonth} onChange={(event) => changeMonth(selectedBsYear, Number(event.target.value))} />
+          <AdminSelect<ViewMode>
+            options={[
+              { value: "day", label: "Day view" },
+              { value: "week", label: "Week view" },
+              { value: "month", label: "Month view" },
+            ]}
+            value={viewMode}
+            onChange={(event) => setViewMode(event.target.value as ViewMode)}
           />
-        </div>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setViewMode("month")}
-            className={`rounded-lg px-3 py-2 text-xs font-semibold ${viewMode === "month" ? "bg-white text-black" : "bg-white/10 text-white"}`}
-          >
-            Month
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("week")}
-            className={`rounded-lg px-3 py-2 text-xs font-semibold ${viewMode === "week" ? "bg-white text-black" : "bg-white/10 text-white"}`}
-          >
-            Week
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("day")}
-            className={`rounded-lg px-3 py-2 text-xs font-semibold ${viewMode === "day" ? "bg-white text-black" : "bg-white/10 text-white"}`}
-          >
-            Day
-          </button>
-          <div className="ml-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setFocusDay((d) => Math.max(1, d - (viewMode === "day" ? 1 : 7)))}
-              className="rounded-lg bg-white/10 px-3 py-2 text-xs text-white"
-            >
-              Prev
-            </button>
-            <span className="text-xs text-zinc-300">Day {formatNepaliNumber(focusDay)}</span>
-            <button
-              type="button"
-              onClick={() => setFocusDay((d) => Math.min(bsDays.length, d + (viewMode === "day" ? 1 : 7)))}
-              className="rounded-lg bg-white/10 px-3 py-2 text-xs text-white"
-            >
-              Next
-            </button>
+          <AdminSelect<number>
+            options={bsDays.map((day) => ({ value: day.bsDay, label: `Day ${formatNepaliNumber(day.bsDay)}` }))}
+            value={focusDay}
+            onChange={(event) => setFocusDay(Number(event.target.value))}
+          />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <AdminInput value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search member" className="pl-9" />
           </div>
         </div>
-        {members.length > 0 && filteredMembers.length === 0 ? (
-          <p className="mb-4 text-sm text-zinc-400">No matching members found.</p>
-        ) : null}
-        {members.length === 0 ? <p className="text-sm text-zinc-400">कुनै सदस्य फेला परेन।</p> : null}
-        <div className="max-h-[70vh] overflow-auto rounded-xl border border-white/10">
-          <table className="min-w-max text-sm text-white border-separate border-spacing-1">
-            <thead>
-              <tr>
-                <th className="sticky top-0 left-0 z-20 bg-zinc-900 rounded-md px-3 py-2 text-left min-w-[220px]">
-                  सदस्य
-                </th>
-                {visibleDays.map((dayInfo) => {
-                  const holiday = holidayByDate.get(dayInfo.adDate);
-                  const isHoliday = Boolean(holiday);
-                  const isOffDay = dayInfo.isSaturday || isHoliday;
-                  const holidayBusy = activeHolidayDate === dayInfo.adDate;
-                  return (
-                  <th
-                    key={dayInfo.adDate}
-                    className={[
-                      "sticky top-0 z-10 rounded-md px-2 py-2 text-center min-w-[48px]",
-                      isOffDay ? "bg-amber-400 text-black" : "bg-zinc-800",
-                    ].join(" ")}
-                  >
-                    <div>{formatNepaliNumber(dayInfo.bsDay)}</div>
-                    <div className={isOffDay ? "text-[10px] text-black/80" : "text-[10px] text-zinc-400"}>
-                      {dayInfo.weekday}
-                    </div>
-                    {isHoliday ? (
-                      <div
-                        className="mt-1 text-[9px] leading-tight text-black/90 max-w-[44px] mx-auto break-words"
-                        title={holiday?.name || "Holiday"}
-                      >
-                        {holiday?.name || "Holiday"}
-                      </div>
-                    ) : null}
-                    {!dayInfo.isSaturday ? (
-                      <div className="mt-1 flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          disabled={holidayBusy}
-                          onClick={() => setHolidayOccasion(dayInfo)}
-                          className={[
-                            "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                            isHoliday ? "bg-black text-amber-300" : "bg-white/25 text-black",
-                            holidayBusy ? "opacity-60 cursor-not-allowed" : "",
-                          ].join(" ")}
-                          title={isHoliday ? "Edit holiday occasion" : "Set holiday occasion"}
-                        >
-                          {isHoliday ? "Edit" : "Set"}
-                        </button>
-                        {isHoliday ? (
-                          <button
-                            type="button"
-                            disabled={holidayBusy}
-                            onClick={() => clearHoliday(dayInfo)}
-                            className={[
-                              "rounded px-1.5 py-0.5 text-[10px] font-semibold bg-white/25 text-black",
-                              holidayBusy ? "opacity-60 cursor-not-allowed" : "",
-                            ].join(" ")}
-                            title="Clear holiday"
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-500">Visible members</div>
+            <div className="mt-1 text-2xl font-black text-white">{filteredMembers.length}</div>
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-500">Marked present</div>
+            <div className="mt-1 text-2xl font-black text-white">{presentCountForSelectedDays}</div>
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-500">Date range</div>
+            <div className="mt-1 text-sm font-semibold text-white">{selectedMonthStart} to {selectedMonthEnd}</div>
+          </div>
+        </div>
+      </AdminCard>
+
+      {selectedDayInfo ? (
+        <AdminCard>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-black text-white">
+                  {BS_MONTHS[selectedBsMonth]} {formatNepaliNumber(selectedDayInfo.bsDay)}, {formatNepaliNumber(selectedBsYear)}
+                </h2>
+                <AdminBadge tone={selectedDayUnavailable ? "warning" : "success"}>
+                  {selectedHoliday ? selectedHoliday.name || "Holiday" : selectedDayInfo.isClosingDay ? "Weekly closing day" : "Available"}
+                </AdminBadge>
+              </div>
+              <p className="mt-1 text-sm text-slate-400">
+                {formatDisplayDate(selectedDayInfo.adDate, settings.date_display_preference)} | {selectedDayInfo.weekday}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {!selectedDayInfo.isClosingDay ? (
+                <AdminButton type="button" variant="secondary" disabled={activeHolidayDate === selectedDayInfo.adDate} onClick={() => setHoliday(selectedDayInfo)}>
+                  {selectedHoliday ? "Edit holiday" : "Set holiday"}
+                </AdminButton>
+              ) : null}
+              {selectedHoliday ? (
+                <AdminButton type="button" variant="danger" disabled={activeHolidayDate === selectedDayInfo.adDate} onClick={() => clearHoliday(selectedDayInfo)}>
+                  Clear holiday
+                </AdminButton>
+              ) : null}
+            </div>
+          </div>
+        </AdminCard>
+      ) : null}
+
+      {filteredMembers.length === 0 ? (
+        <AdminEmptyState title="No members available" description="Add members first or adjust the search field." />
+      ) : (
+        <>
+          <div className="hidden lg:block">
+            <AdminTableShell>
+              <AdminTableScroll>
+                <table className="min-w-max border-separate border-spacing-1 text-sm text-slate-100">
+                  <thead>
+                    <tr>
+                      <th className="sticky left-0 top-0 z-20 min-w-[240px] rounded-lg bg-slate-900 px-3 py-3 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
+                        Member
+                      </th>
+                      {visibleDays.map((day) => {
+                        const holiday = holidayByDate.get(day.adDate);
+                        const unavailable = day.isClosingDay || (settings.attendance_holiday_lock && Boolean(holiday));
+                        return (
+                          <th
+                            key={day.adDate}
+                            className={cx(
+                              "sticky top-0 z-10 min-w-[74px] rounded-lg px-2 py-2 text-center",
+                              unavailable ? "bg-amber-300/18 text-amber-100" : "bg-slate-900 text-slate-200"
+                            )}
                           >
-                            Clear
+                            <div className="font-black">{formatNepaliNumber(day.bsDay)}</div>
+                            <div className="text-[10px] text-slate-500">{day.weekday.slice(0, 3)}</div>
+                            {holiday ? <div className="mt-1 max-w-[64px] truncate text-[10px] text-amber-200">{holiday.name || "Holiday"}</div> : null}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMembers.map((member) => (
+                      <tr key={member.id}>
+                        <td className="sticky left-0 z-10 rounded-lg bg-slate-950 px-3 py-2">
+                          <button type="button" onClick={() => setProfileMember(member)} className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300">
+                            <div className="font-semibold text-white">{member.full_name}</div>
+                            <div className="text-xs text-slate-500">{member.member_id} | {member.phone}</div>
                           </button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="mt-1 text-[10px] font-semibold text-black/80">Off</div>
-                    )}
-                  </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMembers.map((member) => (
-                <tr key={member.id}>
-                  <td className="sticky left-0 z-10 bg-zinc-900 rounded-md px-3 py-2 whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => setProfileMember(member)}
-                      className="font-semibold text-left text-emerald-300 hover:underline"
-                      title="Open member profile"
-                    >
-                      {member.full_name}
-                    </button>
-                    <div className="text-[11px] text-zinc-400">{member.member_id}</div>
-                  </td>
-                  {visibleDays.map((dayInfo) => {
-                    const key = cellKey(member.id, dayInfo.adDate);
-                    const record = attendanceMap.get(key);
+                        </td>
+                        {visibleDays.map((day) => {
+                          const holiday = holidayByDate.get(day.adDate);
+                          const unavailable = day.isClosingDay || (settings.attendance_holiday_lock && Boolean(holiday));
+                          const key = cellKey(member.id, day.adDate);
+                          const record = attendanceMap.get(key);
+                          const checked = Boolean(record && record.status !== "absent");
+                          const busy = activeCell === key;
+
+                          return (
+                            <td key={key} className={cx("rounded-lg p-1 text-center", unavailable ? "bg-slate-900/45" : "bg-slate-900")}>
+                              <button
+                                type="button"
+                                disabled={busy || unavailable}
+                                onClick={() => setAttendance(member, day, !checked)}
+                                className={cx(
+                                  "inline-flex h-9 w-9 items-center justify-center rounded-lg border text-xs font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-50",
+                                  checked
+                                    ? "border-emerald-400 bg-emerald-400 text-slate-950"
+                                    : unavailable
+                                      ? "border-slate-700 bg-slate-800 text-slate-500"
+                                      : "border-slate-700 bg-slate-950 text-slate-400 hover:border-amber-300"
+                                )}
+                                title={unavailable ? "Unavailable day" : checked ? "Remove attendance" : "Mark present"}
+                              >
+                                {checked ? <Check className="h-4 w-4" /> : unavailable ? <X className="h-4 w-4" /> : ""}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </AdminTableScroll>
+            </AdminTableShell>
+          </div>
+
+          <div className="space-y-3 lg:hidden">
+            {filteredMembers.map((member) => (
+              <article key={member.id} className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <button type="button" onClick={() => setProfileMember(member)} className="text-left">
+                    <div className="font-semibold text-white">{member.full_name}</div>
+                    <div className="text-xs text-slate-500">{member.member_id}</div>
+                  </button>
+                  <AdminBadge tone="neutral">{member.membership_status}</AdminBadge>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {visibleDays.map((day) => {
+                    const holiday = holidayByDate.get(day.adDate);
+                    const unavailable = day.isClosingDay || (settings.attendance_holiday_lock && Boolean(holiday));
+                    const record = attendanceMap.get(cellKey(member.id, day.adDate));
                     const checked = Boolean(record && record.status !== "absent");
-                    const busy = activeCell === key;
-                    const holiday = holidayByDate.get(dayInfo.adDate);
-                    const isHoliday = Boolean(holiday);
-                    const disabled = busy || dayInfo.isSaturday || isHoliday;
                     return (
-                      <td
-                        key={key}
-                        className={[
-                          "rounded-md text-center p-1",
-                          dayInfo.isSaturday || isHoliday ? "bg-amber-300/30" : "bg-white/5",
-                        ].join(" ")}
+                      <button
+                        key={day.adDate}
+                        type="button"
+                        disabled={unavailable}
+                        onClick={() => setAttendance(member, day, !checked)}
+                        className={cx(
+                          "rounded-lg border p-3 text-left text-sm",
+                          checked
+                            ? "border-emerald-400 bg-emerald-400/15 text-emerald-100"
+                            : unavailable
+                              ? "border-slate-800 bg-slate-900 text-slate-500"
+                              : "border-slate-800 bg-slate-900 text-slate-200"
+                        )}
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disabled}
-                          onChange={(e) => toggleAttendance(member, dayInfo, e.target.checked)}
-                          className={[
-                            "h-4 w-4 accent-emerald-400",
-                            disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-                          ].join(" ")}
-                          title={
-                            dayInfo.isSaturday
-                              ? "Off day (Saturday)"
-                              : isHoliday
-                                ? `Holiday: ${holiday?.name || "Holiday"}`
-                                : "Toggle attendance"
-                          }
-                        />
-                      </td>
+                        <div className="font-semibold">Day {formatNepaliNumber(day.bsDay)}</div>
+                        <div className="text-xs">{unavailable ? "Unavailable" : checked ? "Present" : "Not recorded"}</div>
+                      </button>
                     );
                   })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="rounded-2xl bg-black/35 p-6 space-y-3">
-        <h3 className="text-lg font-black text-white">Recently Removed Attendance (Restore)</h3>
-        {deletedRecords.length === 0 ? (
-          <p className="text-sm text-zinc-400">No removed attendance records in this month.</p>
-        ) : (
-          deletedRecords.map((record) => {
-            const member = members.find((m) => m.id === record.member_ref);
-            return (
-              <div key={record.id} className="rounded-xl bg-white/8 p-3 flex items-center justify-between gap-3">
-                <div className="text-sm text-zinc-100">
-                  {member?.full_name || "Member"} ({member?.member_id || record.member_ref}) | {record.attendance_date}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => restoreAttendance(record.id)}
-                  className="rounded-lg bg-white px-3 py-1 text-sm font-semibold text-black"
-                >
-                  Restore
-                </button>
-              </div>
-            );
-          })
-        )}
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+
+      <AdminCard>
+        <AdminSectionTitle title="Recently removed attendance" description="Soft-deleted attendance records for the selected BS month." />
+        <div className="mt-4 space-y-2">
+          {deletedRecords.length === 0 ? (
+            <AdminEmptyState title="No removed attendance records" />
+          ) : (
+            deletedRecords.map((record) => {
+              const member = members.find((item) => item.id === record.member_ref);
+              return (
+                <div key={record.id} className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/55 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm text-slate-300">
+                    <b className="text-white">{member?.full_name || "Member"}</b> | {formatDisplayDate(record.attendance_date, settings.date_display_preference)} | {statusLabel(record.status)}
+                  </div>
+                  <AdminButton type="button" variant="secondary" onClick={() => restoreAttendance(record)}>
+                    <RotateCcw className="h-4 w-4" />
+                    Restore
+                  </AdminButton>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </AdminCard>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <AdminNotice tone="success">
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4" />
+            Present or late
+          </div>
+        </AdminNotice>
+        <AdminNotice tone="neutral">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4" />
+            Not recorded
+          </div>
+        </AdminNotice>
+        <AdminNotice tone="muted">
+          <div className="flex items-center gap-2">
+            <X className="h-4 w-4" />
+            Holiday or closing day
+          </div>
+        </AdminNotice>
       </div>
 
-      {profileMember ? (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 grid place-items-center">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-300 bg-zinc-100 text-zinc-900 shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-300 bg-zinc-100 px-6 py-4">
-              <h3 className="text-xl font-black">Member Profile</h3>
-              <button
-                type="button"
-                onClick={() => setProfileMember(null)}
-                className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="rounded-xl bg-white p-4">
-                <div className="text-lg font-black">{profileMember.full_name}</div>
-                <div className="text-sm text-zinc-600">{profileMember.member_id}</div>
+      <AdminDrawer
+        open={Boolean(profileMember)}
+        title={profileMember?.full_name ?? "Member profile"}
+        description={profileMember ? `${profileMember.member_id} | ${profileMember.phone}` : undefined}
+        onClose={() => setProfileMember(null)}
+        size="lg"
+      >
+        {profileMember ? (
+          <div className="space-y-4">
+            <AdminCard>
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-amber-300">
+                  <UserRound className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="text-xl font-black text-white">{profileMember.full_name}</div>
+                  <div className="text-sm text-slate-400">{profileMember.email || "No email"}</div>
+                </div>
               </div>
-
-              <div className="rounded-xl bg-white p-4 space-y-1">
-                <div className="text-sm font-black">Contact</div>
-                <div className="text-sm">Email: {profileMember.email || "-"}</div>
-                <div className="text-sm">Phone: {profileMember.phone || "-"}</div>
+            </AdminCard>
+            <AdminCard>
+              <AdminSectionTitle title="Membership" />
+              <div className="mt-4 space-y-2 text-sm text-slate-300">
+                <div>Plan: <b>{statusLabel(profileMember.membership_type)}</b></div>
+                <div>Status: <b>{statusLabel(profileMember.membership_status)}</b></div>
+                <div>Start: <b>{formatDisplayDate(profileMember.start_date, settings.date_display_preference)}</b></div>
+                <div>End: <b>{formatDisplayDate(profileMember.end_date, settings.date_display_preference)}</b></div>
               </div>
-
-              <div className="rounded-xl bg-white p-4 space-y-1">
-                <div className="text-sm font-black">Plan</div>
-                <div className="text-sm">Type: {profileMember.membership_type || "-"}</div>
-                <div className="text-sm">Status: {profileMember.membership_status || "-"}</div>
-                <div className="text-sm">Start (BS): {formatBsFromAd(profileMember.start_date)}</div>
-                <div className="text-sm">End (BS): {formatBsFromAd(profileMember.end_date)}</div>
+            </AdminCard>
+            <AdminCard>
+              <AdminSectionTitle title="Payment and notes" />
+              <div className="mt-4 space-y-2 text-sm text-slate-300">
+                <div>Payment: <b>{statusLabel(profileMember.payment_status)}</b></div>
+                <div>Due: <b>{formatDisplayDate(profileMember.payment_due_date, settings.date_display_preference)}</b></div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">{profileMember.notes || "No notes."}</div>
               </div>
-
-              <div className="rounded-xl bg-white p-4 space-y-1">
-                <div className="text-sm font-black">Dues</div>
-                <div className="text-sm">Payment Status: {profileMember.payment_status || "-"}</div>
-                <div className="text-sm">Payment Due (BS): {formatBsFromAd(profileMember.payment_due_date)}</div>
-              </div>
-
-              <div className="rounded-xl bg-white p-4 space-y-1">
-                <div className="text-sm font-black">Notes</div>
-                <div className="text-sm">{profileMember.notes || "-"}</div>
-              </div>
-            </div>
+            </AdminCard>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </AdminDrawer>
     </div>
   );
 }

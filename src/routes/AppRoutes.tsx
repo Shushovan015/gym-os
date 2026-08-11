@@ -26,6 +26,7 @@ import AdminProShop from "../pages/admin/AdminProShop";
 import AdminMembers from "../pages/admin/AdminMembers";
 import AdminAttendance from "../pages/admin/AdminAttendance";
 import AdminHolidayManager from "../pages/admin/AdminHolidayManager";
+import AdminSettings from "../pages/admin/AdminSettings";
 
 export default function AppRoutes() {
   const location = useLocation();
@@ -62,6 +63,7 @@ export default function AppRoutes() {
             <Route path="members" element={<AdminMembers />} />
             <Route path="attendance" element={<AdminAttendance />} />
             <Route path="holidays" element={<AdminHolidayManager />} />
+            <Route path="settings" element={<AdminSettings />} />
           </Route>
         </Route>
 

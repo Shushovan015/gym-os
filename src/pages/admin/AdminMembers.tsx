@@ -1,38 +1,79 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, ReactNode, SyntheticEvent } from "react";
-import { createPortal } from "react-dom";
+import type { ChangeEvent, FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+  CheckCircle2,
+  FileText,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
+  Upload,
+  UserRound,
+} from "lucide-react";
 import { supabase } from "@src/Client/supabase";
-import Pagination from "@src/components/Pagination";
-import NepaliDate from "nepali-date-converter";
+import {
+  AdminBadge,
+  AdminButton,
+  AdminCard,
+  AdminDialog,
+  AdminDrawer,
+  AdminEmptyState,
+  AdminField,
+  AdminInput,
+  AdminLoading,
+  AdminNotice,
+  AdminPageHeader,
+  AdminSearchField,
+  AdminSectionTitle,
+  AdminSelect,
+  AdminTableScroll,
+  AdminTableShell,
+  AdminTextarea,
+} from "@src/components/admin/AdminUI";
+import type {
+  AdminSettings,
+  AttendanceRow,
+  GeneratedProgressReport,
+  MeasurementRow,
+  MemberForm,
+  MemberReportLogRow,
+  MemberRow,
+  MembershipStatus,
+  MembershipType,
+  PaymentStatus,
+  SendProgressReportResponse,
+  TransformationRow,
+} from "./adminTypes";
+import { membershipStatuses, membershipTypes, paymentStatuses } from "./adminTypes";
+import {
+  adToBsString,
+  bsStringToAdDate,
+  cx,
+  defaultAdminSettings,
+  diffInDays,
+  emptyMemberForm,
+  formatDateTime,
+  formatDisplayDate,
+  getMemberLifecycle,
+  getNepalTodayAdDate,
+  hasValidationErrors,
+  normalizePhone,
+  statusLabel,
+  toMemberPayload,
+  toNullableNumber,
+  validateMemberForm,
+} from "./adminUtils";
 
-type MembershipType = "monthly" | "quarterly" | "yearly" | "trial";
-type MembershipStatus = "active" | "paused" | "cancelled" | "expired";
-type PaymentStatus = "paid" | "unpaid" | "overdue";
-
-type MemberRow = {
-  id: number;
-  member_id: string;
-  full_name: string;
-  email: string | null;
-  phone: string;
-  membership_type: MembershipType;
-  membership_status: MembershipStatus;
-  start_date: string | null;
-  end_date: string | null;
-  last_visit_date: string | null;
-  payment_status: PaymentStatus;
-  payment_due_date: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
-};
-
-type MemberForm = Omit<MemberRow, "id" | "created_at" | "updated_at" | "deleted_at">;
+type DeletedFilter = "active" | "deleted" | "all";
+type MembershipFilter = "all" | MembershipStatus | "expiring";
+type PaymentFilter = "all" | PaymentStatus;
+type SortKey = "updated_desc" | "name_asc" | "end_date_asc" | "created_desc";
 
 type CsvParsedRow = MemberForm & {
   rowNumber: number;
   errors: string[];
+  warnings: string[];
 };
 
 type N8nMembersEventPayload = {
@@ -42,68 +83,6 @@ type N8nMembersEventPayload = {
   count: number;
   occurred_at: string;
 };
-
-type MeasurementRow = {
-  id: number;
-  member_ref: number;
-  recorded_at: string;
-  weight_kg: number | null;
-  body_fat_percent: number | null;
-  chest_cm: number | null;
-  waist_cm: number | null;
-  hips_cm: number | null;
-  arm_cm: number | null;
-  thigh_cm: number | null;
-  notes: string | null;
-  created_at: string;
-};
-
-type TransformationRow = {
-  id: number;
-  member_ref: number;
-  captured_at: string;
-  milestone_title: string | null;
-  milestone_notes: string | null;
-  photo_url: string | null;
-  created_at: string;
-};
-
-type MemberReportLogRow = {
-  id: number;
-  member_ref: number;
-  recipient_email: string | null;
-  status: string;
-  error_message: string | null;
-  sent_by: string | null;
-  sent_at: string;
-  created_at: string;
-};
-
-type GeneratedReportMilestone = {
-  captured_at: string;
-  milestone_title: string;
-  milestone_notes: string | null;
-  photo_url: string | null;
-};
-
-type GeneratedProgressReport = {
-  gym_name: string;
-  member_id: string;
-  member_name: string;
-  generated_at: string;
-  summary_lines: string[];
-  recent_milestones: GeneratedReportMilestone[];
-};
-
-type SendProgressReportResponse = {
-  ok: boolean;
-  error?: string;
-  report?: GeneratedProgressReport;
-};
-
-const membershipTypes: MembershipType[] = ["monthly", "quarterly", "yearly", "trial"];
-const membershipStatuses: MembershipStatus[] = ["active", "paused", "cancelled", "expired"];
-const paymentStatuses: PaymentStatus[] = ["paid", "unpaid", "overdue"];
 
 const csvHeaders = [
   "member_id",
@@ -120,157 +99,27 @@ const csvHeaders = [
   "notes",
 ] as const;
 
-const emptyForm: MemberForm = {
-  member_id: "",
-  full_name: "",
-  email: "",
-  phone: "",
-  membership_type: "monthly",
-  membership_status: "active",
-  start_date: "",
-  end_date: "",
-  last_visit_date: "",
-  payment_status: "unpaid",
-  payment_due_date: "",
-  notes: "",
-};
-
-const rowsPerPage = 10;
-
 const n8nMembersWebhookUrl = (import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_URL as string | undefined)?.trim();
 const n8nMembersWebhookSecret = (import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_SECRET as string | undefined)?.trim();
 
-function FieldLabel({ children, className = "text-zinc-300" }: { children: ReactNode; className?: string }) {
-  return <label className={`text-xs font-semibold ${className}`}>{children}</label>;
-}
+const rowsPerPage = 10;
+const membershipOptions = [{ value: "all", label: "All memberships" }, ...membershipStatuses.map((value) => ({ value, label: statusLabel(value) })), { value: "expiring", label: "Expiring soon" }];
+const paymentOptions = [{ value: "all", label: "All payment statuses" }, ...paymentStatuses.map((value) => ({ value, label: statusLabel(value) }))];
+const planOptions = [{ value: "all", label: "All plans" }, ...membershipTypes.map((value) => ({ value, label: statusLabel(value) }))];
+const deletedOptions = [
+  { value: "active", label: "Active list" },
+  { value: "deleted", label: "Deleted list" },
+  { value: "all", label: "All records" },
+];
+const sortOptions = [
+  { value: "updated_desc", label: "Recently updated" },
+  { value: "name_asc", label: "Name A-Z" },
+  { value: "end_date_asc", label: "Membership end date" },
+  { value: "created_desc", label: "Recently created" },
+];
 
-function pad2(value: number) {
-  return value.toString().padStart(2, "0");
-}
-
-function formatAdDate(date: Date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
-
-function formatBsDateFromAd(adDate: string | null) {
-  if (!adDate) return "-";
-  try {
-    const jsDate = new Date(`${adDate}T00:00:00`);
-    if (Number.isNaN(jsDate.getTime())) return adDate;
-    return new NepaliDate(jsDate).format("YYYY-MM-DD");
-  } catch {
-    return adDate;
-  }
-}
-
-function adToBsString(adDate: string | null) {
-  if (!adDate) return "";
-  try {
-    const jsDate = new Date(`${adDate}T00:00:00`);
-    if (Number.isNaN(jsDate.getTime())) return "";
-    return new NepaliDate(jsDate).format("YYYY-MM-DD");
-  } catch {
-    return "";
-  }
-}
-
-function bsStringToAdDate(bsDate: string) {
-  const value = bsDate.trim();
-  if (!value) return "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  try {
-    const bs = new NepaliDate(value);
-    const normalized = bs.format("YYYY-MM-DD");
-    if (normalized !== value) return null;
-    return formatAdDate(bs.toJsDate());
-  } catch {
-    return null;
-  }
-}
-
-function BsDateInput({
-  label,
-  adValue,
-  onChangeAd,
-}: {
-  label: string;
-  adValue: string | null;
-  onChangeAd: (value: string) => void;
-}) {
-  const [bsText, setBsText] = useState(adToBsString(adValue));
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setBsText(adToBsString(adValue));
-    setError("");
-  }, [adValue]);
-
-  const handleChange = (value: string) => {
-    setBsText(value);
-    if (!value.trim()) {
-      onChangeAd("");
-      setError("");
-      return;
-    }
-    const ad = bsStringToAdDate(value);
-    if (ad === null) {
-      setError("Invalid BS date. Use YYYY-MM-DD.");
-      return;
-    }
-    setError("");
-    onChangeAd(ad);
-  };
-
-  return (
-    <div className="space-y-1">
-      <FieldLabel className="text-zinc-800">{label} (BS)</FieldLabel>
-      <input
-        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-        value={bsText}
-        onChange={(e) => handleChange(e.target.value)}
-        placeholder="YYYY-MM-DD (BS)"
-      />
-      {error ? <p className="text-xs text-zinc-900">{error}</p> : null}
-      <p className="text-[11px] text-zinc-500">Example: 2083-01-15</p>
-    </div>
-  );
-}
-
-function MiniLineChart({
-  values,
-  stroke = "#0f766e",
-}: {
-  values: Array<number | null>;
-  stroke?: string;
-}) {
-  const clean = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-  if (clean.length < 2) {
-    return <div className="text-xs text-zinc-500">Not enough data for chart.</div>;
-  }
-
-  const min = Math.min(...clean);
-  const max = Math.max(...clean);
-  const range = max - min || 1;
-  const points = clean
-    .map((v, i) => {
-      const x = (i / (clean.length - 1 || 1)) * 220;
-      const y = 54 - ((v - min) / range) * 44;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg width="220" height="60" viewBox="0 0 220 60" className="rounded bg-zinc-50">
-      <polyline fill="none" stroke={stroke} strokeWidth="2.5" points={points} />
-    </svg>
-  );
-}
-
-function toNullableNumber(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 function parseCsvLine(line: string): string[] {
@@ -280,7 +129,6 @@ function parseCsvLine(line: string): string[] {
 
   for (let i = 0; i < line.length; i += 1) {
     const char = line[i];
-
     if (char === '"') {
       const next = line[i + 1];
       if (inQuotes && next === '"') {
@@ -291,13 +139,11 @@ function parseCsvLine(line: string): string[] {
       }
       continue;
     }
-
     if (char === "," && !inQuotes) {
       fields.push(current.trim());
       current = "";
       continue;
     }
-
     current += char;
   }
 
@@ -305,68 +151,12 @@ function parseCsvLine(line: string): string[] {
   return fields;
 }
 
-function isValidDate(value: string) {
-  if (!value) return true;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const timestamp = Date.parse(`${value}T00:00:00Z`);
-  return !Number.isNaN(timestamp);
-}
-
-function isValidEmail(value: string) {
-  if (!value) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function normalizeNullable(value: string) {
-  const cleaned = value.trim();
-  return cleaned.length ? cleaned : null;
-}
-
-function validateRow(row: MemberForm, knownMemberIds: Set<string>) {
-  const errors: string[] = [];
-
-  if (!row.member_id.trim()) errors.push("member_id is required");
-  if (!row.full_name.trim() || row.full_name.trim().length < 2)
-    errors.push("full_name must be at least 2 characters");
-  if (!row.phone.trim()) errors.push("phone is required");
-  if (!isValidEmail(row.email || "")) errors.push("email is invalid");
-
-  if (!membershipTypes.includes(row.membership_type)) errors.push("membership_type is invalid");
-  if (!membershipStatuses.includes(row.membership_status)) errors.push("membership_status is invalid");
-  if (!paymentStatuses.includes(row.payment_status)) errors.push("payment_status is invalid");
-
-  if (!isValidDate(row.start_date || "")) errors.push("start_date must be YYYY-MM-DD");
-  if (!isValidDate(row.end_date || "")) errors.push("end_date must be YYYY-MM-DD");
-  if (!isValidDate(row.last_visit_date || "")) errors.push("last_visit_date must be YYYY-MM-DD");
-  if (!isValidDate(row.payment_due_date || "")) errors.push("payment_due_date must be YYYY-MM-DD");
-
-  const memberId = row.member_id.trim();
-  if (memberId && knownMemberIds.has(memberId)) errors.push("duplicate member_id in CSV");
-  if (memberId) knownMemberIds.add(memberId);
-
-  return errors;
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
 async function notifyN8nMembers(payload: N8nMembersEventPayload) {
-  if (!n8nMembersWebhookUrl) {
-    return { ok: false, skipped: true, error: "Webhook URL not configured" };
-  }
+  if (!n8nMembersWebhookUrl) return { ok: false, skipped: true, error: "Webhook URL not configured" };
 
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (n8nMembersWebhookSecret) {
-      headers["x-gym-secret"] = n8nMembersWebhookSecret;
-    }
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (n8nMembersWebhookSecret) headers["x-gym-secret"] = n8nMembersWebhookSecret;
 
     const response = await fetch(n8nMembersWebhookUrl, {
       method: "POST",
@@ -374,33 +164,162 @@ async function notifyN8nMembers(payload: N8nMembersEventPayload) {
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      return { ok: false, skipped: false, error: `HTTP ${response.status}` };
-    }
-
+    if (!response.ok) return { ok: false, skipped: false, error: `HTTP ${response.status}` };
     return { ok: true, skipped: false, error: "" };
-  } catch (err: any) {
-    return { ok: false, skipped: false, error: err?.message || "Unknown webhook error" };
+  } catch (error) {
+    return { ok: false, skipped: false, error: errorMessage(error) };
   }
 }
 
+function memberStatusTone(member: MemberRow, todayAd: string) {
+  const lifecycle = getMemberLifecycle(member, todayAd);
+  if (member.deleted_at) return "muted" as const;
+  if (lifecycle === "expired") return "danger" as const;
+  if (lifecycle === "expiring") return "warning" as const;
+  if (member.membership_status === "paused") return "warning" as const;
+  if (member.membership_status === "cancelled") return "danger" as const;
+  return "success" as const;
+}
+
+function paymentTone(payment: PaymentStatus) {
+  if (payment === "paid") return "success" as const;
+  if (payment === "overdue") return "danger" as const;
+  return "warning" as const;
+}
+
+function MiniLineChart({ values, stroke }: { values: Array<number | null>; stroke: string }) {
+  const clean = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (clean.length < 2) return <div className="text-xs text-slate-500">Not enough data for a chart yet.</div>;
+
+  const min = Math.min(...clean);
+  const max = Math.max(...clean);
+  const range = max - min || 1;
+  const points = clean
+    .map((value, index) => {
+      const x = (index / (clean.length - 1 || 1)) * 220;
+      const y = 54 - ((value - min) / range) * 44;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width="220" height="60" viewBox="0 0 220 60" className="rounded-lg border border-slate-800 bg-slate-950">
+      <polyline fill="none" stroke={stroke} strokeWidth="2.5" points={points} />
+    </svg>
+  );
+}
+
+function BsAdDateField({
+  label,
+  adValue,
+  onChangeAd,
+  error,
+}: {
+  label: string;
+  adValue: string | null;
+  onChangeAd: (value: string) => void;
+  error?: string;
+}) {
+  const [bsError, setBsError] = useState("");
+
+  const onBsBlur = (value: string) => {
+    if (!value.trim()) {
+      setBsError("");
+      onChangeAd("");
+      return;
+    }
+    const ad = bsStringToAdDate(value);
+    if (ad === null) {
+      setBsError("Use BS date as YYYY-MM-DD.");
+      return;
+    }
+    setBsError("");
+    onChangeAd(ad);
+  };
+
+  return (
+    <div className="space-y-2">
+      <AdminField label={`${label} (AD)`} error={error}>
+        <AdminInput type="date" value={adValue ?? ""} onChange={(event) => onChangeAd(event.target.value)} />
+      </AdminField>
+      <AdminField label={`${label} (BS)`} error={bsError} hint="Type a full BS date and leave the field to convert.">
+        <AdminInput
+          key={adValue ?? "empty"}
+          defaultValue={adToBsString(adValue)}
+          placeholder="YYYY-MM-DD"
+          onBlur={(event) => onBsBlur(event.target.value)}
+        />
+      </AdminField>
+    </div>
+  );
+}
+
+function PaginationControls({
+  currentPage,
+  totalPages,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-slate-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-sm text-slate-400">
+        Page {currentPage} of {totalPages}
+      </div>
+      <div className="flex gap-2">
+        <AdminButton type="button" variant="secondary" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>
+          Previous
+        </AdminButton>
+        <AdminButton type="button" variant="secondary" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}>
+          Next
+        </AdminButton>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminMembers() {
+  const [searchParams] = useSearchParams();
+  const todayAd = useMemo(() => getNepalTodayAdDate(), []);
+  const initialExpiring = Number(searchParams.get("expiring") || defaultAdminSettings.expiry_warning_days);
+  const initialAbsent = Number(searchParams.get("absent") || 0);
+
   const [members, setMembers] = useState<MemberRow[]>([]);
-  const [form, setForm] = useState<MemberForm>(emptyForm);
+  const [settings, setSettings] = useState<AdminSettings>(defaultAdminSettings);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [membershipFilter, setMembershipFilter] = useState<MembershipFilter>(
+    searchParams.get("expiring") ? "expiring" : ((searchParams.get("membership") as MembershipFilter | null) ?? "all")
+  );
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>((searchParams.get("payment") as PaymentFilter | null) ?? "all");
+  const [planFilter, setPlanFilter] = useState<MembershipType | "all">("all");
+  const [deletedFilter, setDeletedFilter] = useState<DeletedFilter>("active");
+  const [sortKey, setSortKey] = useState<SortKey>("updated_desc");
+  const expiringDays = Number.isFinite(initialExpiring) ? initialExpiring : defaultAdminSettings.expiry_warning_days;
+  const [absentDays, setAbsentDays] = useState(Number.isFinite(initialAbsent) ? initialAbsent : 0);
+  const [createdSince, setCreatedSince] = useState(searchParams.get("created_since") ?? "");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const [form, setForm] = useState<MemberForm>(emptyMemberForm);
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof MemberForm, string>>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const [detailMember, setDetailMember] = useState<MemberRow | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
   const [transformations, setTransformations] = useState<TransformationRow[]>([]);
-  const [loadingProfileExtras, setLoadingProfileExtras] = useState(false);
-  const [savingMeasurement, setSavingMeasurement] = useState(false);
-  const [savingTransformation, setSavingTransformation] = useState(false);
-  const [sendingReport, setSendingReport] = useState(false);
   const [reportLogs, setReportLogs] = useState<MemberReportLogRow[]>([]);
+  const [memberAttendance, setMemberAttendance] = useState<AttendanceRow[]>([]);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [generatedReport, setGeneratedReport] = useState<GeneratedProgressReport | null>(null);
 
   const [measurementForm, setMeasurementForm] = useState({
-    recorded_at: new Date().toISOString().slice(0, 10),
+    recorded_at: todayAd,
     weight_kg: "",
     body_fat_percent: "",
     chest_cm: "",
@@ -410,277 +329,245 @@ export default function AdminMembers() {
     thigh_cm: "",
     notes: "",
   });
-
   const [transformationForm, setTransformationForm] = useState({
-    captured_at: new Date().toISOString().slice(0, 10),
+    captured_at: todayAd,
     milestone_title: "",
     milestone_notes: "",
   });
   const [transformationPhotoFile, setTransformationPhotoFile] = useState<File | null>(null);
-  const [transformationPhotoPreview, setTransformationPhotoPreview] = useState("");
-  const [transformationFileInputKey, setTransformationFileInputKey] = useState(0);
-
-  const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showDeleted, setShowDeleted] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-
   const [csvRows, setCsvRows] = useState<CsvParsedRow[]>([]);
   const [csvName, setCsvName] = useState("");
   const [importing, setImporting] = useState(false);
-  const n8nEnabled = Boolean(n8nMembersWebhookUrl);
-  const isAnyModalOpen = showMemberModal || Boolean(detailMember);
-  const modalRoot = typeof document !== "undefined" ? document.body : null;
-
-  useEffect(() => {
-    if (!isAnyModalOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isAnyModalOpen]);
-
-  const validCsvRows = useMemo(() => csvRows.filter((row) => row.errors.length === 0), [csvRows]);
-  const invalidCsvRows = useMemo(() => csvRows.filter((row) => row.errors.length > 0), [csvRows]);
-
-  const filteredMembers = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    const base = members.filter((m) => (showDeleted ? m.deleted_at !== null : m.deleted_at === null));
-    if (!q) return base;
-    return base.filter(
-      (member) =>
-        member.full_name.toLowerCase().includes(q) ||
-        member.member_id.toLowerCase().includes(q) ||
-        (member.email || "").toLowerCase().includes(q) ||
-        member.phone.toLowerCase().includes(q)
-    );
-  }, [members, searchTerm, showDeleted]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / rowsPerPage));
-  const pageStart = (currentPage - 1) * rowsPerPage;
-  const pagedMembers = filteredMembers.slice(pageStart, pageStart + rowsPerPage);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
+  const [csvOpen, setCsvOpen] = useState(false);
 
   const loadMembers = async () => {
-    const { data, error } = await supabase
-      .from("members")
-      .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(5000);
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setMembers((data as MemberRow[]) || []);
-  };
-
-  const loadMemberExtras = async (memberId: number) => {
-    setLoadingProfileExtras(true);
-    const [mRes, tRes] = await Promise.all([
+    const [settingsRes, membersRes] = await Promise.all([
+      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
       supabase
-        .from("member_measurements")
+        .from("members")
         .select("*")
-        .eq("member_ref", memberId)
-        .order("recorded_at", { ascending: true })
-        .limit(500),
-      supabase
-        .from("member_transformations")
-        .select("*")
-        .eq("member_ref", memberId)
-        .order("captured_at", { ascending: false })
-        .limit(200),
+        .order("updated_at", { ascending: false })
+        .limit(5000),
     ]);
 
-    if (mRes.error) {
-      setMessage(mRes.error.message);
-      setLoadingProfileExtras(false);
+    if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });
+    if (membersRes.error) {
+      setMessage(membersRes.error.message);
+      setLoading(false);
       return;
     }
-    if (tRes.error) {
-      setMessage(tRes.error.message);
-      setLoadingProfileExtras(false);
-      return;
-    }
-
-    setMeasurements((mRes.data as MeasurementRow[]) || []);
-    setTransformations((tRes.data as TransformationRow[]) || []);
-    const logsRes = await supabase
-      .from("member_report_logs")
-      .select("id, member_ref, recipient_email, status, error_message, sent_by, sent_at, created_at")
-      .eq("member_ref", memberId)
-      .order("sent_at", { ascending: false })
-      .limit(20);
-    if (logsRes.error) {
-      setMessage(logsRes.error.message);
-      setReportLogs([]);
-      setLoadingProfileExtras(false);
-      return;
-    }
-    setReportLogs((logsRes.data as MemberReportLogRow[]) || []);
-    setLoadingProfileExtras(false);
+    setMembers((membersRes.data ?? []) as MemberRow[]);
+    setLoading(false);
   };
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    loadMembers();
+    let alive = true;
+    Promise.all([
+      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("members").select("*").order("updated_at", { ascending: false }).limit(5000),
+    ]).then(([settingsRes, membersRes]) => {
+      if (!alive) return;
+      if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });
+      if (membersRes.error) {
+        setMessage(membersRes.error.message);
+      } else {
+        setMembers((membersRes.data ?? []) as MemberRow[]);
+      }
+      setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!detailMember) return;
-    setGeneratedReport(null);
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    loadMemberExtras(detailMember.id);
-  }, [detailMember]);
+  const filteredMembers = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    const absentCutoff = absentDays > 0 ? new Date(`${todayAd}T00:00:00`) : null;
+    if (absentCutoff) absentCutoff.setDate(absentCutoff.getDate() - absentDays);
+    const absentCutoffText = absentCutoff ? absentCutoff.toISOString().slice(0, 10) : "";
 
-  const onChange = <K extends keyof MemberForm>(key: K, value: MemberForm[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
+    const rows = members.filter((member) => {
+      if (deletedFilter === "active" && member.deleted_at) return false;
+      if (deletedFilter === "deleted" && !member.deleted_at) return false;
+      if (query) {
+        const haystack = [member.full_name, member.member_id, member.phone, member.email ?? ""].join(" ").toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      if (planFilter !== "all" && member.membership_type !== planFilter) return false;
+      if (paymentFilter !== "all" && member.payment_status !== paymentFilter) return false;
+      if (createdSince && member.created_at.slice(0, 10) < createdSince) return false;
+      if (absentDays > 0 && member.membership_status === "active") {
+        const last = member.last_visit_date ?? "";
+        if (last && last >= absentCutoffText) return false;
+      }
+      if (membershipFilter === "all") return true;
+      if (membershipFilter === "expiring") {
+        const daysLeft = member.end_date ? diffInDays(todayAd, member.end_date) : null;
+        return daysLeft !== null && daysLeft >= 0 && daysLeft <= expiringDays;
+      }
+      if (membershipFilter === "expired") return getMemberLifecycle(member, todayAd) === "expired";
+      return member.membership_status === membershipFilter;
+    });
 
-  const closeMemberModal = () => {
-    setShowMemberModal(false);
+    return rows.sort((a, b) => {
+      if (sortKey === "name_asc") return a.full_name.localeCompare(b.full_name);
+      if (sortKey === "end_date_asc") return String(a.end_date ?? "9999-12-31").localeCompare(String(b.end_date ?? "9999-12-31"));
+      if (sortKey === "created_desc") return b.created_at.localeCompare(a.created_at);
+      return b.updated_at.localeCompare(a.updated_at);
+    });
+  }, [absentDays, createdSince, deletedFilter, expiringDays, members, membershipFilter, paymentFilter, planFilter, searchTerm, sortKey, todayAd]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / rowsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedMembers = filteredMembers.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
+  const validCsvRows = csvRows.filter((row) => row.errors.length === 0);
+  const invalidCsvRows = csvRows.filter((row) => row.errors.length > 0);
+
+  const resetPage = () => setCurrentPage(1);
+
+  const openAddMember = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyMemberForm, membership_type: settings.default_membership_type });
+    setFormErrors({});
+    setFormOpen(true);
   };
 
-  const openAddMemberModal = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setShowMemberModal(true);
+  const openEditMember = (member: MemberRow) => {
+    setEditingId(member.id);
+    setForm({
+      member_id: member.member_id,
+      full_name: member.full_name,
+      email: member.email ?? "",
+      phone: member.phone,
+      membership_type: member.membership_type,
+      membership_status: member.membership_status,
+      start_date: member.start_date ?? "",
+      end_date: member.end_date ?? "",
+      last_visit_date: member.last_visit_date ?? "",
+      payment_status: member.payment_status,
+      payment_due_date: member.payment_due_date ?? "",
+      notes: member.notes ?? "",
+    });
+    setFormErrors({});
+    setFormOpen(true);
   };
 
-  const toPayload = (row: MemberForm) => ({
-    member_id: row.member_id.trim(),
-    full_name: row.full_name.trim(),
-    email: normalizeNullable(row.email || ""),
-    phone: row.phone.trim(),
-    membership_type: row.membership_type,
-    membership_status: row.membership_status,
-    start_date: normalizeNullable(row.start_date || ""),
-    end_date: normalizeNullable(row.end_date || ""),
-    last_visit_date: normalizeNullable(row.last_visit_date || ""),
-    payment_status: row.payment_status,
-    payment_due_date: normalizeNullable(row.payment_due_date || ""),
-    notes: normalizeNullable(row.notes || ""),
-  });
+  const updateForm = <K extends keyof MemberForm>(key: K, value: MemberForm[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setFormErrors((current) => ({ ...current, [key]: undefined }));
+  };
 
-  const saveMember = async (e: SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const saveMember = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (saving) return;
     setMessage("");
+
+    const normalizedForm = { ...form, phone: normalizePhone(form.phone) };
+    const errors = validateMemberForm(normalizedForm, members, editingId);
+    setFormErrors(errors);
+    if (hasValidationErrors(errors)) return;
+
     setSaving(true);
+    const payload = toMemberPayload(normalizedForm);
+    const result = editingId
+      ? await supabase.from("members").update(payload).eq("id", editingId)
+      : await supabase.from("members").insert(payload);
 
-    const payload = toPayload(form);
-    const errors = validateRow(
-      {
-        ...form,
-        member_id: payload.member_id,
-        full_name: payload.full_name,
-        email: payload.email || "",
-        phone: payload.phone,
-        start_date: payload.start_date || "",
-        end_date: payload.end_date || "",
-        last_visit_date: payload.last_visit_date || "",
-        payment_due_date: payload.payment_due_date || "",
-        notes: payload.notes || "",
-      },
-      new Set<string>()
-    );
-
-    if (errors.length) {
+    if (result.error) {
       setSaving(false);
-      setMessage(errors.join(", "));
+      setMessage(result.error.message);
       return;
     }
 
-    let error;
-    if (editingId) {
-      const res = await supabase.from("members").update(payload).eq("id", editingId);
-      error = res.error;
-    } else {
-      const res = await supabase.from("members").insert(payload);
-      error = res.error;
-    }
-
-    setSaving(false);
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    const eventType: N8nMembersEventPayload["event_type"] = editingId
-      ? "member_updated"
-      : "member_created";
     const webhookResult = await notifyN8nMembers({
-      event_type: eventType,
+      event_type: editingId ? "member_updated" : "member_created",
       source: "admin_manual",
       member_ids: [payload.member_id],
       count: 1,
       occurred_at: new Date().toISOString(),
     });
 
-    if (!webhookResult.ok && !webhookResult.skipped) {
-      setMessage(
-        `${editingId ? "Member updated" : "Member created"} but n8n notification failed: ${webhookResult.error}`
-      );
-    } else if (webhookResult.skipped) {
-      setMessage(`${editingId ? "Member updated" : "Member created"}. n8n webhook is not configured.`);
-    } else {
-      setMessage(`${editingId ? "Member updated" : "Member created"} and n8n notified.`);
-    }
-
-    closeMemberModal();
+    setSaving(false);
+    setFormOpen(false);
     await loadMembers();
+    setMessage(
+      webhookResult.ok
+        ? `${editingId ? "Member updated" : "Member created"} and webhook notified.`
+        : webhookResult.skipped
+          ? `${editingId ? "Member updated" : "Member created"}. Webhook is not configured.`
+          : `${editingId ? "Member updated" : "Member created"} but webhook failed: ${webhookResult.error}`
+    );
   };
 
-  const onEdit = (row: MemberRow) => {
-    setEditingId(row.id);
-    setForm({
-      member_id: row.member_id,
-      full_name: row.full_name,
-      email: row.email || "",
-      phone: row.phone,
-      membership_type: row.membership_type,
-      membership_status: row.membership_status,
-      start_date: row.start_date || "",
-      end_date: row.end_date || "",
-      last_visit_date: row.last_visit_date || "",
-      payment_status: row.payment_status,
-      payment_due_date: row.payment_due_date || "",
-      notes: row.notes || "",
-    });
-    setDetailMember(null);
-    setShowMemberModal(true);
-  };
-
-  const onDelete = async (id: number) => {
-    if (!window.confirm("Move this member to deleted list?")) return;
-    const { error } = await supabase
-      .from("members")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", id);
+  const softDeleteMember = async (member: MemberRow) => {
+    if (!window.confirm(`Move ${member.full_name} to deleted members?`)) return;
+    const { error } = await supabase.from("members").update({ deleted_at: new Date().toISOString() }).eq("id", member.id);
     if (error) {
       setMessage(error.message);
       return;
     }
-    setMessage("Member soft-deleted.");
+    setMessage("Member moved to deleted list.");
+    setDetailMember(null);
     await loadMembers();
+  };
+
+  const restoreMember = async (member: MemberRow) => {
+    const { error } = await supabase.from("members").update({ deleted_at: null }).eq("id", member.id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setMessage("Member restored.");
+    await loadMembers();
+  };
+
+  const markPaid = async (member: MemberRow) => {
+    const { error } = await supabase.from("members").update({ payment_status: "paid", payment_due_date: null }).eq("id", member.id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setMessage("Payment status marked as paid. No payment amount was recorded because the schema does not store amounts.");
+    await loadMembers();
+    setDetailMember((current) => (current && current.id === member.id ? { ...current, payment_status: "paid", payment_due_date: null } : current));
+  };
+
+  const loadMemberProfile = async (member: MemberRow) => {
+    setDetailMember(member);
+    setGeneratedReport(null);
+    setLoadingProfile(true);
+    setMeasurements([]);
+    setTransformations([]);
+    setReportLogs([]);
+    setMemberAttendance([]);
+
+    const [measurementsRes, transformationsRes, logsRes, attendanceRes] = await Promise.all([
+      supabase.from("member_measurements").select("*").eq("member_ref", member.id).order("recorded_at", { ascending: true }).limit(500),
+      supabase.from("member_transformations").select("*").eq("member_ref", member.id).order("captured_at", { ascending: false }).limit(200),
+      supabase.from("member_report_logs").select("*").eq("member_ref", member.id).order("sent_at", { ascending: false }).limit(20),
+      supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").eq("member_ref", member.id).order("attendance_date", { ascending: false }).limit(60),
+    ]);
+
+    if (measurementsRes.error || transformationsRes.error || logsRes.error || attendanceRes.error) {
+      setMessage(
+        measurementsRes.error?.message ||
+          transformationsRes.error?.message ||
+          logsRes.error?.message ||
+          attendanceRes.error?.message ||
+          "Profile load failed."
+      );
+    } else {
+      setMeasurements((measurementsRes.data ?? []) as MeasurementRow[]);
+      setTransformations((transformationsRes.data ?? []) as TransformationRow[]);
+      setReportLogs((logsRes.data ?? []) as MemberReportLogRow[]);
+      setMemberAttendance((attendanceRes.data ?? []) as AttendanceRow[]);
+    }
+    setLoadingProfile(false);
   };
 
   const addMeasurement = async () => {
     if (!detailMember) return;
-    setSavingMeasurement(true);
-    const payload = {
+    const { error } = await supabase.from("member_measurements").insert({
       member_ref: detailMember.id,
       recorded_at: measurementForm.recorded_at,
       weight_kg: toNullableNumber(measurementForm.weight_kg),
@@ -691,16 +578,14 @@ export default function AdminMembers() {
       arm_cm: toNullableNumber(measurementForm.arm_cm),
       thigh_cm: toNullableNumber(measurementForm.thigh_cm),
       notes: measurementForm.notes.trim() || null,
-    };
+    });
 
-    const { error } = await supabase.from("member_measurements").insert(payload);
-    setSavingMeasurement(false);
     if (error) {
       setMessage(error.message);
       return;
     }
-    setMeasurementForm((prev) => ({
-      ...prev,
+    setMeasurementForm({
+      recorded_at: todayAd,
       weight_kg: "",
       body_fat_percent: "",
       chest_cm: "",
@@ -709,888 +594,705 @@ export default function AdminMembers() {
       arm_cm: "",
       thigh_cm: "",
       notes: "",
-    }));
-    await loadMemberExtras(detailMember.id);
+    });
+    await loadMemberProfile(detailMember);
   };
 
   const deleteMeasurement = async (id: number) => {
-    if (!detailMember) return;
+    if (!detailMember || !window.confirm("Delete this measurement log?")) return;
     const { error } = await supabase.from("member_measurements").delete().eq("id", id);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-    await loadMemberExtras(detailMember.id);
+    if (error) setMessage(error.message);
+    else await loadMemberProfile(detailMember);
   };
 
-  const uploadMilestoneImage = async (file: File) => {
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `member-transformations/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const uploadMilestoneImage = async (file: File, memberId: number) => {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const path = `member-transformations/${memberId}/${Date.now()}-${safeName}`;
     const { error } = await supabase.storage.from("gym-media").upload(path, file);
-    if (error) throw new Error(error.message);
+    if (error) throw error;
     return supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
-  };
-
-  const onTransformationFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
-    setTransformationPhotoFile(file);
-    if (file) {
-      setTransformationPhotoPreview(URL.createObjectURL(file));
-      return;
-    }
-    setTransformationPhotoPreview("");
   };
 
   const addTransformation = async () => {
     if (!detailMember) return;
-    setSavingTransformation(true);
     let photoUrl: string | null = null;
     if (transformationPhotoFile) {
       try {
-        photoUrl = await uploadMilestoneImage(transformationPhotoFile);
-      } catch (uploadErr: any) {
-        setSavingTransformation(false);
-        setMessage(uploadErr?.message || "Milestone photo upload failed.");
+        photoUrl = await uploadMilestoneImage(transformationPhotoFile, detailMember.id);
+      } catch (error) {
+        setMessage(errorMessage(error));
         return;
       }
     }
-    const payload = {
+
+    const { error } = await supabase.from("member_transformations").insert({
       member_ref: detailMember.id,
       captured_at: transformationForm.captured_at,
       milestone_title: transformationForm.milestone_title.trim() || null,
       milestone_notes: transformationForm.milestone_notes.trim() || null,
       photo_url: photoUrl,
-    };
-    const { error } = await supabase.from("member_transformations").insert(payload);
-    setSavingTransformation(false);
+    });
+
     if (error) {
       setMessage(error.message);
       return;
     }
-    setTransformationForm((prev) => ({
-      ...prev,
-      milestone_title: "",
-      milestone_notes: "",
-    }));
+
+    setTransformationForm({ captured_at: todayAd, milestone_title: "", milestone_notes: "" });
     setTransformationPhotoFile(null);
-    setTransformationPhotoPreview("");
-    setTransformationFileInputKey((k) => k + 1);
-    await loadMemberExtras(detailMember.id);
+    await loadMemberProfile(detailMember);
   };
 
   const deleteTransformation = async (id: number) => {
-    if (!detailMember) return;
+    if (!detailMember || !window.confirm("Delete this transformation entry?")) return;
     const { error } = await supabase.from("member_transformations").delete().eq("id", id);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-    await loadMemberExtras(detailMember.id);
+    if (error) setMessage(error.message);
+    else await loadMemberProfile(detailMember);
   };
 
   const sendProgressReport = async () => {
     if (!detailMember) return;
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      setMessage("Admin session missing. Please sign in again.");
-      return;
-    }
-
-    setSendingReport(true);
-    setMessage("");
-    setGeneratedReport(null);
     const { data, error } = await supabase.functions.invoke("send-progress-report", {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
       body: { member_id: detailMember.id },
     });
-    setSendingReport(false);
-
-    if (error) {
-      setMessage(`Report generation failed: ${error.message}`);
-      await loadMemberExtras(detailMember.id);
-      return;
-    }
-
-    const response = (data || null) as SendProgressReportResponse | null;
-    if (!response?.ok) {
-      setMessage(`Report generation failed: ${response?.error || "Unknown error"}`);
-      await loadMemberExtras(detailMember.id);
-      return;
-    }
-
-    setGeneratedReport(response.report || null);
-    setMessage("Progress report generated successfully.");
-    await loadMemberExtras(detailMember.id);
-  };
-
-  const onRestore = async (id: number) => {
-    const { error } = await supabase.from("members").update({ deleted_at: null }).eq("id", id);
     if (error) {
       setMessage(error.message);
       return;
     }
-    setMessage("Member restored.");
-    await loadMembers();
+    const response = data as SendProgressReportResponse;
+    if (!response.ok) {
+      setMessage(response.error || "Progress report failed.");
+      return;
+    }
+    setGeneratedReport(response.report ?? null);
+    setMessage("Progress report generated.");
+    await loadMemberProfile(detailMember);
   };
 
   const parseCsv = async (event: ChangeEvent<HTMLInputElement>) => {
-    setMessage("");
     const file = event.target.files?.[0];
     if (!file) return;
+    setCsvName(file.name);
+    setCsvRows([]);
+    setMessage("");
 
     if (!file.name.toLowerCase().endsWith(".csv")) {
-      setCsvName(file.name);
-      setCsvRows([]);
-      setMessage("Only CSV files are supported in this importer.");
+      setMessage("Only CSV files are supported.");
       return;
     }
 
     const text = await file.text();
-    const lines = text
-      .replace(/\r/g, "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (!lines.length) {
-      setCsvName(file.name);
-      setCsvRows([]);
+    const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    if (lines.length < 2) {
       setMessage("CSV is empty.");
       return;
     }
 
-    const headerParts = parseCsvLine(lines[0]).map((h) => h.trim());
-    const missing = csvHeaders.filter((header) => !headerParts.includes(header));
-    if (missing.length > 0) {
-      setCsvName(file.name);
-      setCsvRows([]);
-      setMessage(`Missing required headers: ${missing.join(", ")}`);
+    const headerParts = parseCsvLine(lines[0]);
+    const missingHeaders = csvHeaders.filter((header) => !headerParts.includes(header));
+    if (missingHeaders.length > 0) {
+      setMessage(`Missing CSV columns: ${missingHeaders.join(", ")}`);
       return;
     }
 
-    const headerIndex: Record<string, number> = {};
-    headerParts.forEach((header, idx) => {
-      headerIndex[header] = idx;
-    });
-
+    const headerIndex = Object.fromEntries(headerParts.map((header, index) => [header, index]));
     const seen = new Set<string>();
-    const parsed: CsvParsedRow[] = lines.slice(1).map((line, i) => {
+    const existingIds = new Set(members.map((member) => member.member_id));
+
+    const parsed = lines.slice(1).map((line, index) => {
       const values = parseCsvLine(line);
       const row: MemberForm = {
         member_id: values[headerIndex.member_id] || "",
         full_name: values[headerIndex.full_name] || "",
         email: values[headerIndex.email] || "",
         phone: values[headerIndex.phone] || "",
-        membership_type: (values[headerIndex.membership_type] || "").toLowerCase() as MembershipType,
-        membership_status: (values[headerIndex.membership_status] || "").toLowerCase() as MembershipStatus,
+        membership_type: (values[headerIndex.membership_type] || "monthly").toLowerCase() as MembershipType,
+        membership_status: (values[headerIndex.membership_status] || "active").toLowerCase() as MembershipStatus,
         start_date: values[headerIndex.start_date] || "",
         end_date: values[headerIndex.end_date] || "",
         last_visit_date: values[headerIndex.last_visit_date] || "",
-        payment_status: (values[headerIndex.payment_status] || "").toLowerCase() as PaymentStatus,
+        payment_status: (values[headerIndex.payment_status] || "unpaid").toLowerCase() as PaymentStatus,
         payment_due_date: values[headerIndex.payment_due_date] || "",
         notes: values[headerIndex.notes] || "",
       };
+      const rowErrors = validateMemberForm(row, [], null);
+      const errors = Object.values(rowErrors).filter((value): value is string => Boolean(value));
+      const warnings: string[] = [];
 
-      return {
-        ...row,
-        rowNumber: i + 2,
-        errors: validateRow(row, seen),
-      };
+      if (seen.has(row.member_id)) errors.push("Duplicate member_id inside CSV.");
+      if (row.member_id) seen.add(row.member_id);
+      if (existingIds.has(row.member_id)) warnings.push("Existing member ID will be updated.");
+
+      return { ...row, rowNumber: index + 2, errors, warnings };
     });
 
-    setCsvName(file.name);
     setCsvRows(parsed);
   };
 
   const importCsvRows = async () => {
-    if (!validCsvRows.length) {
-      setMessage("No valid CSV rows to import.");
-      return;
-    }
-
+    if (validCsvRows.length === 0 || importing) return;
     setImporting(true);
-    setMessage("");
-
-    const payload = validCsvRows.map((row) => toPayload(row));
-
+    const payload = validCsvRows.map((row) => toMemberPayload(row));
     const { error } = await supabase.from("members").upsert(payload, { onConflict: "member_id" });
 
-    setImporting(false);
-
     if (error) {
+      setImporting(false);
       setMessage(error.message);
       return;
     }
 
-    const importedMemberIds = payload.map((row) => row.member_id);
     const webhookResult = await notifyN8nMembers({
       event_type: "members_imported",
       source: "admin_csv_import",
-      member_ids: importedMemberIds,
-      count: importedMemberIds.length,
+      member_ids: payload.map((row) => row.member_id),
+      count: payload.length,
       occurred_at: new Date().toISOString(),
     });
 
-    if (!webhookResult.ok && !webhookResult.skipped) {
-      setMessage(
-        `Imported ${validCsvRows.length} members, but n8n notification failed: ${webhookResult.error}`
-      );
-    } else if (webhookResult.skipped) {
-      setMessage(`Imported ${validCsvRows.length} members. n8n webhook is not configured.`);
-    } else {
-      setMessage(`Imported ${validCsvRows.length} members and n8n notified.`);
-    }
-
+    setImporting(false);
     setCsvRows([]);
     setCsvName("");
+    setCsvOpen(false);
     await loadMembers();
+    setMessage(
+      webhookResult.ok
+        ? `Imported ${payload.length} members and webhook notified.`
+        : webhookResult.skipped
+          ? `Imported ${payload.length} members. Webhook is not configured.`
+          : `Imported ${payload.length} members but webhook failed: ${webhookResult.error}`
+    );
   };
 
+  if (loading) return <AdminLoading label="Loading members..." />;
+
   return (
-    <div className="relative">
-      <div className={`space-y-6 transition ${isAnyModalOpen ? "blur-sm pointer-events-none select-none" : ""}`}>
-      <div className="rounded-2xl bg-black/35 p-6 space-y-4">
-        <h2 className="text-xl font-black text-white">CSV Import</h2>
-        <p className="text-sm text-zinc-300">
-          Upload members from CSV. Required columns: {csvHeaders.join(", ")}.
-        </p>
-        <p className="text-xs text-zinc-400">
-          n8n webhook: {n8nEnabled ? "configured" : "not configured"} ({`VITE_N8N_MEMBERS_WEBHOOK_URL`})
-        </p>
-        <a
-          href="/members-import-template.csv"
-          className="inline-flex rounded-lg bg-white/10 px-3 py-2 text-sm text-white"
-          download
-        >
-          Download CSV Template
-        </a>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={parseCsv}
-          className="block w-full rounded-xl bg-white/10 px-4 py-3 text-sm text-zinc-100"
-        />
-        {csvName ? <p className="text-sm text-zinc-300">Selected: {csvName}</p> : null}
-        <div className="rounded-xl bg-white/5 p-4 text-sm text-zinc-200">
-          Valid rows: <b>{validCsvRows.length}</b> | Invalid rows: <b>{invalidCsvRows.length}</b>
+    <div className="space-y-6">
+      <AdminPageHeader
+        eyebrow="Members"
+        title="Member management"
+        description="Search, filter, create, edit, restore and review member records without losing existing history."
+        actions={
+          <>
+            <AdminButton type="button" variant="secondary" onClick={() => setCsvOpen(true)}>
+              <Upload className="h-4 w-4" />
+              CSV import
+            </AdminButton>
+            <AdminButton type="button" variant="primary" onClick={openAddMember}>
+              <Plus className="h-4 w-4" />
+              Add member
+            </AdminButton>
+          </>
+        }
+      />
+
+      {message ? <AdminNotice tone={message.toLowerCase().includes("failed") || message.toLowerCase().includes("error") ? "danger" : "success"}>{message}</AdminNotice> : null}
+
+      <AdminCard>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_repeat(5,minmax(0,1fr))]">
+          <AdminSearchField
+            value={searchTerm}
+            onChange={(value) => {
+              setSearchTerm(value);
+              resetPage();
+            }}
+            placeholder="Search by name, phone, email or member ID"
+          />
+          <AdminSelect
+            options={membershipOptions}
+            value={membershipFilter}
+            onChange={(event) => {
+              setMembershipFilter(event.target.value as MembershipFilter);
+              resetPage();
+            }}
+          />
+          <AdminSelect
+            options={paymentOptions}
+            value={paymentFilter}
+            onChange={(event) => {
+              setPaymentFilter(event.target.value as PaymentFilter);
+              resetPage();
+            }}
+          />
+          <AdminSelect
+            options={planOptions}
+            value={planFilter}
+            onChange={(event) => {
+              setPlanFilter(event.target.value as MembershipType | "all");
+              resetPage();
+            }}
+          />
+          <AdminSelect
+            options={deletedOptions}
+            value={deletedFilter}
+            onChange={(event) => {
+              setDeletedFilter(event.target.value as DeletedFilter);
+              resetPage();
+            }}
+          />
+          <AdminSelect
+            options={sortOptions}
+            value={sortKey}
+            onChange={(event) => {
+              setSortKey(event.target.value as SortKey);
+              resetPage();
+            }}
+          />
         </div>
-        <button
-          type="button"
-          onClick={importCsvRows}
-          disabled={importing || validCsvRows.length === 0}
-          className="rounded-xl bg-white px-5 py-3 font-black text-black disabled:opacity-60"
-        >
-          {importing ? "Importing..." : "Import Valid Rows"}
-        </button>
-        {invalidCsvRows.length ? (
-          <div className="rounded-xl bg-red-500/10 p-4 space-y-2">
-            <div className="text-sm font-semibold text-red-300">Invalid rows</div>
-            {invalidCsvRows.slice(0, 20).map((row) => (
-              <div key={row.rowNumber} className="text-xs text-red-200">
-                Row {row.rowNumber}: {row.errors.join(", ")}
-              </div>
-            ))}
-            {invalidCsvRows.length > 20 ? (
-              <div className="text-xs text-red-300">Showing first 20 invalid rows.</div>
+
+        {(membershipFilter === "expiring" || createdSince || absentDays > 0) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {membershipFilter === "expiring" ? (
+              <AdminBadge tone="warning">Expiring within {expiringDays} days</AdminBadge>
             ) : null}
+            {createdSince ? <AdminBadge tone="accent">Created since {createdSince}</AdminBadge> : null}
+            {absentDays > 0 ? <AdminBadge tone="warning">No last visit for {absentDays}+ days</AdminBadge> : null}
+            <AdminButton
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setMembershipFilter("all");
+                setCreatedSince("");
+                setAbsentDays(0);
+                resetPage();
+              }}
+            >
+              Clear dashboard filters
+            </AdminButton>
           </div>
-        ) : null}
+        )}
+      </AdminCard>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <AdminCard className="p-4">
+          <div className="text-xs text-slate-500">Visible records</div>
+          <div className="mt-1 text-2xl font-black text-white">{filteredMembers.length}</div>
+        </AdminCard>
+        <AdminCard className="p-4">
+          <div className="text-xs text-slate-500">Active members</div>
+          <div className="mt-1 text-2xl font-black text-white">{members.filter((member) => !member.deleted_at && getMemberLifecycle(member, todayAd) === "active").length}</div>
+        </AdminCard>
+        <AdminCard className="p-4">
+          <div className="text-xs text-slate-500">Payment follow-up</div>
+          <div className="mt-1 text-2xl font-black text-white">{members.filter((member) => !member.deleted_at && member.payment_status !== "paid").length}</div>
+        </AdminCard>
+        <AdminCard className="p-4">
+          <div className="text-xs text-slate-500">Deleted members</div>
+          <div className="mt-1 text-2xl font-black text-white">{members.filter((member) => member.deleted_at).length}</div>
+        </AdminCard>
       </div>
 
-      <div className="rounded-2xl bg-black/35 p-6 space-y-4">
-        <div className="flex items-end gap-3">
-          <div className="flex-1 min-w-0 space-y-1">
-            <FieldLabel>Search Members</FieldLabel>
-            <input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
-              placeholder="Search by name, member ID, email, phone"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={openAddMemberModal}
-            className="rounded-xl bg-white px-5 py-3 font-black text-black"
-          >
-            Add Member
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowDeleted((v) => !v)}
-            className="rounded-xl bg-white/10 px-4 py-3 font-semibold text-white"
-          >
-            {showDeleted ? "Show Active" : "Show Deleted"}
-          </button>
-        </div>
-
-        {message ? <p className="text-sm text-zinc-300">{message}</p> : null}
-
-        <div className="overflow-auto rounded-xl border border-white/10">
-          <table className="min-w-[1400px] w-full text-sm text-zinc-100">
-            <thead className="bg-white/10 text-xs uppercase tracking-wide">
-              <tr>
-                <th className="px-3 py-3 text-left">Member ID</th>
-                <th className="px-3 py-3 text-left">Full Name</th>
-                <th className="px-3 py-3 text-left">Email</th>
-                <th className="px-3 py-3 text-left">Phone</th>
-                <th className="px-3 py-3 text-left">Membership Type</th>
-                <th className="px-3 py-3 text-left">Membership Status</th>
-                <th className="px-3 py-3 text-left">Start Date</th>
-                <th className="px-3 py-3 text-left">End Date</th>
-                <th className="px-3 py-3 text-left">Last Visit</th>
-                <th className="px-3 py-3 text-left">Payment Status</th>
-                <th className="px-3 py-3 text-left">Payment Due</th>
-                <th className="px-3 py-3 text-left">Notes</th>
-                <th className="px-3 py-3 text-left">Created</th>
-                <th className="px-3 py-3 text-left">Updated</th>
-                <th className="px-3 py-3 text-left">Deleted At</th>
-                <th className="px-3 py-3 text-left">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedMembers.map((row) => (
-                <tr
-                  key={row.id}
-                  onClick={() => setDetailMember(row)}
-                  className="border-t border-white/10 cursor-pointer hover:bg-white/5"
-                >
-                  <td className="px-3 py-3">{row.member_id}</td>
-                  <td className="px-3 py-3 font-semibold">{row.full_name}</td>
-                  <td className="px-3 py-3">{row.email || "-"}</td>
-                  <td className="px-3 py-3">{row.phone}</td>
-                  <td className="px-3 py-3">{row.membership_type}</td>
-                  <td className="px-3 py-3">{row.membership_status}</td>
-                  <td className="px-3 py-3">{formatBsDateFromAd(row.start_date)}</td>
-                  <td className="px-3 py-3">{formatBsDateFromAd(row.end_date)}</td>
-                  <td className="px-3 py-3">{formatBsDateFromAd(row.last_visit_date)}</td>
-                  <td className="px-3 py-3">{row.payment_status}</td>
-                  <td className="px-3 py-3">{formatBsDateFromAd(row.payment_due_date)}</td>
-                  <td className="px-3 py-3">{row.notes || "-"}</td>
-                  <td className="px-3 py-3">{formatDateTime(row.created_at)}</td>
-                  <td className="px-3 py-3">{formatDateTime(row.updated_at)}</td>
-                  <td className="px-3 py-3">{formatDateTime(row.deleted_at)}</td>
-                  <td className="px-3 py-3">
-                    <div className="flex gap-2">
-                      {row.deleted_at ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRestore(row.id);
-                          }}
-                          className="rounded-lg bg-white px-3 py-1 text-black"
-                        >
-                          Restore
+      <AdminCard padded={false}>
+        <div className="hidden lg:block">
+          <AdminTableShell>
+            <AdminTableScroll>
+              <table className="min-w-full divide-y divide-slate-800 text-sm">
+                <thead className="bg-slate-900/80 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Member</th>
+                    <th className="px-4 py-3">Plan</th>
+                    <th className="px-4 py-3">Membership</th>
+                    <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3">Dates</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {pagedMembers.map((member) => (
+                    <tr key={member.id} className="bg-slate-950/60 hover:bg-slate-900/65">
+                      <td className="px-4 py-4">
+                        <button type="button" onClick={() => loadMemberProfile(member)} className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300">
+                          <div className="font-semibold text-white">{member.full_name}</div>
+                          <div className="text-xs text-slate-500">{member.member_id} | {member.phone}</div>
                         </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEdit(row);
-                            }}
-                            className="rounded-lg bg-white/10 px-3 py-1 text-white"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDelete(row.id);
-                            }}
-                            className="rounded-lg bg-red-500/20 px-3 py-1 text-red-300"
-                          >
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-4 py-4 text-slate-300">{statusLabel(member.membership_type)}</td>
+                      <td className="px-4 py-4">
+                        <AdminBadge tone={memberStatusTone(member, todayAd)}>{member.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(member, todayAd))}</AdminBadge>
+                      </td>
+                      <td className="px-4 py-4">
+                        <AdminBadge tone={paymentTone(member.payment_status)}>{statusLabel(member.payment_status)}</AdminBadge>
+                      </td>
+                      <td className="px-4 py-4 text-xs text-slate-400">
+                        <div>End: {formatDisplayDate(member.end_date, settings.date_display_preference)}</div>
+                        <div>Due: {formatDisplayDate(member.payment_due_date, settings.date_display_preference)}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          <AdminButton type="button" variant="secondary" onClick={() => openEditMember(member)} aria-label={`Edit ${member.full_name}`}>
+                            <Pencil className="h-4 w-4" />
+                          </AdminButton>
+                          {member.deleted_at ? (
+                            <AdminButton type="button" variant="secondary" onClick={() => restoreMember(member)} aria-label={`Restore ${member.full_name}`}>
+                              <RotateCcw className="h-4 w-4" />
+                            </AdminButton>
+                          ) : (
+                            <AdminButton type="button" variant="danger" onClick={() => softDeleteMember(member)} aria-label={`Delete ${member.full_name}`}>
+                              <Trash2 className="h-4 w-4" />
+                            </AdminButton>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </AdminTableScroll>
+          </AdminTableShell>
         </div>
 
-        {filteredMembers.length === 0 ? (
-          <p className="text-sm text-zinc-400">No members found for the current search.</p>
-        ) : null}
-
-        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
-      </div>
-      </div>
-
-      {modalRoot && showMemberModal
-        ? createPortal(
-            <>
-              <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-md" />
-              <div className="fixed left-1/2 top-1/2 z-[100] w-[calc(100%-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2">
-                <form
-                  onSubmit={saveMember}
-                  className="w-full max-h-[90vh] rounded-2xl border border-zinc-300 bg-zinc-100 text-zinc-900 shadow-2xl overflow-hidden flex flex-col"
-                >
-                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-300 bg-zinc-100 px-6 py-4">
-                    <h2 className="text-xl font-black text-zinc-900">{editingId ? "Edit" : "Add"} Member</h2>
-                    <button
-                      type="button"
-                      onClick={closeMemberModal}
-                      className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white"
-                    >
-                      Close
-                    </button>
-                  </div>
-
-                  <div className="overflow-y-auto p-6 space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <FieldLabel className="text-zinc-800">Member ID</FieldLabel>
-                      <input
-                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                        value={form.member_id}
-                        onChange={(e) => onChange("member_id", e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <FieldLabel className="text-zinc-800">Full Name</FieldLabel>
-                      <input
-                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                        value={form.full_name}
-                        onChange={(e) => onChange("full_name", e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <FieldLabel className="text-zinc-800">Email</FieldLabel>
-                      <input
-                        type="email"
-                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                        value={form.email || ""}
-                        onChange={(e) => onChange("email", e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <FieldLabel className="text-zinc-800">Phone</FieldLabel>
-                      <input
-                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                        value={form.phone}
-                        onChange={(e) => onChange("phone", e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <FieldLabel className="text-zinc-800">Membership Type</FieldLabel>
-                      <select
-                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                        value={form.membership_type}
-                        onChange={(e) => onChange("membership_type", e.target.value as MembershipType)}
-                      >
-                        {membershipTypes.map((v) => (
-                          <option key={v} value={v} className="bg-white text-zinc-900">
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <FieldLabel className="text-zinc-800">Membership Status</FieldLabel>
-                      <select
-                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                        value={form.membership_status}
-                        onChange={(e) => onChange("membership_status", e.target.value as MembershipStatus)}
-                      >
-                        {membershipStatuses.map((v) => (
-                          <option key={v} value={v} className="bg-white text-zinc-900">
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <FieldLabel className="text-zinc-800">Payment Status</FieldLabel>
-                      <select
-                        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                        value={form.payment_status}
-                        onChange={(e) => onChange("payment_status", e.target.value as PaymentStatus)}
-                      >
-                        {paymentStatuses.map((v) => (
-                          <option key={v} value={v} className="bg-white text-zinc-900">
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div>
-                      <BsDateInput label="Start Date" adValue={form.start_date} onChangeAd={(v) => onChange("start_date", v)} />
-                    </div>
-                    <div>
-                      <BsDateInput label="End Date" adValue={form.end_date} onChangeAd={(v) => onChange("end_date", v)} />
-                    </div>
-                    <div>
-                      <BsDateInput
-                        label="Last Visit Date"
-                        adValue={form.last_visit_date}
-                        onChangeAd={(v) => onChange("last_visit_date", v)}
-                      />
-                    </div>
-                    <div>
-                      <BsDateInput
-                        label="Payment Due Date"
-                        adValue={form.payment_due_date}
-                        onChangeAd={(v) => onChange("payment_due_date", v)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <FieldLabel className="text-zinc-800">Notes</FieldLabel>
-                    <textarea
-                      className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900"
-                      value={form.notes || ""}
-                      onChange={(e) => onChange("notes", e.target.value)}
-                    />
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="rounded-xl bg-white px-5 py-3 font-black text-black disabled:opacity-60"
-                    >
-                      {saving ? "Saving..." : editingId ? "Update Member" : "Create Member"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={closeMemberModal}
-                      className="rounded-xl bg-zinc-700 px-5 py-3 font-semibold text-white"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  </div>
-                </form>
-              </div>
-            </>,
-            modalRoot
-          )
-        : null}
-
-      {modalRoot && detailMember
-        ? createPortal(
-            <>
-              <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-md" />
-              <div className="fixed left-1/2 top-1/2 z-[100] w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 -translate-y-1/2">
-                <div className="w-full max-h-[90vh] rounded-2xl border border-zinc-300 bg-zinc-100 shadow-2xl overflow-hidden flex flex-col text-zinc-900">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-300 bg-zinc-100 px-6 py-4">
-              <h2 className="text-xl font-black text-zinc-900">Member Details</h2>
-              <button
-                type="button"
-                onClick={() => setDetailMember(null)}
-                className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="overflow-y-auto p-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Member ID:</span> <span className="font-semibold">{detailMember.member_id}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Full Name:</span> <span className="font-semibold">{detailMember.full_name}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Email:</span> <span className="font-semibold">{detailMember.email || "-"}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Phone:</span> <span className="font-semibold">{detailMember.phone}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Membership Type:</span> <span className="font-semibold">{detailMember.membership_type}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Membership Status:</span> <span className="font-semibold">{detailMember.membership_status}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Start Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.start_date)}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">End Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.end_date)}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Last Visit Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.last_visit_date)}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Payment Status:</span> <span className="font-semibold">{detailMember.payment_status}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Payment Due Date (BS):</span> <span className="font-semibold">{formatBsDateFromAd(detailMember.payment_due_date)}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Created:</span> <span className="font-semibold">{formatDateTime(detailMember.created_at)}</span></div>
-              <div className="rounded-lg bg-white p-3"><span className="text-zinc-600">Updated:</span> <span className="font-semibold">{formatDateTime(detailMember.updated_at)}</span></div>
-              <div className="md:col-span-2 rounded-lg bg-white p-3">
-                <span className="text-zinc-600">Notes:</span> <span className="font-semibold">{detailMember.notes || "-"}</span>
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-white p-4 space-y-3">
-              <h4 className="text-sm font-black text-zinc-900">Body Measurement Logs</h4>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                <input
-                  type="date"
-                  value={measurementForm.recorded_at}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, recorded_at: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  placeholder="Weight (kg)"
-                  value={measurementForm.weight_kg}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, weight_kg: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  placeholder="Body Fat %"
-                  value={measurementForm.body_fat_percent}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, body_fat_percent: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  placeholder="Chest (cm)"
-                  value={measurementForm.chest_cm}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, chest_cm: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  placeholder="Waist (cm)"
-                  value={measurementForm.waist_cm}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, waist_cm: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                <input
-                  placeholder="Hips (cm)"
-                  value={measurementForm.hips_cm}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, hips_cm: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  placeholder="Arm (cm)"
-                  value={measurementForm.arm_cm}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, arm_cm: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  placeholder="Thigh (cm)"
-                  value={measurementForm.thigh_cm}
-                  onChange={(e) => setMeasurementForm((p) => ({ ...p, thigh_cm: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <button
-                  type="button"
-                  onClick={addMeasurement}
-                  disabled={savingMeasurement}
-                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {savingMeasurement ? "Saving..." : "Add Measurement"}
+        <div className="space-y-3 p-3 lg:hidden">
+          {pagedMembers.map((member) => (
+            <article key={member.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <button type="button" onClick={() => loadMemberProfile(member)} className="text-left">
+                  <div className="font-semibold text-white">{member.full_name}</div>
+                  <div className="text-xs text-slate-500">{member.member_id}</div>
                 </button>
+                <AdminBadge tone={memberStatusTone(member, todayAd)}>{member.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(member, todayAd))}</AdminBadge>
               </div>
-              <textarea
-                placeholder="Measurement notes"
-                value={measurementForm.notes}
-                onChange={(e) => setMeasurementForm((p) => ({ ...p, notes: e.target.value }))}
-                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="rounded-lg border border-zinc-200 p-3">
-                  <div className="mb-2 text-xs font-bold text-zinc-700">Weight Progress</div>
-                  <MiniLineChart values={measurements.map((m) => m.weight_kg)} stroke="#0ea5e9" />
-                </div>
-                <div className="rounded-lg border border-zinc-200 p-3">
-                  <div className="mb-2 text-xs font-bold text-zinc-700">Waist Progress</div>
-                  <MiniLineChart values={measurements.map((m) => m.waist_cm)} stroke="#16a34a" />
-                </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
+                <div>Phone: {member.phone}</div>
+                <div>Plan: {statusLabel(member.membership_type)}</div>
+                <div>End: {formatDisplayDate(member.end_date, settings.date_display_preference)}</div>
+                <div>Due: {formatDisplayDate(member.payment_due_date, settings.date_display_preference)}</div>
               </div>
-
-              {loadingProfileExtras ? <p className="text-xs text-zinc-500">Loading measurements...</p> : null}
-              {measurements.length === 0 ? <p className="text-xs text-zinc-500">No measurements logged yet.</p> : null}
-              {measurements.slice().reverse().slice(0, 10).map((m) => (
-                <div key={m.id} className="rounded-lg border border-zinc-200 p-2 text-xs text-zinc-700 flex items-center justify-between gap-2">
-                  <div>
-                    {m.recorded_at} | W: {m.weight_kg ?? "-"} | BF: {m.body_fat_percent ?? "-"} | Chest: {m.chest_cm ?? "-"} | Waist: {m.waist_cm ?? "-"}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => deleteMeasurement(m.id)}
-                    className="rounded bg-red-500/15 px-2 py-1 font-semibold text-red-700"
-                  >
+              <div className="mt-3 flex gap-2">
+                <AdminButton type="button" variant="secondary" className="flex-1" onClick={() => openEditMember(member)}>
+                  Edit
+                </AdminButton>
+                {member.deleted_at ? (
+                  <AdminButton type="button" variant="secondary" className="flex-1" onClick={() => restoreMember(member)}>
+                    Restore
+                  </AdminButton>
+                ) : (
+                  <AdminButton type="button" variant="danger" className="flex-1" onClick={() => softDeleteMember(member)}>
                     Delete
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-xl bg-white p-4 space-y-3">
-              <h4 className="text-sm font-black text-zinc-900">Transformation Timeline</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                <input
-                  type="date"
-                  value={transformationForm.captured_at}
-                  onChange={(e) => setTransformationForm((p) => ({ ...p, captured_at: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  placeholder="Milestone title"
-                  value={transformationForm.milestone_title}
-                  onChange={(e) => setTransformationForm((p) => ({ ...p, milestone_title: e.target.value }))}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <input
-                  key={transformationFileInputKey}
-                  type="file"
-                  accept="image/*"
-                  onChange={onTransformationFileChange}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                />
-                <button
-                  type="button"
-                  onClick={addTransformation}
-                  disabled={savingTransformation}
-                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {savingTransformation ? "Saving..." : "Add Timeline Entry"}
-                </button>
+                  </AdminButton>
+                )}
               </div>
-              <textarea
-                placeholder="Milestone notes"
-                value={transformationForm.milestone_notes}
-                onChange={(e) => setTransformationForm((p) => ({ ...p, milestone_notes: e.target.value }))}
-                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-              />
-              {transformationPhotoPreview ? (
-                <div className="rounded-lg border border-zinc-200 p-2">
-                  <div className="mb-2 text-xs font-bold text-zinc-700">Photo Preview</div>
-                  <img
-                    src={transformationPhotoPreview}
-                    alt="Milestone preview"
-                    className="h-36 w-full rounded object-cover"
-                  />
-                </div>
-              ) : null}
+            </article>
+          ))}
+        </div>
 
-              {loadingProfileExtras ? <p className="text-xs text-zinc-500">Loading timeline...</p> : null}
-              {transformations.length === 0 ? <p className="text-xs text-zinc-500">No transformation timeline yet.</p> : null}
-              {transformations.map((t) => (
-                <div key={t.id} className="rounded-lg border border-zinc-200 p-3 text-sm text-zinc-700">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold">{t.milestone_title || "Milestone"}</div>
-                    <button
-                      type="button"
-                      onClick={() => deleteTransformation(t.id)}
-                      className="rounded bg-red-500/15 px-2 py-1 text-xs font-semibold text-red-700"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  <div className="text-xs text-zinc-500 mt-1">{t.captured_at}</div>
-                  {t.milestone_notes ? <div className="text-xs mt-1">{t.milestone_notes}</div> : null}
-                  {t.photo_url ? (
-                    <img src={t.photo_url} alt={t.milestone_title || "Milestone photo"} className="mt-2 h-40 w-full rounded object-cover" />
-                  ) : null}
-                </div>
-              ))}
+        {pagedMembers.length === 0 ? (
+          <div className="p-4">
+            <AdminEmptyState title="No members found" description="Try a different search or filter, or add a new member." />
+          </div>
+        ) : null}
+        <PaginationControls currentPage={safePage} totalPages={totalPages} onPageChange={setCurrentPage} />
+      </AdminCard>
+
+      <AdminDrawer
+        open={formOpen}
+        title={editingId ? "Edit member" : "Create member"}
+        description="Fields are grouped for front-desk entry. BS fields convert into AD dates stored by Supabase."
+        onClose={() => setFormOpen(false)}
+        size="xl"
+      >
+        <form onSubmit={saveMember} className="space-y-6">
+          <AdminCard>
+            <AdminSectionTitle title="Identity and contact" />
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <AdminField label="Member ID" error={formErrors.member_id}>
+                <AdminInput value={form.member_id} onChange={(event) => updateForm("member_id", event.target.value)} />
+              </AdminField>
+              <AdminField label="Full name" error={formErrors.full_name}>
+                <AdminInput value={form.full_name} onChange={(event) => updateForm("full_name", event.target.value)} />
+              </AdminField>
+              <AdminField label="Phone" error={formErrors.phone}>
+                <AdminInput value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} />
+              </AdminField>
+              <AdminField label="Email" error={formErrors.email}>
+                <AdminInput value={form.email ?? ""} onChange={(event) => updateForm("email", event.target.value)} />
+              </AdminField>
             </div>
+          </AdminCard>
 
-            <div className="rounded-xl bg-white p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-sm font-black text-zinc-900">Progress Report</h4>
-                <button
-                  type="button"
-                  onClick={sendProgressReport}
-                  disabled={sendingReport}
-                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {sendingReport ? "Generating..." : "Generate Progress Report"}
-                </button>
+          <AdminCard>
+            <AdminSectionTitle title="Membership and payment" />
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <AdminField label="Plan" error={formErrors.membership_type}>
+                <AdminSelect<MembershipType>
+                  options={membershipTypes.map((value) => ({ value, label: statusLabel(value) }))}
+                  value={form.membership_type}
+                  onChange={(event) => updateForm("membership_type", event.target.value as MembershipType)}
+                />
+              </AdminField>
+              <AdminField label="Membership status" error={formErrors.membership_status}>
+                <AdminSelect<MembershipStatus>
+                  options={membershipStatuses.map((value) => ({ value, label: statusLabel(value) }))}
+                  value={form.membership_status}
+                  onChange={(event) => updateForm("membership_status", event.target.value as MembershipStatus)}
+                />
+              </AdminField>
+              <AdminField label="Payment status" error={formErrors.payment_status}>
+                <AdminSelect<PaymentStatus>
+                  options={paymentStatuses.map((value) => ({ value, label: statusLabel(value) }))}
+                  value={form.payment_status}
+                  onChange={(event) => updateForm("payment_status", event.target.value as PaymentStatus)}
+                />
+              </AdminField>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <BsAdDateField label="Start date" adValue={form.start_date} onChangeAd={(value) => updateForm("start_date", value)} error={formErrors.start_date} />
+              <BsAdDateField label="End date" adValue={form.end_date} onChangeAd={(value) => updateForm("end_date", value)} error={formErrors.end_date} />
+              <BsAdDateField label="Last visit" adValue={form.last_visit_date} onChangeAd={(value) => updateForm("last_visit_date", value)} error={formErrors.last_visit_date} />
+              <BsAdDateField label="Payment due" adValue={form.payment_due_date} onChangeAd={(value) => updateForm("payment_due_date", value)} error={formErrors.payment_due_date} />
+            </div>
+          </AdminCard>
+
+          <AdminCard>
+            <AdminField label="Notes">
+              <AdminTextarea rows={4} value={form.notes ?? ""} onChange={(event) => updateForm("notes", event.target.value)} />
+            </AdminField>
+          </AdminCard>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <AdminButton type="button" variant="secondary" onClick={() => setFormOpen(false)}>
+              Cancel
+            </AdminButton>
+            <AdminButton type="submit" variant="primary" disabled={saving}>
+              {saving ? "Saving..." : editingId ? "Update member" : "Create member"}
+            </AdminButton>
+          </div>
+        </form>
+      </AdminDrawer>
+
+      <AdminDrawer
+        open={Boolean(detailMember)}
+        title={detailMember?.full_name ?? "Member profile"}
+        description={detailMember ? `${detailMember.member_id} | ${detailMember.phone}` : undefined}
+        onClose={() => setDetailMember(null)}
+        size="2xl"
+        footer={
+          detailMember ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+              <div className="flex flex-wrap gap-2">
+                <AdminButton type="button" variant="secondary" onClick={() => openEditMember(detailMember)}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </AdminButton>
+                {detailMember.payment_status !== "paid" ? (
+                  <AdminButton type="button" variant="secondary" onClick={() => markPaid(detailMember)}>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Mark paid
+                  </AdminButton>
+                ) : null}
               </div>
-              {generatedReport ? (
-                <div className="rounded-lg border border-zinc-200 p-3 space-y-3">
-                  <div className="text-xs text-zinc-600">
-                    Generated: <b>{formatDateTime(generatedReport.generated_at)}</b> | Gym: <b>{generatedReport.gym_name}</b>
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-zinc-700">Summary</div>
-                    <ul className="mt-1 list-disc pl-5 text-xs text-zinc-700 space-y-1">
-                      {generatedReport.summary_lines.map((line, idx) => (
-                        <li key={`${line}-${idx}`}>{line}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-zinc-700">Recent Milestones</div>
-                    {generatedReport.recent_milestones.length === 0 ? (
-                      <p className="mt-1 text-xs text-zinc-500">No milestones in generated report.</p>
-                    ) : (
-                      <div className="mt-2 space-y-2">
-                        {generatedReport.recent_milestones.map((m, idx) => (
-                          <div key={`${m.captured_at}-${idx}`} className="rounded border border-zinc-200 p-2 text-xs text-zinc-700">
-                            <div className="font-semibold">{m.milestone_title}</div>
-                            <div className="text-zinc-500">{m.captured_at}</div>
-                            {m.milestone_notes ? <div className="mt-1">{m.milestone_notes}</div> : null}
-                            {m.photo_url ? (
-                              <img
-                                src={m.photo_url}
-                                alt={m.milestone_title || "Generated milestone photo"}
-                                className="mt-2 h-40 w-full rounded object-cover"
-                              />
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-              {reportLogs.length === 0 ? (
-                <p className="text-xs text-zinc-500">No report logs yet.</p>
+              {detailMember.deleted_at ? (
+                <AdminButton type="button" variant="secondary" onClick={() => restoreMember(detailMember)}>
+                  Restore member
+                </AdminButton>
               ) : (
-                reportLogs.map((log) => (
-                  <div key={log.id} className="rounded-lg border border-zinc-200 p-2 text-xs text-zinc-700">
-                    {formatDateTime(log.sent_at)} | status: <b>{log.status}</b>
-                    {log.error_message ? ` | error: ${log.error_message}` : ""}
-                    {log.recipient_email ? ` | to: ${log.recipient_email}` : ""}
-                  </div>
-                ))
+                <AdminButton type="button" variant="danger" onClick={() => softDeleteMember(detailMember)}>
+                  Delete member
+                </AdminButton>
               )}
             </div>
+          ) : null
+        }
+      >
+        {detailMember ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+              <AdminCard className="lg:col-span-2">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-amber-300">
+                    <UserRound className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="text-xl font-black text-white">{detailMember.full_name}</div>
+                    <div className="text-sm text-slate-400">{detailMember.email || "No email"} | {detailMember.phone}</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <AdminBadge tone={memberStatusTone(detailMember, todayAd)}>{detailMember.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(detailMember, todayAd))}</AdminBadge>
+                      <AdminBadge tone={paymentTone(detailMember.payment_status)}>{statusLabel(detailMember.payment_status)}</AdminBadge>
+                    </div>
+                  </div>
+                </div>
+              </AdminCard>
+              <AdminCard>
+                <div className="text-xs text-slate-500">Membership end</div>
+                <div className="mt-2 text-sm font-semibold text-white">{formatDisplayDate(detailMember.end_date, settings.date_display_preference)}</div>
+              </AdminCard>
+              <AdminCard>
+                <div className="text-xs text-slate-500">Payment due</div>
+                <div className="mt-2 text-sm font-semibold text-white">{formatDisplayDate(detailMember.payment_due_date, settings.date_display_preference)}</div>
+              </AdminCard>
+            </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onEdit(detailMember)}
-                className="rounded-xl bg-white px-5 py-3 font-black text-black"
-              >
-                Edit Member
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const targetId = detailMember.id;
-                  setDetailMember(null);
-                  if (detailMember.deleted_at) {
-                    onRestore(targetId);
-                  } else {
-                    onDelete(targetId);
-                  }
-                }}
-                className="rounded-xl bg-red-500/20 px-5 py-3 font-semibold text-red-300"
-              >
-                {detailMember.deleted_at ? "Restore Member" : "Delete Member"}
-              </button>
-            </div>
-            </div>
+            <AdminCard>
+              <AdminSectionTitle title="Membership details" />
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Plan: <b>{statusLabel(detailMember.membership_type)}</b></div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Start: <b>{formatDisplayDate(detailMember.start_date, settings.date_display_preference)}</b></div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Last visit: <b>{formatDisplayDate(detailMember.last_visit_date, settings.date_display_preference)}</b></div>
+              </div>
+              {detailMember.notes ? <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">{detailMember.notes}</div> : null}
+            </AdminCard>
+
+            <AdminCard>
+              <AdminSectionTitle title="Recent attendance" description="Latest saved records for this member." />
+              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
+                {memberAttendance.slice(0, 9).map((record) => (
+                  <div key={record.id} className={cx("rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm", record.deleted_at ? "text-slate-500" : "text-slate-200")}>
+                    <div className="font-semibold">{formatDisplayDate(record.attendance_date, settings.date_display_preference)}</div>
+                    <div className="text-xs text-slate-500">{record.deleted_at ? "Deleted" : statusLabel(record.status)}</div>
+                  </div>
+                ))}
+                {!loadingProfile && memberAttendance.length === 0 ? <AdminEmptyState title="No attendance records" /> : null}
+              </div>
+            </AdminCard>
+
+            <AdminCard>
+              <AdminSectionTitle title="Body measurements" />
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                <AdminInput type="date" value={measurementForm.recorded_at} onChange={(event) => setMeasurementForm((current) => ({ ...current, recorded_at: event.target.value }))} />
+                <AdminInput placeholder="Weight kg" value={measurementForm.weight_kg} onChange={(event) => setMeasurementForm((current) => ({ ...current, weight_kg: event.target.value }))} />
+                <AdminInput placeholder="Body fat %" value={measurementForm.body_fat_percent} onChange={(event) => setMeasurementForm((current) => ({ ...current, body_fat_percent: event.target.value }))} />
+                <AdminButton type="button" variant="primary" onClick={addMeasurement}>Add measurement</AdminButton>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-5">
+                <AdminInput placeholder="Chest cm" value={measurementForm.chest_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, chest_cm: event.target.value }))} />
+                <AdminInput placeholder="Waist cm" value={measurementForm.waist_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, waist_cm: event.target.value }))} />
+                <AdminInput placeholder="Hips cm" value={measurementForm.hips_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, hips_cm: event.target.value }))} />
+                <AdminInput placeholder="Arm cm" value={measurementForm.arm_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, arm_cm: event.target.value }))} />
+                <AdminInput placeholder="Thigh cm" value={measurementForm.thigh_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, thigh_cm: event.target.value }))} />
+              </div>
+              <AdminTextarea className="mt-3" rows={2} placeholder="Measurement notes" value={measurementForm.notes} onChange={(event) => setMeasurementForm((current) => ({ ...current, notes: event.target.value }))} />
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <div className="mb-2 text-xs font-semibold text-slate-400">Weight trend</div>
+                  <MiniLineChart values={measurements.map((item) => item.weight_kg)} stroke="#38bdf8" />
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-semibold text-slate-400">Waist trend</div>
+                  <MiniLineChart values={measurements.map((item) => item.waist_cm)} stroke="#34d399" />
                 </div>
               </div>
-            </>,
-            modalRoot
-          )
-        : null}
+              <div className="mt-4 space-y-2">
+                {measurements.slice().reverse().slice(0, 8).map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-xs text-slate-300">
+                    <span>{item.recorded_at} | W {item.weight_kg ?? "-"} | BF {item.body_fat_percent ?? "-"} | Waist {item.waist_cm ?? "-"}</span>
+                    <AdminButton type="button" variant="danger" className="min-h-8 px-2 py-1 text-xs" onClick={() => deleteMeasurement(item.id)}>Delete</AdminButton>
+                  </div>
+                ))}
+              </div>
+            </AdminCard>
+
+            <AdminCard>
+              <AdminSectionTitle title="Transformation timeline" />
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                <AdminInput type="date" value={transformationForm.captured_at} onChange={(event) => setTransformationForm((current) => ({ ...current, captured_at: event.target.value }))} />
+                <AdminInput placeholder="Milestone title" value={transformationForm.milestone_title} onChange={(event) => setTransformationForm((current) => ({ ...current, milestone_title: event.target.value }))} />
+                <AdminInput type="file" accept="image/*" onChange={(event) => setTransformationPhotoFile(event.target.files?.[0] ?? null)} />
+                <AdminButton type="button" variant="primary" onClick={addTransformation}>Add timeline entry</AdminButton>
+              </div>
+              <AdminTextarea className="mt-3" rows={2} placeholder="Milestone notes" value={transformationForm.milestone_notes} onChange={(event) => setTransformationForm((current) => ({ ...current, milestone_notes: event.target.value }))} />
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {transformations.map((item) => (
+                  <article key={item.id} className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-white">{item.milestone_title || "Milestone"}</div>
+                        <div className="text-xs text-slate-500">{formatDisplayDate(item.captured_at, settings.date_display_preference)}</div>
+                      </div>
+                      <AdminButton type="button" variant="danger" className="min-h-8 px-2 py-1 text-xs" onClick={() => deleteTransformation(item.id)}>Delete</AdminButton>
+                    </div>
+                    {item.milestone_notes ? <p className="mt-2 text-sm text-slate-400">{item.milestone_notes}</p> : null}
+                    {item.photo_url ? <img src={item.photo_url} alt={item.milestone_title || "Transformation milestone"} className="mt-3 h-44 w-full rounded-lg object-cover" /> : null}
+                  </article>
+                ))}
+              </div>
+            </AdminCard>
+
+            <AdminCard>
+              <AdminSectionTitle
+                title="Progress report"
+                description="Generated by the existing Supabase Edge Function."
+                action={
+                  <AdminButton type="button" variant="secondary" onClick={sendProgressReport}>
+                    <FileText className="h-4 w-4" />
+                    Generate
+                  </AdminButton>
+                }
+              />
+              {generatedReport ? (
+                <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/55 p-4">
+                  <div className="text-sm font-semibold text-white">{generatedReport.member_name}</div>
+                  <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">
+                    {generatedReport.summary_lines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div className="mt-4 space-y-2">
+                {reportLogs.slice(0, 5).map((log) => (
+                  <div key={log.id} className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-xs text-slate-400">
+                    {formatDateTime(log.sent_at)} | {log.status}
+                    {log.error_message ? ` | ${log.error_message}` : ""}
+                  </div>
+                ))}
+              </div>
+            </AdminCard>
+
+            {loadingProfile ? <AdminLoading label="Refreshing profile data..." /> : null}
+          </div>
+        ) : null}
+      </AdminDrawer>
+
+      <AdminDialog
+        open={csvOpen}
+        title="CSV member import"
+        description="Imports valid rows and upserts by member_id. Existing n8n webhook behavior is preserved."
+        onClose={() => setCsvOpen(false)}
+        footer={
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <a href="/members-import-template.csv" className="text-sm font-semibold text-amber-200 hover:text-amber-100">
+              Download CSV template
+            </a>
+            <div className="flex gap-2">
+              <AdminButton type="button" variant="secondary" onClick={() => setCsvOpen(false)}>
+                Close
+              </AdminButton>
+              <AdminButton type="button" variant="primary" disabled={validCsvRows.length === 0 || invalidCsvRows.length > 0 || importing} onClick={importCsvRows}>
+                {importing ? "Importing..." : `Import ${validCsvRows.length} rows`}
+              </AdminButton>
+            </div>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <AdminNotice tone={n8nMembersWebhookUrl ? "success" : "warning"}>
+            n8n webhook: {n8nMembersWebhookUrl ? "configured" : "not configured"}. Secret value is masked.
+          </AdminNotice>
+          <AdminField label="CSV file">
+            <AdminInput type="file" accept=".csv,text/csv" onChange={parseCsv} />
+          </AdminField>
+          {csvName ? <div className="text-sm text-slate-400">Selected: {csvName}</div> : null}
+          {csvRows.length > 0 ? (
+            <div className="rounded-lg border border-slate-800">
+              <div className="border-b border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-300">
+                Valid rows: {validCsvRows.length} | Invalid rows: {invalidCsvRows.length}
+              </div>
+              <div className="max-h-72 overflow-y-auto p-3">
+                {csvRows.slice(0, 20).map((row) => (
+                  <div key={`${row.member_id}-${row.rowNumber}`} className="mb-2 rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-semibold text-white">Row {row.rowNumber}: {row.full_name || "Unnamed member"}</div>
+                      <AdminBadge tone={row.errors.length ? "danger" : row.warnings.length ? "warning" : "success"}>
+                        {row.errors.length ? "Invalid" : row.warnings.length ? "Warning" : "Valid"}
+                      </AdminBadge>
+                    </div>
+                    {row.errors.length ? <div className="mt-1 text-xs text-rose-300">{row.errors.join(", ")}</div> : null}
+                    {row.warnings.length ? <div className="mt-1 text-xs text-amber-300">{row.warnings.join(", ")}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </AdminDialog>
     </div>
   );
 }
