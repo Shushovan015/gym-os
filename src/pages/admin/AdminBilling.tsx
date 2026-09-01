@@ -115,6 +115,7 @@ export default function AdminBilling() {
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [memberId, setMemberId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -273,6 +274,7 @@ export default function AdminBilling() {
     setPaymentTouched(false);
     setSelectedPlanId("");
     setMemberSearch("");
+    setCreateError("");
     setCreateOpen(true);
     if (member) {
       setLineType("membership");
@@ -329,19 +331,45 @@ export default function AdminBilling() {
     }
   };
   const createInvoice = async () => {
-    if (!customerName.trim() || billLines.length === 0) {
-      setMessage("Customer name and at least one invoice item are required.");
+    setCreateError("");
+    if (customerMode === "member" && !memberId) {
+      setCreateError("Select a gym member from the search results before creating the bill.");
+      return;
+    }
+    if (!customerName.trim()) {
+      setCreateError("Enter or select a customer name.");
+      return;
+    }
+    if (lineType === "product" && lines.length === 0) {
+      setCreateError("Select at least one shop product for this bill.");
+      return;
+    }
+    if (lineType !== "product" && !lineDescription.trim()) {
+      setCreateError(
+        lineType === "miscellaneous"
+          ? "Enter what this charge is for."
+          : "Choose a plan before creating the bill.",
+      );
+      return;
+    }
+    if (billLines.length === 0 || totals.totalMinor <= 0) {
+      setCreateError("Enter an amount greater than zero.");
       return;
     }
     const initialPayment = paymentTouched
       ? majorToMinor(paymentAmount, settings.currency_minor_unit)
       : totals.totalMinor;
-    if (initialPayment === null || initialPayment > totals.totalMinor) {
-      setMessage("Initial payment must be between zero and the invoice total.");
+    if (initialPayment === null || initialPayment < 0 || initialPayment > totals.totalMinor) {
+      setCreateError("Amount received must be between zero and the bill total.");
+      return;
+    }
+    if (initialPayment < totals.totalMinor && !dueDate) {
+      setCreateError("Choose a payment due date for the remaining balance.");
       return;
     }
     setSaving(true);
-    const invoiceRes = await supabase
+    try {
+      const invoiceRes = await supabase
       .from("invoices")
       .insert({
         member_ref: memberId ? Number(memberId) : null,
@@ -359,13 +387,12 @@ export default function AdminBilling() {
       })
       .select("id")
       .single();
-    if (invoiceRes.error) {
-      setMessage(invoiceRes.error.message);
-      setSaving(false);
-      return;
-    }
-    const invoiceId = Number(invoiceRes.data.id);
-    const itemPayload = billLines.map((line, index) => ({
+      if (invoiceRes.error) {
+        setCreateError(friendlyAdminError(invoiceRes.error.message));
+        return;
+      }
+      const invoiceId = Number(invoiceRes.data.id);
+      const itemPayload = billLines.map((line, index) => ({
       invoice_id: invoiceId,
       item_type: line.itemType,
       product_id: line.productId,
@@ -381,38 +408,45 @@ export default function AdminBilling() {
         (index === billLines.length - 1 ? totals.taxMinor : 0),
       sort_order: index,
     }));
-    const itemsRes = await supabase.from("invoice_items").insert(itemPayload);
-    if (itemsRes.error) {
-      setMessage(`Draft created but items failed: ${itemsRes.error.message}`);
-      setSaving(false);
-      return;
-    }
-    const finalRes = await supabase.rpc("finalize_invoice", {
+      const itemsRes = await supabase.from("invoice_items").insert(itemPayload);
+      if (itemsRes.error) {
+        setCreateError(`The draft was created, but its items could not be saved: ${friendlyAdminError(itemsRes.error.message)} Please cancel it from the bill list and try again.`);
+        return;
+      }
+      const finalRes = await supabase.rpc("finalize_invoice", {
       p_invoice_id: invoiceId,
       p_payment_amount_minor: initialPayment,
       p_payment_method: paymentMethod,
       p_payment_reference: null,
     });
-    setSaving(false);
-    if (finalRes.error) {
-      setMessage(
+      if (finalRes.error) {
+        setCreateError(
         friendlyAdminError(
           finalRes.error.message,
           lineDescription || "product",
         ),
       );
+        await load();
+        return;
+      }
+      setCreateOpen(false);
+      setMessage("Invoice issued successfully.");
       await load();
-      return;
-    }
-    setCreateOpen(false);
-    setMessage("Invoice issued successfully.");
-    await load();
-    const created = (
+      const created = (
       Array.isArray(finalRes.data) ? finalRes.data[0] : finalRes.data
-    ) as InvoiceRow | undefined;
-    if (created) {
-      setSuccessInvoice(created);
-      void showDetail(created);
+      ) as InvoiceRow | undefined;
+      if (created) {
+        setSuccessInvoice(created);
+        void showDetail(created);
+      }
+    } catch (error) {
+      setCreateError(
+        error instanceof Error
+          ? `Could not create the bill: ${error.message}`
+          : "Could not create the bill. Check the local Supabase connection and try again.",
+      );
+    } finally {
+      setSaving(false);
     }
   };
   const showDetail = async (invoice: InvoiceRow) => {
@@ -754,15 +788,20 @@ export default function AdminBilling() {
         description="Choose the customer, what they are paying for, and how they paid."
         onClose={() => setCreateOpen(false)}
         footer={
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <b className="text-lg text-white">
-              Total: {formatMoney(totals.totalMinor, settings.currency_code)}
-            </b>
-            <div className="flex gap-2">
-              <AdminButton variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</AdminButton>
-              <AdminButton variant="primary" disabled={saving} onClick={() => void createInvoice()}>
-                {saving ? "Completing..." : "Create Bill"}
-              </AdminButton>
+          <div className="space-y-3">
+            {createError ? (
+              <AdminNotice tone="danger">{createError}</AdminNotice>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <b className="text-lg text-white">
+                Total: {formatMoney(totals.totalMinor, settings.currency_code)}
+              </b>
+              <div className="flex gap-2">
+                <AdminButton variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</AdminButton>
+                <AdminButton variant="primary" disabled={saving} onClick={() => void createInvoice()}>
+                  {saving ? "Completing..." : "Create Bill"}
+                </AdminButton>
+              </div>
             </div>
           </div>
         }

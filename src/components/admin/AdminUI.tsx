@@ -174,11 +174,35 @@ export function AdminField({
 }
 
 export function AdminInput({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  const { onFocus, onClick, type, ...inputProps } = props;
   return (
     <input
-      {...props}
+      {...inputProps}
+      type={type}
+      onFocus={(event) => {
+        if (type === "number" && /^0(?:\.0+)?$/.test(event.currentTarget.value)) {
+          event.currentTarget.select();
+        }
+        onFocus?.(event);
+      }}
+      onClick={(event) => {
+        onClick?.(event);
+        if (
+          type === "date" &&
+          !event.defaultPrevented &&
+          !event.currentTarget.disabled &&
+          !event.currentTarget.readOnly
+        ) {
+          try {
+            event.currentTarget.showPicker?.();
+          } catch {
+            // The browser can still open its native picker from the calendar icon.
+          }
+        }
+      }}
       className={cx(
-        "min-h-11 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20 disabled:cursor-not-allowed disabled:opacity-60",
+        "min-h-11 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20 disabled:cursor-not-allowed disabled:opacity-60 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100",
+        type === "date" && "[color-scheme:dark]",
         className
       )}
     />
