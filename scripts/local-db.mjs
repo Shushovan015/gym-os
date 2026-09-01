@@ -34,6 +34,32 @@ function databaseContainer() {
   return containers[0];
 }
 
+async function restartLocalStack() {
+  const listed = spawnSync(
+    docker,
+    ["ps", "--filter", `label=com.supabase.cli.project=${projectId}`, "--format", "{{.Names}}"],
+    { encoding: "utf8" },
+  );
+  const containers = listed.stdout.trim().split(/\r?\n/).filter(Boolean);
+  if (listed.status !== 0 || containers.length === 0) {
+    throw new Error("Restore finished, but local Supabase containers could not be listed for restart.");
+  }
+  const restarted = spawnSync(docker, ["restart", ...containers], { stdio: "inherit" });
+  if (restarted.status !== 0) {
+    throw new Error("Restore finished, but local Supabase services failed to restart.");
+  }
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const response = await fetch("http://127.0.0.1:54321/auth/v1/health");
+      if (response.ok) return;
+    } catch {
+      // Services are still reconnecting to PostgreSQL.
+    }
+    await new Promise((done) => setTimeout(done, 2000));
+  }
+  throw new Error("Restore finished, but local Supabase did not become healthy within 60 seconds.");
+}
+
 function timestamp() {
   const now = new Date();
   const part = (value) => String(value).padStart(2, "0");
@@ -48,7 +74,19 @@ async function backup() {
   const output = createWriteStream(destination, { flags: "wx" });
   const child = spawn(
     docker,
-    ["exec", container, "pg_dump", "-U", "postgres", "-d", "postgres", "-Fc", "--no-owner", "--no-privileges"],
+    [
+      "exec",
+      container,
+      "pg_dump",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "-Fc",
+      "--schema=public",
+      "--schema=auth",
+      "--schema=storage",
+    ],
     { stdio: ["ignore", "pipe", "inherit"] },
   );
   child.stdout.pipe(output);
@@ -82,13 +120,21 @@ async function restore(fileArgument) {
   }
   const child = spawn(
     docker,
-    ["exec", "-i", container, "pg_restore", "-U", "postgres", "-d", "postgres", "--clean", "--if-exists", "--no-owner", "--no-privileges", "--exit-on-error"],
+    [
+      "exec",
+      "-i",
+      container,
+      "sh",
+      "-c",
+      'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_restore -U supabase_admin -d postgres --clean --if-exists --exit-on-error',
+    ],
     { stdio: ["pipe", "inherit", "inherit"] },
   );
   const input = (await import("node:fs")).createReadStream(source);
   input.pipe(child.stdin);
   const code = await new Promise((done) => child.on("close", done));
   if (code !== 0) throw new Error(`pg_restore failed with exit code ${code}.`);
+  await restartLocalStack();
   console.log("Local database restore completed.");
 }
 

@@ -90,11 +90,15 @@ npm run supabase:stop
 
 `db:backup` runs `pg_dump` inside the verified local Supabase PostgreSQL
 container, creates a timestamped custom-format dump under `backups/`, and never
-deletes older backups.
+deletes older backups. It includes the complete application (`public`), Auth,
+and Storage database schemas and data. Supabase's generated infrastructure
+schemas (Realtime, GraphQL, analytics, extensions, and CLI metadata) are
+recreated by the local stack and excluded so restores stay portable.
 
 `db:restore` requires an explicit non-empty `.dump`, accepts only this project's
 exact local Docker container, and requires typing `RESTORE LOCAL`. It cannot
-target a URL or remote/production database.
+target a URL or remote/production database. Local Supabase services restart
+after restoration so Auth, REST, and Storage reconnect to the restored schema.
 
 Schedule `npm run db:backup` with Windows Task Scheduler or cron if desired.
 Docker Desktop and local Supabase must be running.
