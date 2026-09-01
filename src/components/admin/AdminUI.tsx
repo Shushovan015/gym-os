@@ -6,6 +6,7 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
+import { useEffect, useRef } from "react";
 import { AlertTriangle, Loader2, Search, X } from "lucide-react";
 import { cx } from "@src/pages/admin/adminUtils";
 import type { SelectOption } from "@src/pages/admin/adminTypes";
@@ -20,6 +21,25 @@ const toneClasses: Record<Tone, string> = {
   accent: "border-amber-400/35 bg-amber-400/12 text-amber-100",
   muted: "border-slate-700 bg-slate-800/70 text-slate-300",
 };
+
+function useAdminModal(open: boolean, onClose: () => void) {
+  const panelRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const timer = window.setTimeout(() => panelRef.current?.querySelector<HTMLElement>("[autofocus], input, select, textarea, button")?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") closeRef.current(); };
+    document.addEventListener("keydown", onKeyDown);
+    return () => { window.clearTimeout(timer); document.removeEventListener("keydown", onKeyDown); document.body.style.overflow = oldOverflow; previous?.focus(); };
+  }, [open]);
+  return panelRef;
+}
 
 export function AdminCard({
   children,
@@ -70,6 +90,7 @@ export function AdminButton({
   variant = "secondary",
   className = "",
   children,
+  type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
@@ -84,6 +105,7 @@ export function AdminButton({
   return (
     <button
       {...props}
+      type={type}
       className={cx(
         "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-55",
         variants[variant],
@@ -314,6 +336,7 @@ export function AdminDrawer({
   footer?: ReactNode;
   size?: "lg" | "xl" | "2xl";
 }) {
+  const panelRef = useAdminModal(open, onClose);
   if (!open) return null;
   const sizes = {
     lg: "max-w-lg",
@@ -323,8 +346,11 @@ export function AdminDrawer({
 
   return (
     <div className="fixed inset-0 z-[120]">
-      <button type="button" aria-label="Close drawer" onClick={onClose} className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" />
+      <button type="button" tabIndex={-1} aria-hidden="true" aria-label="Close drawer" onClick={onClose} className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" />
       <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
         className={cx(
           "absolute right-0 top-0 flex h-full w-full flex-col border-l border-slate-800 bg-slate-950 shadow-2xl",
           sizes[size]
@@ -353,6 +379,7 @@ export function AdminDialog({
   onClose,
   children,
   footer,
+  size = "lg",
 }: {
   open: boolean;
   title: string;
@@ -360,13 +387,16 @@ export function AdminDialog({
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  size?: "md" | "lg" | "xl" | "2xl";
 }) {
+  const panelRef = useAdminModal(open, onClose);
   if (!open) return null;
 
+  const sizes = { md: "max-w-xl", lg: "max-w-2xl", xl: "max-w-3xl", "2xl": "max-w-4xl" };
   return (
     <div className="fixed inset-0 z-[130] grid place-items-center p-4">
-      <button type="button" aria-label="Close dialog" onClick={onClose} className="absolute inset-0 bg-slate-950/72 backdrop-blur-sm" />
-      <section className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-2xl">
+      <button type="button" tabIndex={-1} aria-hidden="true" aria-label="Close dialog" onClick={onClose} className="absolute inset-0 bg-slate-950/72 backdrop-blur-sm" />
+      <section ref={panelRef} role="dialog" aria-modal="true" className={cx("relative z-10 flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-2xl", sizes[size])}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
           <div>
             <h2 className="text-xl font-black tracking-normal text-white">{title}</h2>
@@ -376,7 +406,7 @@ export function AdminDialog({
             <X className="h-4 w-4" />
           </AdminButton>
         </div>
-        <div className="max-h-[68vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer ? <div className="border-t border-slate-800 px-5 py-4">{footer}</div> : null}
       </section>
     </div>

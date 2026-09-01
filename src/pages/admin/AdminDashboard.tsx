@@ -9,6 +9,12 @@ import {
   UserCheck,
   UserPlus,
   Users,
+  Boxes,
+  ReceiptText,
+  Plus,
+  CheckCircle2,
+  PackagePlus,
+  ShoppingCart,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
 import {
@@ -42,6 +48,9 @@ type DashboardState = {
   attendance: AttendanceRow[];
   holidays: HolidayRow[];
   settings: AdminSettings;
+  inventory: Array<{ current_quantity: number; low_stock_threshold: number | null; product_id: number }>;
+  inventoryProducts: Array<{ id: number; low_stock_threshold: number }>;
+  invoices: Array<{ billing_date: string; invoice_status: string; paid_minor: number; balance_minor: number }>;
 };
 
 const periodOptions: Array<{ value: PeriodDays; label: string }> = [
@@ -104,6 +113,9 @@ export default function AdminDashboard() {
     attendance: [],
     holidays: [],
     settings: defaultAdminSettings,
+    inventory: [],
+    inventoryProducts: [],
+    invoices: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -135,7 +147,10 @@ export default function AdminDashboard() {
         .gte("holiday_date", todayAd)
         .lte("holiday_date", addDays(todayAd, 30))
         .order("holiday_date", { ascending: true }),
-    ]).then(([settingsRes, membersRes, attendanceRes, holidaysRes]) => {
+      supabase.from("inventory_product_variants").select("current_quantity,low_stock_threshold,product_id").eq("is_active", true),
+      supabase.from("shop_items").select("id,low_stock_threshold").eq("inventory_enabled", true).eq("is_active", true),
+      supabase.from("invoices").select("billing_date,invoice_status,paid_minor,balance_minor").neq("invoice_status", "draft").gte("billing_date", periodStartAd),
+    ]).then(([settingsRes, membersRes, attendanceRes, holidaysRes, inventoryRes, inventoryProductsRes, invoicesRes]) => {
       if (!alive) return;
 
       if (membersRes.error) {
@@ -163,6 +178,9 @@ export default function AdminDashboard() {
         members: (membersRes.data ?? []) as MemberRow[],
         attendance: (attendanceRes.data ?? []) as AttendanceRow[],
         holidays: (holidaysRes.data ?? []) as HolidayRow[],
+        inventory: (inventoryRes.data ?? []) as DashboardState["inventory"],
+        inventoryProducts: (inventoryProductsRes.data ?? []) as DashboardState["inventoryProducts"],
+        invoices: (invoicesRes.data ?? []) as DashboardState["invoices"],
       });
       setExpiryHorizon(settings.expiry_warning_days as 7 | 15 | 30);
       setLoading(false);
@@ -216,6 +234,9 @@ export default function AdminDashboard() {
 
     const planDistribution = countBy(liveMembers.map((member) => member.membership_type));
     const todayHoliday = state.holidays.find((holiday) => holiday.holiday_date === todayAd);
+    const thresholdByProduct = new Map(state.inventoryProducts.map((product) => [product.id, product.low_stock_threshold]));
+    const lowStock = state.inventory.filter((variant) => variant.current_quantity <= (variant.low_stock_threshold ?? thresholdByProduct.get(variant.product_id) ?? 0));
+    const activeInvoices = state.invoices.filter((invoice) => invoice.invoice_status === "issued");
 
     return {
       liveMembers,
@@ -231,8 +252,11 @@ export default function AdminDashboard() {
       planDistribution,
       todayHoliday,
       upcomingHolidays: state.holidays.slice(0, 5),
+      lowStock,
+      revenueToday: activeInvoices.filter((invoice) => invoice.billing_date === todayAd).reduce((sum, invoice) => sum + invoice.paid_minor, 0),
+      outstanding: activeInvoices.reduce((sum, invoice) => sum + invoice.balance_minor, 0),
     };
-  }, [expiryHorizon, periodDays, periodStartAd, state.attendance, state.holidays, state.members, state.settings.absent_after_days, todayAd]);
+  }, [expiryHorizon, periodDays, periodStartAd, state.attendance, state.holidays, state.inventory, state.inventoryProducts, state.invoices, state.members, state.settings.absent_after_days, todayAd]);
 
   if (loading) {
     return <AdminLoading label="Loading dashboard metrics..." />;
@@ -253,9 +277,9 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        eyebrow="Operations dashboard"
-        title="Today at A&A Health Club"
-        description={`Nepal date boundary: ${formatDisplayDate(todayAd, state.settings.date_display_preference)}. Dashboard uses real member and attendance records only.`}
+        eyebrow={formatDisplayDate(todayAd, state.settings.date_display_preference)}
+        title={`${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}`}
+        description="Here’s what is happening at the gym today. Start a common task below."
         actions={
           <>
             <AdminSelect<PeriodDays>
@@ -276,7 +300,31 @@ export default function AdminDashboard() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <AdminCard>
+        <AdminSectionTitle title="Quick actions" description="The everyday reception tasks, one tap away." />
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {[
+            { label: "Add Member", to: "/admin/members?action=add", icon: Plus },
+            { label: "Mark Attendance", to: "/admin/attendance", icon: CheckCircle2 },
+            { label: "Record Payment", to: "/admin/billing?mode=membership", icon: CreditCard },
+            { label: "Create Bill", to: "/admin/billing?action=new", icon: ReceiptText },
+            { label: "Add Stock", to: "/admin/inventory?action=add-stock", icon: PackagePlus },
+            { label: "New Shop Sale", to: "/admin/billing?mode=shop", icon: ShoppingCart },
+          ].map(({ label, to, icon: Icon }) => <Link key={label} to={to} className="flex min-h-28 flex-col items-center justify-center rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-center text-sm font-bold text-white transition hover:border-amber-400/50 hover:bg-amber-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300"><Icon className="mb-3 h-6 w-6 text-amber-300"/>{label}</Link>)}
+        </div>
+      </AdminCard>
+
+      <AdminCard>
+        <AdminSectionTitle title="Needs attention" description="Handle these items when you have a moment." />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Link to={`/admin/members?expiring=${expiryHorizon}`} className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><b className="text-2xl text-white">{dashboard.expiringMembers.length}</b><p className="mt-1 text-sm text-amber-100">memberships expire soon</p><span className="mt-3 inline-block text-xs font-bold text-amber-200">View members →</span></Link>
+          <Link to="/admin/members?payment=unpaid" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4"><b className="text-2xl text-white">{dashboard.unpaidMembers.length}</b><p className="mt-1 text-sm text-rose-100">members have unpaid fees</p><span className="mt-3 inline-block text-xs font-bold text-rose-200">Record payments →</span></Link>
+          <Link to="/admin/inventory?stock=low" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><b className="text-2xl text-white">{dashboard.lowStock.filter((item) => item.current_quantity > 0).length}</b><p className="mt-1 text-sm text-amber-100">products are running low</p><span className="mt-3 inline-block text-xs font-bold text-amber-200">Add stock →</span></Link>
+          <Link to="/admin/inventory?stock=out" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4"><b className="text-2xl text-white">{dashboard.lowStock.filter((item) => item.current_quantity <= 0).length}</b><p className="mt-1 text-sm text-rose-100">products are out of stock</p><span className="mt-3 inline-block text-xs font-bold text-rose-200">View products →</span></Link>
+        </div>
+      </AdminCard>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <AdminNotice tone={dashboard.todayHoliday || isClosingDay ? "warning" : "success"} title="Today status">
           {dashboard.todayHoliday
             ? `Holiday: ${dashboard.todayHoliday.name || "Holiday"}`
@@ -284,11 +332,8 @@ export default function AdminDashboard() {
               ? `${todayWeekday} is the configured weekly closing day.`
               : `${todayWeekday} is open for attendance entry.`}
         </AdminNotice>
-        <AdminNotice tone="muted" title="Payment amount tracking">
-          The current schema tracks payment status and due date, but not amounts. Collected/outstanding money totals are intentionally not shown.
-        </AdminNotice>
-        <AdminNotice tone="neutral" title="Data scope">
-          Single-gym dashboard. No tenant or location filters have been added.
+        <AdminNotice tone={dashboard.lowStock.length ? "warning" : "success"} title="Stock and billing">
+          {dashboard.lowStock.length} low/out-of-stock variant(s). Today collected: {new Intl.NumberFormat("en-NP", { style: "currency", currency: state.settings.currency_code }).format(dashboard.revenueToday / 100)}.
         </AdminNotice>
       </div>
 
@@ -363,6 +408,8 @@ export default function AdminDashboard() {
           icon={CalendarDays}
           tone="muted"
         />
+        <Link to="/admin/inventory"><AdminMetricCard label="Low / out of stock" value={dashboard.lowStock.length} description="Variants at or below their configured threshold." icon={Boxes} tone={dashboard.lowStock.length ? "warning" : "success"} /></Link>
+        <Link to="/admin/billing"><AdminMetricCard label="Outstanding bills" value={new Intl.NumberFormat("en-NP", { style: "currency", currency: state.settings.currency_code }).format(dashboard.outstanding / 100)} description="Balance on issued invoices." icon={ReceiptText} tone={dashboard.outstanding ? "warning" : "success"} /></Link>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">

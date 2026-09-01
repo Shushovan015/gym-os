@@ -27,11 +27,16 @@ import AdminMembers from "../pages/admin/AdminMembers";
 import AdminAttendance from "../pages/admin/AdminAttendance";
 import AdminHolidayManager from "../pages/admin/AdminHolidayManager";
 import AdminSettings from "../pages/admin/AdminSettings";
+import AdminInventory from "../pages/admin/AdminInventory";
+import AdminBilling from "../pages/admin/AdminBilling";
+import AdminWebsite from "../pages/admin/AdminWebsite";
 
 export default function AppRoutes() {
   const location = useLocation();
 
-  const withTransition = (element: ReactElement) => <RouteTransition>{element}</RouteTransition>;
+  const withTransition = (element: ReactElement) => (
+    <RouteTransition>{element}</RouteTransition>
+  );
 
   return (
     <AnimatePresence mode="sync" initial={false}>
@@ -64,6 +69,9 @@ export default function AppRoutes() {
             <Route path="attendance" element={<AdminAttendance />} />
             <Route path="holidays" element={<AdminHolidayManager />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="inventory" element={<AdminInventory />} />
+            <Route path="billing" element={<AdminBilling />} />
+            <Route path="website" element={<AdminWebsite />} />
           </Route>
         </Route>
 

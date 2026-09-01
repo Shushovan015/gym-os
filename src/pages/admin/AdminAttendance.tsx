@@ -215,6 +215,7 @@ export default function AdminAttendance() {
         setActiveCell("");
         return;
       }
+      await supabase.from("members").update({ last_visit_date: day.adDate }).eq("id", member.id);
     } else if (existing) {
       const { error } = await supabase.from("attendance_records").update({ deleted_at: new Date().toISOString() }).eq("id", existing.id);
       if (error) {
@@ -225,7 +226,7 @@ export default function AdminAttendance() {
     }
 
     await loadAttendanceData(selectedBsYear, selectedBsMonth);
-    setMessage(present ? "Attendance saved." : "Attendance removed and can be restored.");
+    setMessage(present ? `${member.full_name} marked present.` : `${member.full_name}'s attendance was removed. You can restore it below.`);
     setActiveCell("");
   };
 
@@ -334,7 +335,7 @@ export default function AdminAttendance() {
           />
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <AdminInput value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search member" className="pl-9" />
+            <AdminInput value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search members by name, ID or phone" className="pl-9" />
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">

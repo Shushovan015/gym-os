@@ -285,3 +285,9 @@ html.force-reduced-motion *::after {
   outline: 2px solid var(--public-accent-strong);
   outline-offset: 3px;
 }
+@media print {
+  body * { visibility: hidden !important; }
+  #printable-invoice, #printable-invoice * { visibility: visible !important; }
+  #printable-invoice { position: absolute; inset: 0; width: 100%; min-height: 100%; margin: 0; border: 0; box-shadow: none; }
+  @page { size: A4; margin: 12mm; }
+}

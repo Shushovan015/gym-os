@@ -41,6 +41,15 @@ export const defaultAdminSettings: AdminSettings = {
   default_membership_type: "monthly",
   date_display_preference: "both",
   attendance_holiday_lock: true,
+  invoice_prefix: "GYM",
+  currency_code: "NPR",
+  currency_minor_unit: 2,
+  tax_enabled: false,
+  tax_label: "Tax",
+  tax_rate_basis_points: 0,
+  pan_vat_number: null,
+  receipt_footer: "Thank you for choosing us.",
+  allow_negative_stock: false,
 };
 
 export const emptyMemberForm: MemberForm = {
@@ -60,6 +69,16 @@ export const emptyMemberForm: MemberForm = {
 
 export function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+export function friendlyAdminError(message: string, context?: string) {
+  const text = message.toLowerCase();
+  if (text.includes("insufficient stock")) return context ? `There is not enough ${context} available. Reduce the quantity or add more stock.` : "There is not enough stock available. Reduce the quantity or add more stock.";
+  if (text.includes("duplicate") || text.includes("unique constraint")) return "This information is already in use. Check the product code, barcode, member ID or bill number.";
+  if (text.includes("payment exceeds") || text.includes("outside invoice balance")) return "The payment cannot be more than the remaining bill balance.";
+  if (text.includes("variant is unavailable")) return "This product option is no longer available. Choose another product.";
+  if (text.includes("row-level security") || text.includes("admin access required")) return "Your admin session does not have permission for this action. Sign in again and retry.";
+  return message;
 }
 
 export function pad2(value: number) {

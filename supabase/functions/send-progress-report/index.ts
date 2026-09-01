@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { createClient } from "npm:@supabase/supabase-js@2.97.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,17 +25,41 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const gymName = Deno.env.get("REPORT_GYM_NAME") || "Gym";
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(JSON.stringify({ ok: false, error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }), {
+    if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing required Supabase environment configuration" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    const authorization = req.headers.get("Authorization") || "";
+    const callerClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+    });
+    const { data: caller, error: callerError } = await callerClient.auth.getUser();
+    if (callerError || !caller.user) {
+      return new Response(JSON.stringify({ ok: false, error: "Authentication required" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
+    const { data: profile } = await adminClient
+      .from("profiles")
+      .select("role")
+      .eq("id", caller.user.id)
+      .maybeSingle();
+    if (profile?.role !== "admin") {
+      return new Response(JSON.stringify({ ok: false, error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const body = await req.json();
     const memberId = Number(body?.member_id);

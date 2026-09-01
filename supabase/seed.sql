@@ -1,0 +1,5 @@
+-- Safe local-development seed file.
+--
+-- No users, passwords, production member records, or other personal data are
+-- seeded. Create a local Auth user in Studio, then add its matching admin
+-- profile only after the cloud baseline migration has been imported.

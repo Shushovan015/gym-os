@@ -11,6 +11,16 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
+
+# Local Supabase runtime data and database backups
+.supabase/
+supabase/.branches/
+supabase/.temp/
+backups/*
+!backups/.gitkeep
 
 # Editor directories and files
 .vscode/*

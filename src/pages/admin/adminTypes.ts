@@ -119,6 +119,15 @@ export type AdminSettings = {
   default_membership_type: MembershipType;
   date_display_preference: DateDisplayPreference;
   attendance_holiday_lock: boolean;
+  invoice_prefix: string;
+  currency_code: string;
+  currency_minor_unit: number;
+  tax_enabled: boolean;
+  tax_label: string;
+  tax_rate_basis_points: number;
+  pan_vat_number: string | null;
+  receipt_footer: string;
+  allow_negative_stock: boolean;
   created_at?: string;
   updated_at?: string;
 };

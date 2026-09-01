@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
+  ReceiptText,
   CheckCircle2,
   FileText,
   Pencil,
@@ -281,6 +282,7 @@ function PaginationControls({
 }
 
 export default function AdminMembers() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const todayAd = useMemo(() => getNepalTodayAdDate(), []);
   const initialExpiring = Number(searchParams.get("expiring") || defaultAdminSettings.expiry_warning_days);
@@ -307,7 +309,7 @@ export default function AdminMembers() {
   const [form, setForm] = useState<MemberForm>(emptyMemberForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof MemberForm, string>>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(searchParams.get("action") === "add");
   const [saving, setSaving] = useState(false);
 
   const [detailMember, setDetailMember] = useState<MemberRow | null>(null);
@@ -521,17 +523,6 @@ export default function AdminMembers() {
     await loadMembers();
   };
 
-  const markPaid = async (member: MemberRow) => {
-    const { error } = await supabase.from("members").update({ payment_status: "paid", payment_due_date: null }).eq("id", member.id);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-    setMessage("Payment status marked as paid. No payment amount was recorded because the schema does not store amounts.");
-    await loadMembers();
-    setDetailMember((current) => (current && current.id === member.id ? { ...current, payment_status: "paid", payment_due_date: null } : current));
-  };
-
   const loadMemberProfile = async (member: MemberRow) => {
     setDetailMember(member);
     setGeneratedReport(null);
@@ -563,6 +554,14 @@ export default function AdminMembers() {
       setMemberAttendance((attendanceRes.data ?? []) as AttendanceRow[]);
     }
     setLoadingProfile(false);
+  };
+  const markPresentToday = async (member: MemberRow) => {
+    const attendanceDate = getNepalTodayAdDate();
+    const { error } = await supabase.from("attendance_records").upsert({ member_ref: member.id, attendance_date: attendanceDate, status: "present", deleted_at: null }, { onConflict: "member_ref,attendance_date" });
+    if (error) { setMessage(error.message); return; }
+    await supabase.from("members").update({ last_visit_date: attendanceDate }).eq("id", member.id);
+    setMessage(`${member.full_name} marked present for today.`);
+    await loadMemberProfile(member);
   };
 
   const addMeasurement = async () => {
@@ -982,12 +981,12 @@ export default function AdminMembers() {
         <PaginationControls currentPage={safePage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </AdminCard>
 
-      <AdminDrawer
+      <AdminDialog
         open={formOpen}
         title={editingId ? "Edit member" : "Create member"}
         description="Fields are grouped for front-desk entry. BS fields convert into AD dates stored by Supabase."
         onClose={() => setFormOpen(false)}
-        size="xl"
+        size="2xl"
       >
         <form onSubmit={saveMember} className="space-y-6">
           <AdminCard>
@@ -1056,7 +1055,7 @@ export default function AdminMembers() {
             </AdminButton>
           </div>
         </form>
-      </AdminDrawer>
+      </AdminDialog>
 
       <AdminDrawer
         open={Boolean(detailMember)}
@@ -1072,12 +1071,11 @@ export default function AdminMembers() {
                   <Pencil className="h-4 w-4" />
                   Edit
                 </AdminButton>
-                {detailMember.payment_status !== "paid" ? (
-                  <AdminButton type="button" variant="secondary" onClick={() => markPaid(detailMember)}>
-                    <CheckCircle2 className="h-4 w-4" />
-                    Mark paid
-                  </AdminButton>
-                ) : null}
+                <AdminButton type="button" variant="secondary" onClick={() => navigate("/admin/billing", { state: { memberId: detailMember.id } })}>
+                  <ReceiptText className="h-4 w-4" />
+                  Record payment / Create bill
+                </AdminButton>
+                {!detailMember.deleted_at ? <AdminButton type="button" variant="primary" onClick={() => void markPresentToday(detailMember)}><CheckCircle2 className="h-4 w-4"/>Mark Present</AdminButton> : null}
               </div>
               {detailMember.deleted_at ? (
                 <AdminButton type="button" variant="secondary" onClick={() => restoreMember(detailMember)}>
