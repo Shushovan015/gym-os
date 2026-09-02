@@ -73,11 +73,95 @@ Evening:
 Double-click CLOSE GYM APP
 ```
 
-It creates a PostgreSQL backup first. Only after a successful backup does it
+It creates and verifies a full PostgreSQL plus Storage ZIP backup first. Only after a successful backup does it
 verify and stop the exact PID belonging to `serve-local.mjs`, then stop local
-Supabase. It never kills every `node.exe`. If backup fails, the database and
+backup service and Supabase. It never kills every `node.exe`. If backup fails, the database and
 frontend remain running and the window tells the user to contact the
 administrator.
+
+## Backup & Restore
+
+The local backup service runs only on `127.0.0.1:4174`. It independently checks
+the Supabase access token and the trusted `profiles.role` database value for
+every privileged request. Database credentials and privileged keys are never
+sent to React.
+
+### Automatic backup
+
+The service checks shortly after Gym startup. When no successful full backup
+has been created during the last 24 hours, it creates one automatically. This
+schedule operates only while the Gym system is running.
+
+Retention keeps the union of the 7 newest daily backups, 4 weekly backups, and
+6 monthly backups. Pre-restore safety backups are not automatically removed.
+
+### Manual backup
+
+Sign in as an administrator and open:
+
+```text
+Admin -> Settings -> Backup & Restore -> Create Backup
+```
+
+The ZIP is stored under `backups\` and can be downloaded using the Recent
+Backups list.
+
+### Restore
+
+```text
+Admin -> Settings -> Backup & Restore -> Choose Backup File
+      -> type RESTORE -> Restore Backup
+```
+
+The selected package is validated before restore. The system then creates a
+mandatory `pre-restore-*.zip` safety backup, enters maintenance mode, restores
+the database and Storage files, restarts the affected services, and checks
+health and database integrity. A restore is cancelled if its safety backup
+cannot be created. Legacy `.dump` files remain supported but contain database
+data only, not uploaded Storage object files.
+
+### Emergency Windows restore
+
+Create a desktop shortcut to `scripts\restore-gym-backup.bat` and name it
+`RESTORE GYM BACKUP`. It starts the required local services, opens a file
+picker, validates the chosen `.zip` or `.dump`, requires typing `RESTORE`,
+creates a safety backup, restores, and runs `npm run supabase:verify`.
+
+### Backup locations and off-PC copies
+
+- Local: `backups\`
+- Optional external drive or encrypted cloud-sync folder: set
+  `GYM_BACKUP_SECONDARY_DIR` in `.env.local`, for example `E:\GymBackups`.
+- Maximum restore upload size defaults to 2048 MB. Change
+  `GYM_BACKUP_MAX_UPLOAD_MB` in `.env.local` when necessary.
+
+Keep at least one verified copy outside the Gym computer. A failed secondary
+copy is reported, but a verified local backup still counts as successful.
+
+Full package structure:
+
+```text
+gym-backup-YYYY-MM-DD-HHmmss.zip
+|-- database.dump
+|-- storage\
+`-- backup-info.json
+```
+
+Safe local command-line tools:
+
+```powershell
+npm run backup:full
+npm run backup:list
+npm run backup:validate -- backups\gym-backup-....zip
+npm run restore:full -- backups\gym-backup-....zip "RESTORE LOCAL"
+```
+
+Low-level emergency database-only commands remain available:
+
+```powershell
+npm run db:backup
+npm run db:restore -- backups\gym-management-....dump
+```
 
 ### Desktop shortcuts and optional Windows startup
 

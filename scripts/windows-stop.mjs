@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { frontendIsHealthy, pidBelongsToGymServer, projectRoot, readFrontendPid, removePidFile, runNpm } from "./windows-common.mjs";
+import { adminServiceIsHealthy, frontendIsHealthy, pidBelongsToAdminService, pidBelongsToGymServer, projectRoot, readAdminPid, readFrontendPid, removeAdminPidFile, removePidFile, runNpm } from "./windows-common.mjs";
 
 function fail(message) {
   console.error(`\n${message}`);
@@ -11,8 +11,8 @@ function fail(message) {
 
 console.log("Closing Gym Management System safely...");
 if (!existsSync(join(projectRoot, "node_modules"))) fail("Setup is incomplete: project dependencies are missing.");
-console.log("Creating database backup...");
-if (runNpm(["run", "db:backup"]).status !== 0) fail("Backup failed.");
+console.log("Creating full database and Storage backup...");
+if (runNpm(["run", "backup:full"]).status !== 0) fail("Backup failed.");
 
 const pid = readFrontendPid();
 if (pid) {
@@ -24,6 +24,17 @@ if (pid) {
   removePidFile();
 } else if (await frontendIsHealthy()) fail("The Gym frontend is running, but its PID file is missing. It was not stopped for safety.");
 else { console.log("Application is already stopped."); removePidFile(); }
+
+const adminPid = readAdminPid();
+if (adminPid) {
+  if (!pidBelongsToAdminService(adminPid)) fail(`Safety check failed: PID ${adminPid} does not belong to the backup service.`);
+  console.log("Stopping backup service...");
+  try { process.kill(adminPid, "SIGTERM"); } catch (error) { if (error?.code !== "ESRCH") fail(`The backup service could not be stopped: ${error.message}`); }
+  for (let attempt = 0; attempt < 10 && (await adminServiceIsHealthy()); attempt += 1) await new Promise((done) => setTimeout(done, 500));
+  if (await adminServiceIsHealthy()) fail("The backup service did not stop.");
+  removeAdminPidFile();
+} else if (await adminServiceIsHealthy()) fail("The backup service is running without its PID file and was not stopped for safety.");
+else removeAdminPidFile();
 
 console.log("Stopping database...");
 if (runNpm(["run", "supabase:stop"]).status !== 0) fail("The database could not be stopped after backup.");

@@ -18,6 +18,11 @@
     "db:reset": "supabase db reset --local",
     "db:backup": "node scripts/local-db.mjs backup",
     "db:restore": "node scripts/local-db.mjs restore",
+    "backup:full": "node scripts/backup-cli.mjs create",
+    "backup:list": "node scripts/backup-cli.mjs list",
+    "backup:validate": "node scripts/backup-cli.mjs validate",
+    "restore:full": "node scripts/backup-cli.mjs restore",
+    "admin-service": "node scripts/admin-service.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

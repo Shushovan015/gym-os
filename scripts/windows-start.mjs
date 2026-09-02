@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { appUrl, dockerCommand, frontendIsHealthy, isDockerReady, projectRoot, runtimeDir, runNpm, waitFor } from "./windows-common.mjs";
+import { adminServiceIsHealthy, appUrl, dockerCommand, frontendIsHealthy, isDockerReady, projectRoot, runtimeDir, runNpm, waitFor } from "./windows-common.mjs";
 
 function fail(message) {
   console.error(`\n${message}\n\nThe Gym Management System could not start.`);
@@ -37,6 +37,15 @@ if (!existsSync(join(projectRoot, "dist", "index.html"))) {
   console.log("Production build is missing. Building the application...");
   if (runNpm(["run", "build"]).status !== 0) fail("The production application could not be built.");
 }
+
+if (!(await adminServiceIsHealthy())) {
+  console.log("Starting backup service...");
+  mkdirSync(runtimeDir, { recursive: true });
+  const log = openSync(join(runtimeDir, "admin-service.log"), "a");
+  const child = spawn(process.execPath, [join(projectRoot, "scripts", "admin-service.mjs")], { cwd: projectRoot, detached: true, windowsHide: true, stdio: ["ignore", log, log] });
+  child.unref();
+  if (!(await waitFor(adminServiceIsHealthy, 30, 1000))) fail(`The local backup service did not respond. Check ${join(runtimeDir, "admin-service.log")}.`);
+} else console.log("Backup service is already running.");
 
 if (!(await frontendIsHealthy())) {
   console.log("Starting application...");

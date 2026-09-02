@@ -16,6 +16,7 @@ import {
 import type { AdminSettings as AdminSettingsType, DateDisplayPreference, MembershipType } from "./adminTypes";
 import { defaultAdminSettings, WEEKDAYS } from "./adminUtils";
 import { membershipTypes } from "./adminTypes";
+import BackupRestorePanel from "./BackupRestorePanel";
 
 type SettingsErrors = Partial<Record<keyof AdminSettingsType, string>>;
 
@@ -331,6 +332,7 @@ export default function AdminSettings() {
           </AdminCard>
         </div>
       </div>
+      <BackupRestorePanel />
     </div>
   );
 }

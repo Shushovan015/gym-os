@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync, mkdirSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -109,6 +109,9 @@ async function restore(fileArgument) {
   }
   if (!source.toLowerCase().endsWith(".dump")) {
     throw new Error("Restore accepts only an explicit .dump file.");
+  }
+  if (readFileSync(source).subarray(0, 5).toString("ascii") !== "PGDMP") {
+    throw new Error("Restore cancelled: the selected file is not a PostgreSQL custom-format dump.");
   }
   const container = databaseContainer();
   console.warn(`WARNING: this will replace data in LOCAL container ${container} using ${basename(source)}.`);
