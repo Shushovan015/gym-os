@@ -291,3 +291,64 @@ html.force-reduced-motion *::after {
   #printable-invoice { position: absolute; inset: 0; width: 100%; min-height: 100%; margin: 0; border: 0; box-shadow: none; }
   @page { size: A4; margin: 12mm; }
 }
+@keyframes admin-intro-background {
+  0% { opacity: 0; }
+  12%, 82% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes admin-intro-logo {
+  0%, 12% { opacity: 0; transform: translateY(12px) scale(.94); }
+  32%, 82% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-3px) scale(1); }
+}
+
+@keyframes admin-intro-copy {
+  0%, 28% { opacity: 0; transform: translateY(8px); }
+  48%, 82% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; }
+}
+
+@keyframes admin-intro-credit {
+  0%, 44% { opacity: 0; transform: translateY(7px); }
+  62%, 82% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; }
+}
+
+@keyframes admin-intro-progress {
+  0% { transform: scaleX(0); }
+  88%, 100% { transform: scaleX(1); }
+}
+
+.admin-login-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 1.5rem;
+  background: radial-gradient(circle at 50% 42%, rgba(245, 158, 11, .10), transparent 31rem), #070a0f;
+  color: #f8fafc;
+  opacity: 1;
+}
+
+.admin-login-intro__content { position: relative; z-index: 1; text-align: center; }
+.admin-login-intro__logo-wrap { opacity: 1; transform: none; }
+.admin-login-intro__logo {
+  width: clamp(12rem, 28vw, 20rem);
+  aspect-ratio: 1;
+  border-radius: 1.25rem;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, .28), 0 22px 70px rgba(245, 158, 11, .16);
+}
+.admin-login-intro__title { margin-top: 1.6rem; color: #f8fafc; font-size: clamp(1.05rem, 3.2vw, 1.55rem); font-weight: 900; letter-spacing: .12em; opacity: 1; transform: none; }
+.admin-login-intro__status { margin-top: 1rem; color: #cbd5e1; font-size: .8rem; font-weight: 600; letter-spacing: .08em; }
+.admin-login-intro__progress { width: clamp(10rem, 34vw, 17rem); height: 3px; margin: .65rem auto 0; overflow: hidden; border-radius: 999px; background: rgba(148, 163, 184, .18); }
+.admin-login-intro__progress span { display: block; width: 100%; height: 100%; transform: scaleX(0); transform-origin: left; border-radius: inherit; background: linear-gradient(90deg, #d97706, #fcd34d); box-shadow: 0 0 16px rgba(251, 191, 36, .45); animation: admin-intro-progress 4s linear .05s forwards; }
+.admin-login-intro__credit { margin-top: 1rem; display: grid; gap: .15rem; color: #cbd5e1; font-size: clamp(.75rem, 2vw, .875rem); opacity: 1; transform: none; }
+.admin-login-intro__credit strong { color: #fcd34d; font-size: clamp(.95rem, 2.5vw, 1.1rem); font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-login-intro, .admin-login-intro__logo-wrap, .admin-login-intro__title, .admin-login-intro__credit, .admin-login-intro__progress span { animation-duration: .65s; animation-timing-function: ease; transform: none; }
+}

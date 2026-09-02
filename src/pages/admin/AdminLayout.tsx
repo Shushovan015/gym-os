@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   BarChart3,
@@ -21,6 +21,8 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "@src/Client/supabase";
 import { AdminButton } from "@src/components/admin/AdminUI";
 import { cx } from "./adminUtils";
+import DeveloperCredit from "@src/components/branding/DeveloperCredit";
+import LoginIntro from "@src/components/branding/LoginIntro";
 
 type AdminNavItem = {
   label: string;
@@ -103,6 +105,7 @@ export default function AdminLayout() {
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("aa-admin-nav-collapsed") === "true");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem("aa-admin-nav-collapsed", String(collapsed));
@@ -131,16 +134,20 @@ export default function AdminLayout() {
 
   const userLabel = useMemo(() => user?.email ?? "Admin user", [user?.email]);
 
-  const logout = async () => {
+  const finishLogout = useCallback(async () => {
     await supabase.auth.signOut();
-    navigate("/admin/login");
-  };
+    navigate("/admin/login", { replace: true });
+  }, [navigate]);
+
+  const logout = () => setLoggingOut(true);
+
+  if (loggingOut) return <LoginIntro statusText="Logging out..." onComplete={finishLogout} />;
 
   return (
-    <div className="min-h-screen bg-[#070a0f] text-slate-100">
+    <div className="min-h-screen bg-[#070a0f] text-slate-100 lg:flex lg:items-start">
       <aside
         className={cx(
-          "fixed inset-y-0 left-0 z-[90] hidden border-r border-slate-800 bg-slate-950/98 transition-[width] duration-200 lg:block",
+          "sticky top-0 z-[90] hidden h-screen shrink-0 self-start overflow-hidden border-r border-slate-800 bg-slate-950/98 transition-[width] duration-200 lg:block",
           collapsed ? "w-[76px]" : "w-[276px]"
         )}
       >
@@ -169,11 +176,11 @@ export default function AdminLayout() {
             ) : null}
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
             <AdminNav collapsed={collapsed} />
           </div>
 
-          <div className="border-t border-slate-800 p-3">
+          <div className="shrink-0 border-t border-slate-800 bg-slate-950 p-3">
             {collapsed ? (
               <AdminButton
                 type="button"
@@ -201,11 +208,12 @@ export default function AdminLayout() {
                 </AdminButton>
               </div>
             )}
+            <div className="mt-3"><DeveloperCredit collapsed={collapsed} /></div>
           </div>
         </div>
       </aside>
 
-      <div className={cx("min-h-screen transition-[padding] duration-200", collapsed ? "lg:pl-[76px]" : "lg:pl-[276px]")}>
+      <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-[80] border-b border-slate-800 bg-slate-950/88 backdrop-blur-xl">
           <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
@@ -222,10 +230,6 @@ export default function AdminLayout() {
                 <div className="truncate text-sm font-semibold text-white">{userLabel}</div>
                 <div className="text-xs text-slate-500">Authenticated admin</div>
               </div>
-              <AdminButton type="button" variant="secondary" onClick={logout} className="hidden sm:inline-flex">
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </AdminButton>
             </div>
           </div>
         </header>
@@ -248,15 +252,16 @@ export default function AdminLayout() {
                 <X className="h-4 w-4" />
               </AdminButton>
             </div>
-            <div className="flex-1 overflow-y-auto px-3 py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
               <AdminNav collapsed={false} onNavigate={() => setMobileOpen(false)} />
             </div>
-            <div className="border-t border-slate-800 p-4">
+            <div className="shrink-0 border-t border-slate-800 bg-slate-950 p-4">
               <div className="truncate text-sm font-semibold text-white">{userLabel}</div>
               <AdminButton type="button" variant="secondary" className="mt-3 w-full justify-start" onClick={logout}>
                 <LogOut className="h-4 w-4" />
                 Sign out
               </AdminButton>
+              <div className="mt-4"><DeveloperCredit /></div>
             </div>
           </aside>
         </div>

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
 import { AdminButton, AdminCard, AdminField, AdminInput, AdminNotice } from "@src/components/admin/AdminUI";
+import LoginIntro from "@src/components/branding/LoginIntro";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -11,6 +12,8 @@ export default function AdminLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loginSucceeded, setLoginSucceeded] = useState(false);
+  const finishLogin = useCallback(() => navigate("/admin", { replace: true }), [navigate]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -18,16 +21,21 @@ export default function AdminLogin() {
 
     setError("");
     setSubmitting(true);
-    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setSubmitting(false);
-
-    if (authError) {
-      setError(authError.message);
-      return;
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (authError) {
+        setError(authError.message === "Invalid login credentials" ? "Incorrect email or password." : authError.message);
+        return;
+      }
+      setLoginSucceeded(true);
+    } catch {
+      setError("The local Gym database is not running. Close this browser tab, double-click OPEN GYM APP, and try again.");
+    } finally {
+      setSubmitting(false);
     }
-
-    navigate("/admin");
   };
+
+  if (loginSucceeded) return <LoginIntro onComplete={finishLogin} />;
 
   return (
     <div className="min-h-screen bg-[#070a0f] px-4 py-8 text-slate-100">

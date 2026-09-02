@@ -13,6 +13,7 @@ export default function App() {
   const [maintenance, setMaintenance] = useState(false);
 
   useEffect(() => {
+    if (!isAdminRoute || location.pathname === "/admin/login") return;
     let active = true;
     const check = () => fetch("http://127.0.0.1:4174/api/maintenance", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
@@ -20,7 +21,7 @@ export default function App() {
       .catch(() => { /* The optional local service may be stopped in development. */ });
     check(); const timer = window.setInterval(check, 2000);
     return () => { active = false; window.clearInterval(timer); };
-  }, []);
+  }, [isAdminRoute, location.pathname]);
 
   return (
     <div className={isAdminRoute ? "min-h-screen" : "public-site min-h-screen"}>

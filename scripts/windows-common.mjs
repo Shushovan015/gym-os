@@ -8,6 +8,7 @@ export const runtimeDir = join(projectRoot, ".runtime");
 export const pidFile = join(runtimeDir, "frontend.pid");
 export const adminPidFile = join(runtimeDir, "admin-service.pid");
 export const appUrl = "http://127.0.0.1:4173";
+export const launchUrl = `${appUrl}/admin`;
 export const healthUrl = `${appUrl}/__gym_health`;
 export const adminHealthUrl = "http://127.0.0.1:4174/health";
 export const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";

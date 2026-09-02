@@ -174,7 +174,7 @@ export default function AdminBilling() {
         .select("*")
         .eq("is_active", true)
         .order("sku"),
-      supabase.from("admin_settings").select("*").eq("id", 1).single(),
+      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("pricing_items").select("id,title,price,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
       supabase.from("personal_training_plans").select("id,title:name,price:details,is_active").eq("is_active", true).order("sort_order"),
     ]);

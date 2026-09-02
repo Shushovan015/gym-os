@@ -9,7 +9,7 @@ Development and daily use are intentionally separate:
 
 - Development: `npm run dev` starts Vite with HMR on port 5173.
 - Daily gym use: `OPEN GYM APP.bat` serves the compiled `dist` application on
-  `http://127.0.0.1:4173` without Vite development mode or HMR.
+  `http://127.0.0.1:4173/admin` without Vite development mode or HMR.
 
 The local production server binds only to this computer, serves only `dist`,
 supports refreshed React routes through an SPA fallback, and records its own

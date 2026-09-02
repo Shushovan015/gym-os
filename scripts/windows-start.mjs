@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { adminServiceIsHealthy, appUrl, dockerCommand, frontendIsHealthy, isDockerReady, projectRoot, runtimeDir, runNpm, waitFor } from "./windows-common.mjs";
+import { adminServiceIsHealthy, appUrl, dockerCommand, frontendIsHealthy, isDockerReady, launchUrl, projectRoot, runtimeDir, runNpm, waitFor } from "./windows-common.mjs";
 
 function fail(message) {
   console.error(`\n${message}\n\nThe Gym Management System could not start.`);
@@ -57,5 +57,5 @@ if (!(await frontendIsHealthy())) {
 } else console.log("Gym app is already running.");
 
 console.log("Opening browser...");
-spawn("cmd.exe", ["/c", "start", "", appUrl], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-console.log(`\nGym Management System is ready.\n${appUrl}`);
+spawn("cmd.exe", ["/c", "start", "", launchUrl], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+console.log(`\nGym Management System is ready.\n${launchUrl}`);
