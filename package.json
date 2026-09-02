@@ -7,6 +7,8 @@
     "dev": "vite",
     "dev:local": "node scripts/dev-local.mjs",
     "build": "tsc -b && vite build",
+    "setup:local": "node scripts/setup-local.mjs",
+    "start:local": "node scripts/serve-local.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "supabase:start": "supabase start",

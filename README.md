@@ -3,6 +3,121 @@
 React, TypeScript, and Vite frontend backed by Supabase (PostgreSQL, Auth,
 Storage, RLS, RPCs, and one Edge Function).
 
+## Local Production Mode (daily gym use)
+
+Development and daily use are intentionally separate:
+
+- Development: `npm run dev` starts Vite with HMR on port 5173.
+- Daily gym use: `OPEN GYM APP.bat` serves the compiled `dist` application on
+  `http://127.0.0.1:4173` without Vite development mode or HMR.
+
+The local production server binds only to this computer, serves only `dist`,
+supports refreshed React routes through an SPA fallback, and records its own
+PID under the ignored `.runtime` directory.
+
+### First installation on a Windows computer
+
+Install these prerequisites:
+
+1. Git for Windows: <https://git-scm.com/download/win>
+2. Node.js LTS (20 or newer): <https://nodejs.org/>
+3. Docker Desktop with WSL 2/Linux containers:
+   <https://www.docker.com/products/docker-desktop/>
+
+Then open PowerShell in the project and run:
+
+```powershell
+npm install
+Copy-Item .env.example .env.local
+npm run supabase:start
+npm run supabase:status
+```
+
+Put only the displayed local **Publishable** key in
+`VITE_SUPABASE_ANON_KEY` inside `.env.local`. Never put the Secret,
+service-role, JWT, database, or S3 secret keys in a `VITE_*` variable.
+
+For a new empty local database, run `npm run db:reset`. To transfer an existing
+installation instead, restore its backup and do not reset:
+
+```powershell
+npm run db:restore -- backups\your-backup.dump
+```
+
+Build and verify the installation:
+
+```powershell
+npm run setup:local
+npm run supabase:verify
+```
+
+Create the local admin in Studio (`http://127.0.0.1:54323`): create an Auth
+user, open `profiles`, and change that user's role from `user` to `admin`.
+
+### Normal daily operation
+
+Morning:
+
+```text
+Double-click OPEN GYM APP
+```
+
+It checks/starts Docker Desktop, waits for Docker, checks/starts Supabase,
+builds only when `dist/index.html` is missing, starts the dedicated frontend if
+needed, waits for its health response, and opens the browser. Repeated clicks
+reuse the existing services instead of starting duplicate servers.
+
+Evening:
+
+```text
+Double-click CLOSE GYM APP
+```
+
+It creates a PostgreSQL backup first. Only after a successful backup does it
+verify and stop the exact PID belonging to `serve-local.mjs`, then stop local
+Supabase. It never kills every `node.exe`. If backup fails, the database and
+frontend remain running and the window tells the user to contact the
+administrator.
+
+### Desktop shortcuts and optional Windows startup
+
+To create the two desktop shortcuts:
+
+1. Right-click `OPEN GYM APP.bat`, choose Show more options, then Send to, then Desktop.
+2. Rename that shortcut to `OPEN GYM APP`.
+3. Repeat for `CLOSE GYM APP.bat` and name it `CLOSE GYM APP`.
+
+Optional automatic opening after sign-in:
+
+1. In Docker Desktop, enable Settings → General → Start Docker Desktop when
+   you sign in.
+2. Press `Win + R`, enter `shell:startup`, and press Enter.
+3. Put a shortcut to `OPEN GYM APP.bat` in that folder.
+
+No registry entries or Scheduled Tasks are created by this project.
+
+### Updating the application safely
+
+1. Double-click `CLOSE GYM APP` and confirm the backup succeeded.
+2. Run `git pull`.
+3. Run `npm install`.
+4. Run `npm run setup:local` to rebuild `dist`.
+5. Apply new migrations with `npx supabase migration up --local` if the update
+   includes migrations. Never use `db:reset` on the real daily database.
+6. Double-click `OPEN GYM APP`.
+7. Verify login, members, attendance, inventory, and billing.
+
+### Production-local commands
+
+```powershell
+npm run setup:local
+npm run start:local
+npm run build
+npm run supabase:start
+npm run supabase:stop
+npm run db:backup
+```
+
 ## Local Development
 
 ### Requirements
