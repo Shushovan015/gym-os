@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import NepaliDate from "nepali-date-converter";
 import { CalendarDays, Check, Info, RotateCcw, Search, UserRound, X } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
   AdminButton,
@@ -122,14 +123,11 @@ export default function AdminAttendance() {
     const end = days[days.length - 1]?.adDate ?? todayAd;
 
     const [recordsRes, deletedRes, holidaysRes] = await Promise.all([
-      supabase
+      fetchAllPages<AttendanceRow>((from, to) => supabase
         .from("attendance_records")
         .select("id, member_ref, attendance_date, status, deleted_at")
-        .gte("attendance_date", start)
-        .lte("attendance_date", end)
-        .is("deleted_at", null)
-        .order("attendance_date", { ascending: false })
-        .limit(10000),
+        .gte("attendance_date", start).lte("attendance_date", end).is("deleted_at", null)
+        .order("attendance_date", { ascending: false }).order("id", { ascending: false }).range(from, to)),
       supabase
         .from("attendance_records")
         .select("id, member_ref, attendance_date, status, deleted_at")

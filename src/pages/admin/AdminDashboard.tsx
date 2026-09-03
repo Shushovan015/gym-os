@@ -17,6 +17,7 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
   AdminButton,
@@ -128,19 +129,8 @@ export default function AdminDashboard() {
 
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      supabase
-        .from("members")
-        .select(
-          "id, member_id, full_name, email, phone, membership_type, membership_status, start_date, end_date, last_visit_date, payment_status, payment_due_date, notes, created_at, updated_at, deleted_at"
-        )
-        .order("updated_at", { ascending: false })
-        .limit(5000),
-      supabase
-        .from("attendance_records")
-        .select("id, member_ref, attendance_date, status, deleted_at")
-        .gte("attendance_date", periodStartAd)
-        .lte("attendance_date", todayAd)
-        .limit(30000),
+      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("id, member_id, full_name, email, phone, membership_type, membership_status, start_date, end_date, last_visit_date, payment_status, payment_due_date, notes, created_at, updated_at, deleted_at").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+      fetchAllPages<AttendanceRow>((from, to) => supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").gte("attendance_date", periodStartAd).lte("attendance_date", todayAd).order("attendance_date", { ascending: false }).order("id", { ascending: false }).range(from, to)),
       supabase
         .from("attendance_holidays")
         .select("id, holiday_date, name")

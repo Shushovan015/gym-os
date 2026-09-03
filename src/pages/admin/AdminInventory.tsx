@@ -10,6 +10,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
   AdminButton,
@@ -169,17 +170,17 @@ export default function AdminInventory() {
 
   const load = async () => {
     const [p, v, s] = await Promise.all([
-      supabase
+      fetchAllPages<InventoryProduct>((from, to) => supabase
         .from("shop_items")
         .select(
           "id,title,category,description,image,is_active,sku,brand,unit,barcode,supplier_id,inventory_enabled,cost_price_minor,selling_price_minor,low_stock_threshold,inventory_notes,deactivated_at",
         )
         .eq("inventory_enabled", true)
-        .order("title"),
-      supabase
+        .order("title").order("id").range(from, to)),
+      fetchAllPages<InventoryVariant>((from, to) => supabase
         .from("inventory_product_variants")
         .select("*")
-        .order("created_at"),
+        .order("created_at").order("id").range(from, to)),
       supabase.from("inventory_suppliers").select("*").order("name"),
     ]);
     const issue = p.error ?? v.error ?? s.error;

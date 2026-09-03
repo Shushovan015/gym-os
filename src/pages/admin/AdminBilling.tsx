@@ -46,6 +46,7 @@ import type {
   PaymentMethod,
 } from "@src/features/billing/types";
 import { calculateInvoiceTotals } from "@src/features/billing/calculations";
+import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   formatMoney,
   majorToMinor,
@@ -151,16 +152,8 @@ export default function AdminBilling() {
 
   const load = async () => {
     const [i, m, p, v, s, pricing, training] = await Promise.all([
-      supabase
-        .from("invoices")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(2000),
-      supabase
-        .from("members")
-        .select("*")
-        .is("deleted_at", null)
-        .order("full_name"),
+      fetchAllPages<InvoiceRow>((from, to) => supabase.from("invoices").select("*").order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").is("deleted_at", null).order("full_name").order("id").range(from, to)),
       supabase
         .from("shop_items")
         .select(

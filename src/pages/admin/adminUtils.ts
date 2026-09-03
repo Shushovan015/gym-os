@@ -219,6 +219,12 @@ export function validateMemberForm(form: MemberForm, existing: MemberRow[], edit
 
   const duplicate = existing.find((member) => member.member_id.trim() === memberId && member.id !== editingId);
   if (duplicate) errors.member_id = "Another member already uses this ID.";
+  const normalizedPhone = normalizePhone(form.phone);
+  const duplicatePhone = existing.find((member) => normalizePhone(member.phone) === normalizedPhone && member.id !== editingId);
+  if (normalizedPhone && duplicatePhone) errors.phone = `This phone belongs to ${duplicatePhone.full_name}${duplicatePhone.deleted_at ? " in Deleted members" : ""}. Open that existing record instead.`;
+  const normalizedEmail = form.email?.trim().toLowerCase() ?? "";
+  const duplicateEmail = normalizedEmail && existing.find((member) => member.email?.trim().toLowerCase() === normalizedEmail && member.id !== editingId);
+  if (duplicateEmail) errors.email = `This email belongs to ${duplicateEmail.full_name}${duplicateEmail.deleted_at ? " in Deleted members" : ""}. Open that existing record instead.`;
 
   return errors;
 }

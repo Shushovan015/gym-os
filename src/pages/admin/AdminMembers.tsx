@@ -13,6 +13,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
   AdminButton,
@@ -345,11 +346,7 @@ export default function AdminMembers() {
   const loadMembers = async () => {
     const [settingsRes, membersRes] = await Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      supabase
-        .from("members")
-        .select("*")
-        .order("updated_at", { ascending: false })
-        .limit(5000),
+      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
     ]);
 
     if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });
@@ -366,7 +363,7 @@ export default function AdminMembers() {
     let alive = true;
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      supabase.from("members").select("*").order("updated_at", { ascending: false }).limit(5000),
+      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
     ]).then(([settingsRes, membersRes]) => {
       if (!alive) return;
       if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });

@@ -23,6 +23,7 @@
     "backup:validate": "node scripts/backup-cli.mjs validate",
     "restore:full": "node scripts/backup-cli.mjs restore",
     "admin-service": "node scripts/admin-service.mjs",
+    "performance:scale": "node scripts/scale-check.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
