@@ -408,14 +408,15 @@ export default function AdminPricing() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <form onSubmit={submit} className="rounded-2xl bg-black/35 p-6 space-y-3">
-          <h2 className="text-xl font-black text-white">{editingId ? "Edit" : "Add"} Pricing Content</h2>
+          <h2 className="text-xl font-black text-white">{editingId ? "Edit" : "Add"} Membership Plan</h2>
+          <p className="text-sm text-zinc-400">Active plan names and prices appear in Billing. Edit the price here whenever a membership rate changes.</p>
 
           <select
             value={form.kind}
             onChange={(e) => setForm({ ...form, kind: e.target.value as Kind })}
             className="w-full rounded-xl bg-white/10 px-4 py-3 text-white"
           >
-            <option value="plan">Plan Card</option>
+            <option value="plan">Membership Plan</option>
             <option value="perk">Top Feature Chip</option>
           </select>
 
@@ -506,7 +507,7 @@ export default function AdminPricing() {
         </form>
 
         <div className="rounded-2xl bg-black/35 p-6 space-y-3">
-          <h2 className="text-xl font-black text-white">Saved Pricing Content</h2>
+          <h2 className="text-xl font-black text-white">Saved Membership Plans and Benefits</h2>
           {rows.map((r) => (
             <div key={r.id} className="rounded-xl bg-white/6 p-4">
               <div className="text-xs text-zinc-400">{r.kind === "plan" ? "Plan Card" : "Top Feature Chip"}</div>

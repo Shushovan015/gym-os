@@ -286,10 +286,108 @@ html.force-reduced-motion *::after {
   outline-offset: 3px;
 }
 @media print {
-  body * { visibility: hidden !important; }
-  #printable-invoice, #printable-invoice * { visibility: visible !important; }
-  #printable-invoice { position: absolute; inset: 0; width: 100%; min-height: 100%; margin: 0; border: 0; box-shadow: none; }
-  @page { size: A4; margin: 12mm; }
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  body * {
+    display: none !important;
+  }
+
+  body *:has(#printable-invoice) {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #printable-invoice,
+  #printable-invoice * {
+    display: revert !important;
+    visibility: visible !important;
+  }
+
+  #printable-invoice {
+    position: static !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 7mm !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+    break-inside: avoid-page;
+  }
+
+  #printable-invoice .flex {
+    display: flex !important;
+  }
+
+  #printable-invoice .inline-flex {
+    display: inline-flex !important;
+  }
+
+  #printable-invoice .grid {
+    display: grid !important;
+  }
+
+  #printable-invoice .hidden {
+    display: none !important;
+  }
+
+  #printable-invoice > div:first-child {
+    align-items: flex-start;
+  }
+
+  #printable-invoice table {
+    margin-top: 2mm;
+  }
+
+  #printable-invoice th,
+  #printable-invoice td {
+    padding-top: 2.5mm !important;
+    padding-bottom: 2.5mm !important;
+  }
+
+  #printable-invoice .ml-auto {
+    margin-left: auto !important;
+  }
+
+  #printable-invoice table {
+    display: table !important;
+  }
+
+  #printable-invoice thead {
+    display: table-header-group !important;
+  }
+
+  #printable-invoice tbody {
+    display: table-row-group !important;
+  }
+
+  #printable-invoice tr {
+    display: table-row !important;
+    break-inside: avoid;
+  }
+
+  #printable-invoice th,
+  #printable-invoice td {
+    display: table-cell !important;
+  }
+
+  @page { size: A4 portrait; margin: 8mm; }
 }
 @keyframes admin-intro-background {
   0% { opacity: 0; }

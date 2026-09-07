@@ -31,7 +31,7 @@ const pages = [
   },
   {
     label: "Membership prices",
-    description: "Public plans and included benefits",
+    description: "Manage membership plans and rates used by Billing and the public website",
     to: "/admin/pricing",
     icon: Tags,
   },

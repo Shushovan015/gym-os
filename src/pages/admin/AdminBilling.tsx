@@ -7,7 +7,7 @@ import {
   Search,
   WalletCards,
 } from "lucide-react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@src/Client/supabase";
 import {
   AdminBadge,
@@ -81,13 +81,16 @@ const statusTone = (status: string) =>
       : status === "cancelled"
         ? ("danger" as const)
         : ("neutral" as const);
-const displayPriceToMinor = (value: string) => {
-  const normalized = value.replace(/,/g, "").match(/[0-9]+(?:\.[0-9]+)?/)?.[0];
-  return normalized ? Math.round(Number(normalized) * 100) : null;
+const displayPriceToInput = (value: string) => {
+  const normalized = value
+    .replace(/[,_\s]/g, "")
+    .match(/[0-9]+(?:\.[0-9]+)?/)?.[0];
+  return normalized && Number(normalized) >= 0 ? normalized : "";
 };
 
 export default function AdminBilling() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const today = getNepalTodayAdDate();
   const [settings, setSettings] = useState<BillingSettings>({
@@ -171,7 +174,7 @@ export default function AdminBilling() {
       supabase.from("pricing_items").select("id,title,price,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
       supabase.from("personal_training_plans").select("id,title:name,price:details,is_active").eq("is_active", true).order("sort_order"),
     ]);
-    const issue = i.error ?? m.error ?? p.error ?? v.error ?? s.error;
+    const issue = i.error ?? m.error ?? p.error ?? v.error ?? s.error ?? pricing.error ?? training.error;
     if (issue) setMessage(issue.message);
     setInvoices((i.data ?? []) as InvoiceRow[]);
     setMembers((m.data ?? []) as MemberRow[]);
@@ -309,6 +312,14 @@ export default function AdminBilling() {
       setLineDescription(
         `${member.membership_type.charAt(0).toUpperCase() + member.membership_type.slice(1)} membership fee`,
       );
+      const memberPlan = membershipPlans.find((plan) =>
+        plan.title.toLowerCase().includes(member.membership_type.toLowerCase()),
+      );
+      if (memberPlan) {
+        setSelectedPlanId(String(memberPlan.id));
+        setLineDescription(memberPlan.title);
+        setLinePrice(displayPriceToInput(memberPlan.price));
+      }
     }
   };
   const selectVariant = (value: string) => {
@@ -960,16 +971,19 @@ export default function AdminBilling() {
                   </div>
                 </div>
               ) : lineType === "membership" || lineType === "personal_training" ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <AdminField label={lineType === "membership" ? "Membership plan" : "Training plan"}>
+                <div className="space-y-3">
+                  <div className="grid gap-3 md:grid-cols-2">
+                  <AdminField
+                    label={lineType === "membership" ? "Membership plan" : "Training plan"}
+                    hint={lineType === "membership" ? "Selecting a plan fills its current price automatically." : undefined}
+                  >
                     <AdminSelect
                       value={selectedPlanId}
                       onChange={(event) => {
                         const plan = (lineType === "membership" ? membershipPlans : trainingPlans).find((item) => item.id === Number(event.target.value));
                         setSelectedPlanId(event.target.value);
                         setLineDescription(plan?.title ?? "");
-                        const price = plan ? displayPriceToMinor(plan.price) : null;
-                        setLinePrice(price === null ? "" : minorToInput(price, settings.currency_minor_unit));
+                        setLinePrice(plan ? displayPriceToInput(plan.price) : "");
                       }}
                       options={[
                         { value: "", label: "Choose a plan" },
@@ -980,6 +994,19 @@ export default function AdminBilling() {
                   <AdminField label={`Amount (${settings.currency_code})`}>
                     <AdminInput type="number" min="0" step="0.01" value={linePrice} onChange={(event) => setLinePrice(event.target.value)} />
                   </AdminField>
+                  </div>
+                  {lineType === "membership" ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
+                      <span>
+                        {membershipPlans.length
+                          ? "Rates come from Membership Plans. Update a plan there whenever its price changes."
+                          : "No active membership plans are available. Add and activate a plan first."}
+                      </span>
+                      <AdminButton type="button" variant="secondary" onClick={() => navigate("/admin/pricing")}>
+                        Manage membership plans
+                      </AdminButton>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
