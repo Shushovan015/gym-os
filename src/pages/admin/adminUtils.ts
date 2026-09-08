@@ -39,7 +39,7 @@ export const defaultAdminSettings: AdminSettings = {
   expiry_warning_days: 7,
   absent_after_days: 8,
   default_membership_type: "monthly",
-  date_display_preference: "both",
+  date_display_preference: "bs",
   attendance_holiday_lock: true,
   invoice_prefix: "GYM",
   currency_code: "NPR",
@@ -57,6 +57,8 @@ export const emptyMemberForm: MemberForm = {
   full_name: "",
   email: "",
   phone: "",
+  address: "",
+  photo_url: "",
   membership_type: "monthly",
   membership_status: "active",
   start_date: "",
@@ -133,7 +135,7 @@ export function formatDateTime(value: string | null | undefined) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return `${formatBsDateFromAd(value.slice(0, 10))} BS · ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 export function formatBsDateFromAd(adDate: string | null | undefined) {
@@ -165,12 +167,10 @@ export function bsStringToAdDate(bsDate: string) {
   }
 }
 
-export function formatDisplayDate(adDate: string | null | undefined, preference: DateDisplayPreference) {
+export function formatDisplayDate(adDate: string | null | undefined, _preference: DateDisplayPreference) {
   if (!adDate) return "-";
-  if (preference === "ad") return adDate;
   const bs = formatBsDateFromAd(adDate);
-  if (preference === "bs") return bs;
-  return `${bs} BS / ${adDate} AD`;
+  return `${bs} BS`;
 }
 
 export function normalizeNullable(value: string | null | undefined) {
@@ -208,14 +208,14 @@ export function validateMemberForm(form: MemberForm, existing: MemberRow[], edit
   }
   if (!form.phone.trim()) errors.phone = "Phone number is required.";
   if (!isValidEmail(form.email)) errors.email = "Enter a valid email address.";
-  if (!membershipTypes.includes(form.membership_type)) errors.membership_type = "Select a valid plan.";
+  if (!form.membership_type.trim()) errors.membership_type = "Select a plan.";
   if (!membershipStatuses.includes(form.membership_status)) errors.membership_status = "Select a valid status.";
   if (!paymentStatuses.includes(form.payment_status)) errors.payment_status = "Select a valid payment status.";
 
-  if (!isValidAdDate(form.start_date)) errors.start_date = "Use a valid AD date.";
-  if (!isValidAdDate(form.end_date)) errors.end_date = "Use a valid AD date.";
-  if (!isValidAdDate(form.last_visit_date)) errors.last_visit_date = "Use a valid AD date.";
-  if (!isValidAdDate(form.payment_due_date)) errors.payment_due_date = "Use a valid AD date.";
+  if (!isValidAdDate(form.start_date)) errors.start_date = "Choose a valid Nepali date.";
+  if (!isValidAdDate(form.end_date)) errors.end_date = "Choose a valid Nepali date.";
+  if (!isValidAdDate(form.last_visit_date)) errors.last_visit_date = "Choose a valid Nepali date.";
+  if (!isValidAdDate(form.payment_due_date)) errors.payment_due_date = "Choose a valid Nepali date.";
 
   const duplicate = existing.find((member) => member.member_id.trim() === memberId && member.id !== editingId);
   if (duplicate) errors.member_id = "Another member already uses this ID.";
@@ -239,6 +239,8 @@ export function toMemberPayload(form: MemberForm) {
     full_name: form.full_name.trim(),
     email: normalizeNullable(form.email),
     phone: normalizePhone(form.phone),
+    address: normalizeNullable(form.address),
+    photo_url: normalizeNullable(form.photo_url),
     membership_type: form.membership_type,
     membership_status: form.membership_status,
     start_date: normalizeNullable(form.start_date),

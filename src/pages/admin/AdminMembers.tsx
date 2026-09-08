@@ -16,6 +16,7 @@ import { supabase } from "@src/Client/supabase";
 import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
+  AdminBsDateInput,
   AdminButton,
   AdminCard,
   AdminDialog,
@@ -47,10 +48,8 @@ import type {
   SendProgressReportResponse,
   TransformationRow,
 } from "./adminTypes";
-import { membershipStatuses, membershipTypes, paymentStatuses } from "./adminTypes";
+import { membershipStatuses, paymentStatuses } from "./adminTypes";
 import {
-  adToBsString,
-  bsStringToAdDate,
   cx,
   defaultAdminSettings,
   diffInDays,
@@ -71,6 +70,7 @@ type DeletedFilter = "active" | "deleted" | "all";
 type MembershipFilter = "all" | MembershipStatus | "expiring";
 type PaymentFilter = "all" | PaymentStatus;
 type SortKey = "updated_desc" | "name_asc" | "end_date_asc" | "created_desc";
+type MembershipPlan = { id: number; title: string; is_active: boolean };
 
 type CsvParsedRow = MemberForm & {
   rowNumber: number;
@@ -107,7 +107,6 @@ const n8nMembersWebhookSecret = (import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_SECRET
 const rowsPerPage = 10;
 const membershipOptions = [{ value: "all", label: "All memberships" }, ...membershipStatuses.map((value) => ({ value, label: statusLabel(value) })), { value: "expiring", label: "Expiring soon" }];
 const paymentOptions = [{ value: "all", label: "All payment statuses" }, ...paymentStatuses.map((value) => ({ value, label: statusLabel(value) }))];
-const planOptions = [{ value: "all", label: "All plans" }, ...membershipTypes.map((value) => ({ value, label: statusLabel(value) }))];
 const deletedOptions = [
   { value: "active", label: "Active list" },
   { value: "deleted", label: "Deleted list" },
@@ -222,38 +221,7 @@ function BsAdDateField({
   onChangeAd: (value: string) => void;
   error?: string;
 }) {
-  const [bsError, setBsError] = useState("");
-
-  const onBsBlur = (value: string) => {
-    if (!value.trim()) {
-      setBsError("");
-      onChangeAd("");
-      return;
-    }
-    const ad = bsStringToAdDate(value);
-    if (ad === null) {
-      setBsError("Use BS date as YYYY-MM-DD.");
-      return;
-    }
-    setBsError("");
-    onChangeAd(ad);
-  };
-
-  return (
-    <div className="space-y-2">
-      <AdminField label={`${label} (AD)`} error={error}>
-        <AdminInput type="date" value={adValue ?? ""} onChange={(event) => onChangeAd(event.target.value)} />
-      </AdminField>
-      <AdminField label={`${label} (BS)`} error={bsError} hint="Type a full BS date and leave the field to convert.">
-        <AdminInput
-          key={adValue ?? "empty"}
-          defaultValue={adToBsString(adValue)}
-          placeholder="YYYY-MM-DD"
-          onBlur={(event) => onBsBlur(event.target.value)}
-        />
-      </AdminField>
-    </div>
-  );
+  return <AdminField label={`${label} (BS)`} error={error}><AdminBsDateInput value={adValue} onChange={onChangeAd} /></AdminField>;
 }
 
 function PaginationControls({
@@ -291,6 +259,7 @@ export default function AdminMembers() {
 
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [settings, setSettings] = useState<AdminSettings>(defaultAdminSettings);
+  const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -299,7 +268,7 @@ export default function AdminMembers() {
     searchParams.get("expiring") ? "expiring" : ((searchParams.get("membership") as MembershipFilter | null) ?? "all")
   );
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>((searchParams.get("payment") as PaymentFilter | null) ?? "all");
-  const [planFilter, setPlanFilter] = useState<MembershipType | "all">("all");
+  const [planFilter, setPlanFilter] = useState<string>("all");
   const [deletedFilter, setDeletedFilter] = useState<DeletedFilter>("active");
   const [sortKey, setSortKey] = useState<SortKey>("updated_desc");
   const expiringDays = Number.isFinite(initialExpiring) ? initialExpiring : defaultAdminSettings.expiry_warning_days;
@@ -312,6 +281,7 @@ export default function AdminMembers() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formOpen, setFormOpen] = useState(searchParams.get("action") === "add");
   const [saving, setSaving] = useState(false);
+  const [memberPhotoFile, setMemberPhotoFile] = useState<File | null>(null);
 
   const [detailMember, setDetailMember] = useState<MemberRow | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
@@ -344,9 +314,10 @@ export default function AdminMembers() {
   const [csvOpen, setCsvOpen] = useState(false);
 
   const loadMembers = async () => {
-    const [settingsRes, membersRes] = await Promise.all([
+    const [settingsRes, membersRes, plansRes] = await Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
       fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+      supabase.from("pricing_items").select("id,title,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
     ]);
 
     if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });
@@ -356,6 +327,7 @@ export default function AdminMembers() {
       return;
     }
     setMembers((membersRes.data ?? []) as MemberRow[]);
+    setMembershipPlans((plansRes.data ?? []) as MembershipPlan[]);
     setLoading(false);
   };
 
@@ -364,7 +336,8 @@ export default function AdminMembers() {
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
       fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
-    ]).then(([settingsRes, membersRes]) => {
+      supabase.from("pricing_items").select("id,title,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
+    ]).then(([settingsRes, membersRes, plansRes]) => {
       if (!alive) return;
       if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });
       if (membersRes.error) {
@@ -372,6 +345,7 @@ export default function AdminMembers() {
       } else {
         setMembers((membersRes.data ?? []) as MemberRow[]);
       }
+      setMembershipPlans((plansRes.data ?? []) as MembershipPlan[]);
       setLoading(false);
     });
     return () => {
@@ -421,13 +395,18 @@ export default function AdminMembers() {
   const pagedMembers = filteredMembers.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
   const validCsvRows = csvRows.filter((row) => row.errors.length === 0);
   const invalidCsvRows = csvRows.filter((row) => row.errors.length > 0);
+  const activePlanNames = membershipPlans.map((plan) => plan.title.trim()).filter(Boolean);
+  const filterPlanNames = Array.from(new Set([...activePlanNames, ...members.map((member) => member.membership_type)])).sort();
+  const formPlanNames = Array.from(new Set([...activePlanNames, form.membership_type].filter(Boolean)));
 
   const resetPage = () => setCurrentPage(1);
 
   const openAddMember = () => {
     setEditingId(null);
-    setForm({ ...emptyMemberForm, membership_type: settings.default_membership_type });
+    const defaultPlan = activePlanNames.find((plan) => plan.toLowerCase() === settings.default_membership_type.toLowerCase());
+    setForm({ ...emptyMemberForm, membership_type: defaultPlan ?? activePlanNames[0] ?? "" });
     setFormErrors({});
+    setMemberPhotoFile(null);
     setFormOpen(true);
   };
 
@@ -438,6 +417,8 @@ export default function AdminMembers() {
       full_name: member.full_name,
       email: member.email ?? "",
       phone: member.phone,
+      address: member.address ?? "",
+      photo_url: member.photo_url ?? "",
       membership_type: member.membership_type,
       membership_status: member.membership_status,
       start_date: member.start_date ?? "",
@@ -448,6 +429,7 @@ export default function AdminMembers() {
       notes: member.notes ?? "",
     });
     setFormErrors({});
+    setMemberPhotoFile(null);
     setFormOpen(true);
   };
 
@@ -467,7 +449,19 @@ export default function AdminMembers() {
     if (hasValidationErrors(errors)) return;
 
     setSaving(true);
-    const payload = toMemberPayload(normalizedForm);
+    let photoUrl = normalizedForm.photo_url;
+    if (memberPhotoFile) {
+      const extension = memberPhotoFile.name.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `members/${normalizedForm.member_id}-${Date.now()}.${extension}`;
+      const upload = await supabase.storage.from("gym-media").upload(path, memberPhotoFile);
+      if (upload.error) {
+        setSaving(false);
+        setMessage(`Member photo could not be uploaded: ${upload.error.message}`);
+        return;
+      }
+      photoUrl = supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
+    }
+    const payload = toMemberPayload({ ...normalizedForm, photo_url: photoUrl });
     const result = editingId
       ? await supabase.from("members").update(payload).eq("id", editingId)
       : await supabase.from("members").insert(payload);
@@ -702,6 +696,8 @@ export default function AdminMembers() {
         full_name: values[headerIndex.full_name] || "",
         email: values[headerIndex.email] || "",
         phone: values[headerIndex.phone] || "",
+        address: "",
+        photo_url: "",
         membership_type: (values[headerIndex.membership_type] || "monthly").toLowerCase() as MembershipType,
         membership_status: (values[headerIndex.membership_status] || "active").toLowerCase() as MembershipStatus,
         start_date: values[headerIndex.start_date] || "",
@@ -810,10 +806,10 @@ export default function AdminMembers() {
             }}
           />
           <AdminSelect
-            options={planOptions}
+            options={[{ value: "all", label: "All plans" }, ...filterPlanNames.map((value) => ({ value, label: value }))]}
             value={planFilter}
             onChange={(event) => {
-              setPlanFilter(event.target.value as MembershipType | "all");
+              setPlanFilter(event.target.value);
               resetPage();
             }}
           />
@@ -840,7 +836,7 @@ export default function AdminMembers() {
             {membershipFilter === "expiring" ? (
               <AdminBadge tone="warning">Expiring within {expiringDays} days</AdminBadge>
             ) : null}
-            {createdSince ? <AdminBadge tone="accent">Created since {createdSince}</AdminBadge> : null}
+            {createdSince ? <AdminBadge tone="accent">Created since {formatDisplayDate(createdSince, "bs")}</AdminBadge> : null}
             {absentDays > 0 ? <AdminBadge tone="warning">No last visit for {absentDays}+ days</AdminBadge> : null}
             <AdminButton
               type="button"
@@ -981,7 +977,7 @@ export default function AdminMembers() {
       <AdminDialog
         open={formOpen}
         title={editingId ? "Edit member" : "Create member"}
-        description="Fields are grouped for front-desk entry. BS fields convert into AD dates stored by Supabase."
+        description="Fields are grouped for front-desk entry. All dates use the Nepali calendar (BS)."
         onClose={() => setFormOpen(false)}
         size="2xl"
       >
@@ -1001,6 +997,18 @@ export default function AdminMembers() {
               <AdminField label="Email" error={formErrors.email}>
                 <AdminInput value={form.email ?? ""} onChange={(event) => updateForm("email", event.target.value)} />
               </AdminField>
+              <AdminField label="Address">
+                <AdminInput value={form.address ?? ""} onChange={(event) => updateForm("address", event.target.value)} placeholder="Member's home address" />
+              </AdminField>
+              <AdminField label="Member photo" hint="JPG, PNG, WebP or GIF, up to 10 MB">
+                <AdminInput type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => setMemberPhotoFile(event.target.files?.[0] ?? null)} />
+                {memberPhotoFile || form.photo_url ? (
+                  <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
+                    {form.photo_url ? <img src={form.photo_url} alt="Current member" className="h-14 w-14 rounded-lg object-cover" /> : null}
+                    <span>{memberPhotoFile?.name ?? "Current photo"}</span>
+                  </div>
+                ) : null}
+              </AdminField>
             </div>
           </AdminCard>
 
@@ -1009,10 +1017,16 @@ export default function AdminMembers() {
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
               <AdminField label="Plan" error={formErrors.membership_type}>
                 <AdminSelect<MembershipType>
-                  options={membershipTypes.map((value) => ({ value, label: statusLabel(value) }))}
+                  options={[
+                    { value: "", label: membershipPlans.length ? "Choose a membership plan" : "No active plans available" },
+                    ...formPlanNames.map((value) => ({ value, label: value })),
+                  ]}
                   value={form.membership_type}
                   onChange={(event) => updateForm("membership_type", event.target.value as MembershipType)}
                 />
+                {!membershipPlans.length ? (
+                  <AdminButton type="button" variant="secondary" className="mt-2" onClick={() => navigate("/admin/pricing")}>Manage membership plans</AdminButton>
+                ) : null}
               </AdminField>
               <AdminField label="Membership status" error={formErrors.membership_status}>
                 <AdminSelect<MembershipStatus>
@@ -1092,12 +1106,17 @@ export default function AdminMembers() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
               <AdminCard className="lg:col-span-2">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-amber-300">
-                    <UserRound className="h-6 w-6" />
-                  </div>
+                  {detailMember.photo_url ? (
+                    <img src={detailMember.photo_url} alt={detailMember.full_name} className="h-20 w-20 shrink-0 rounded-xl border border-slate-800 object-cover" />
+                  ) : (
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-amber-300">
+                      <UserRound className="h-8 w-8" />
+                    </div>
+                  )}
                   <div>
                     <div className="text-xl font-black text-white">{detailMember.full_name}</div>
                     <div className="text-sm text-slate-400">{detailMember.email || "No email"} | {detailMember.phone}</div>
+                    <div className="mt-1 text-sm text-slate-400">{detailMember.address || "No address added"}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <AdminBadge tone={memberStatusTone(detailMember, todayAd)}>{detailMember.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(detailMember, todayAd))}</AdminBadge>
                       <AdminBadge tone={paymentTone(detailMember.payment_status)}>{statusLabel(detailMember.payment_status)}</AdminBadge>
@@ -1141,7 +1160,7 @@ export default function AdminMembers() {
             <AdminCard>
               <AdminSectionTitle title="Body measurements" />
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <AdminInput type="date" value={measurementForm.recorded_at} onChange={(event) => setMeasurementForm((current) => ({ ...current, recorded_at: event.target.value }))} />
+                <AdminBsDateInput value={measurementForm.recorded_at} onChange={(value) => setMeasurementForm((current) => ({ ...current, recorded_at: value }))} />
                 <AdminInput placeholder="Weight kg" value={measurementForm.weight_kg} onChange={(event) => setMeasurementForm((current) => ({ ...current, weight_kg: event.target.value }))} />
                 <AdminInput placeholder="Body fat %" value={measurementForm.body_fat_percent} onChange={(event) => setMeasurementForm((current) => ({ ...current, body_fat_percent: event.target.value }))} />
                 <AdminButton type="button" variant="primary" onClick={addMeasurement}>Add measurement</AdminButton>
@@ -1177,7 +1196,7 @@ export default function AdminMembers() {
             <AdminCard>
               <AdminSectionTitle title="Transformation timeline" />
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <AdminInput type="date" value={transformationForm.captured_at} onChange={(event) => setTransformationForm((current) => ({ ...current, captured_at: event.target.value }))} />
+                <AdminBsDateInput value={transformationForm.captured_at} onChange={(value) => setTransformationForm((current) => ({ ...current, captured_at: value }))} />
                 <AdminInput placeholder="Milestone title" value={transformationForm.milestone_title} onChange={(event) => setTransformationForm((current) => ({ ...current, milestone_title: event.target.value }))} />
                 <AdminInput type="file" accept="image/*" onChange={(event) => setTransformationPhotoFile(event.target.files?.[0] ?? null)} />
                 <AdminButton type="button" variant="primary" onClick={addTransformation}>Add timeline entry</AdminButton>

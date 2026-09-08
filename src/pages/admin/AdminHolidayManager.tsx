@@ -386,7 +386,7 @@ export default function AdminHolidayManager() {
         {holidays.map((holiday) => (
           <div key={holiday.id} className="rounded-xl bg-white/8 p-3 flex items-center justify-between gap-3">
             <div className="text-sm text-zinc-100">
-              <b>{holiday.name || "Holiday"}</b> | BS: {adToBsText(holiday.holiday_date)} | AD: {holiday.holiday_date}
+              <b>{holiday.name || "Holiday"}</b> | {adToBsText(holiday.holiday_date)} BS
             </div>
             <div className="flex gap-2">
               <button

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   BarChart3,
+  ChartNoAxesCombined,
   CalendarDays,
   Globe2,
   LogOut,
@@ -44,6 +45,7 @@ const navSections: AdminNavSection[] = [
       { label: "Members", to: "/admin/members", icon: Users },
       { label: "Attendance", to: "/admin/attendance", icon: CalendarDays },
       { label: "Billing", to: "/admin/billing", icon: ReceiptText },
+      { label: "Reports", to: "/admin/reports", icon: ChartNoAxesCombined },
       { label: "Inventory", to: "/admin/inventory", icon: PackageSearch },
       { label: "Holidays", to: "/admin/holidays", icon: CalendarDays },
       { label: "Website", to: "/admin/website", icon: Globe2 },

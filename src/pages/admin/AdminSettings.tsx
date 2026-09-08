@@ -13,7 +13,7 @@ import {
   AdminSelect,
   AdminTextarea,
 } from "@src/components/admin/AdminUI";
-import type { AdminSettings as AdminSettingsType, DateDisplayPreference, MembershipType } from "./adminTypes";
+import type { AdminSettings as AdminSettingsType, MembershipType } from "./adminTypes";
 import { defaultAdminSettings, WEEKDAYS } from "./adminUtils";
 import { membershipTypes } from "./adminTypes";
 import BackupRestorePanel from "./BackupRestorePanel";
@@ -24,11 +24,6 @@ const n8nWebhookConfigured = Boolean((import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_U
 const n8nSecretConfigured = Boolean((import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_SECRET as string | undefined)?.trim());
 
 const membershipOptions = membershipTypes.map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }));
-const datePreferenceOptions: Array<{ value: DateDisplayPreference; label: string }> = [
-  { value: "both", label: "BS and AD" },
-  { value: "bs", label: "BS only" },
-  { value: "ad", label: "AD only" },
-];
 const warningOptions = [
   { value: 7, label: "7 days" },
   { value: 15, label: "15 days" },
@@ -127,7 +122,7 @@ export default function AdminSettings() {
       expiry_warning_days: form.expiry_warning_days,
       absent_after_days: form.absent_after_days,
       default_membership_type: form.default_membership_type,
-      date_display_preference: form.date_display_preference,
+      date_display_preference: "bs",
       attendance_holiday_lock: form.attendance_holiday_lock,
       invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
       currency_code: form.currency_code.trim().toUpperCase(),
@@ -220,13 +215,7 @@ export default function AdminSettings() {
                   onChange={(event) => update("expiry_warning_days", Number(event.target.value))}
                 />
               </AdminField>
-              <AdminField label="Date display">
-                <AdminSelect<DateDisplayPreference>
-                  options={datePreferenceOptions}
-                  value={form.date_display_preference}
-                  onChange={(event) => update("date_display_preference", event.target.value as DateDisplayPreference)}
-                />
-              </AdminField>
+              <AdminField label="Date system" hint="All dates and calendars throughout admin use Bikram Sambat."><AdminInput value="Nepali calendar (BS)" readOnly /></AdminField>
             </div>
           </AdminCard>
 

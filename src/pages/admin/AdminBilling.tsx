@@ -11,6 +11,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@src/Client/supabase";
 import {
   AdminBadge,
+  AdminBsDateInput,
   AdminButton,
   AdminCard,
   AdminDialog,
@@ -607,18 +608,8 @@ export default function AdminBilling() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <AdminInput
-            type="date"
-            aria-label="From date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-          <AdminInput
-            type="date"
-            aria-label="To date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
+          <AdminField label="From date (BS)"><AdminBsDateInput value={dateFrom} onChange={setDateFrom} /></AdminField>
+          <AdminField label="To date (BS)"><AdminBsDateInput value={dateTo} onChange={setDateTo} /></AdminField>
           <AdminSelect
             value={paymentFilter}
             onChange={(e) => setPaymentFilter(e.target.value)}
@@ -675,7 +666,7 @@ export default function AdminBilling() {
                       {invoice.customer_name}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {invoice.billing_date}
+                      {formatBsDateFromAd(invoice.billing_date)} BS
                     </p>
                   </div>
                   <AdminBadge tone={statusTone(invoice.payment_status)}>
@@ -723,10 +714,7 @@ export default function AdminBilling() {
                         {invoice.invoice_number ?? `Draft #${invoice.id}`}
                       </td>
                       <td className="px-4 py-4 text-slate-300">
-                        {invoice.billing_date}
-                        <div className="text-xs text-slate-500">
-                          BS {formatBsDateFromAd(invoice.billing_date)}
-                        </div>
+                        {formatBsDateFromAd(invoice.billing_date)} BS
                       </td>
                       <td className="px-4 py-4 text-slate-300">
                         {invoice.customer_name}
@@ -1126,7 +1114,7 @@ export default function AdminBilling() {
             </AdminField>
             {(paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : totals.totalMinor) < totals.totalMinor ? (
               <AdminField label="Payment due date">
-                <AdminInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                <AdminBsDateInput value={dueDate} onChange={setDueDate} />
               </AdminField>
             ) : null}
             <AdminField label="How did they pay?">
@@ -1241,10 +1229,7 @@ export default function AdminBilling() {
               <div className="text-right">
                 <h3 className="text-xl font-black">INVOICE</h3>
                 <p>{detail.invoice_number}</p>
-                <p className="text-sm">AD {detail.billing_date}</p>
-                <p className="text-sm">
-                  BS {formatBsDateFromAd(detail.billing_date)}
-                </p>
+                <p className="text-sm">{formatBsDateFromAd(detail.billing_date)} BS</p>
               </div>
             </div>
             <div className="my-5 flex justify-between">
@@ -1333,7 +1318,7 @@ export default function AdminBilling() {
                     className="mt-2 flex justify-between border-b py-2 text-sm"
                   >
                     <span>
-                      {payment.payment_date} ·{" "}
+                      {formatBsDateFromAd(payment.payment_date)} BS ·{" "}
                       {payment.payment_method.replaceAll("_", " ")}
                     </span>
                     <b>

@@ -312,6 +312,70 @@ html.force-reduced-motion *::after {
     box-shadow: none !important;
   }
 
+  body *:has(#printable-monthly-report) {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #printable-monthly-report,
+  #printable-monthly-report * {
+    display: revert !important;
+    visibility: visible !important;
+  }
+
+  #printable-monthly-report {
+    color: #172033 !important;
+    background: white !important;
+    font-size: 10px !important;
+  }
+
+  #printable-monthly-report .report-heading {
+    display: block !important;
+    margin-bottom: 6mm !important;
+    border-bottom: 2px solid #d99a28 !important;
+    padding-bottom: 3mm !important;
+  }
+
+  #printable-monthly-report .report-heading h1 {
+    font-size: 22px !important;
+    font-weight: 800 !important;
+  }
+
+  #printable-monthly-report .flex { display: flex !important; }
+  #printable-monthly-report .inline-flex { display: inline-flex !important; }
+  #printable-monthly-report .grid { display: grid !important; }
+  #printable-monthly-report .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  #printable-monthly-report .xl\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  #printable-monthly-report section {
+    break-inside: avoid;
+    border-color: #d7dce5 !important;
+    background: white !important;
+    box-shadow: none !important;
+  }
+  #printable-monthly-report h1,
+  #printable-monthly-report h2,
+  #printable-monthly-report b,
+  #printable-monthly-report .text-white { color: #172033 !important; }
+  #printable-monthly-report .text-slate-300,
+  #printable-monthly-report .text-slate-400,
+  #printable-monthly-report .text-slate-500 { color: #556176 !important; }
+  #printable-monthly-report table { display: table !important; width: 100% !important; }
+  #printable-monthly-report thead { display: table-header-group !important; }
+  #printable-monthly-report tbody { display: table-row-group !important; }
+  #printable-monthly-report tr { display: table-row !important; break-inside: avoid; }
+  #printable-monthly-report th,
+  #printable-monthly-report td { display: table-cell !important; }
+
   #printable-invoice,
   #printable-invoice * {
     display: revert !important;

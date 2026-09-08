@@ -347,7 +347,7 @@ export default function AdminAttendance() {
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
             <div className="text-xs text-slate-500">Date range</div>
-            <div className="mt-1 text-sm font-semibold text-white">{selectedMonthStart} to {selectedMonthEnd}</div>
+            <div className="mt-1 text-sm font-semibold text-white">{formatDisplayDate(selectedMonthStart, "bs")} to {formatDisplayDate(selectedMonthEnd, "bs")}</div>
           </div>
         </div>
       </AdminCard>

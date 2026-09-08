@@ -30,6 +30,7 @@ import AdminSettings from "../pages/admin/AdminSettings";
 import AdminInventory from "../pages/admin/AdminInventory";
 import AdminBilling from "../pages/admin/AdminBilling";
 import AdminWebsite from "../pages/admin/AdminWebsite";
+import AdminReports from "../pages/admin/AdminReports";
 
 export default function AppRoutes() {
   const location = useLocation();
@@ -71,6 +72,7 @@ export default function AppRoutes() {
             <Route path="settings" element={<AdminSettings />} />
             <Route path="inventory" element={<AdminInventory />} />
             <Route path="billing" element={<AdminBilling />} />
+            <Route path="reports" element={<AdminReports />} />
             <Route path="website" element={<AdminWebsite />} />
           </Route>
         </Route>

@@ -6,9 +6,9 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
-import { useEffect, useRef } from "react";
-import { AlertTriangle, Loader2, Search, X } from "lucide-react";
-import { cx } from "@src/pages/admin/adminUtils";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
+import { adToBsString, buildBsMonthDays, bsStringToAdDate, cx, getNepalTodayAdDate } from "@src/pages/admin/adminUtils";
 import type { SelectOption } from "@src/pages/admin/adminTypes";
 
 type Tone = "neutral" | "success" | "warning" | "danger" | "accent" | "muted";
@@ -207,6 +207,86 @@ export function AdminInput({ className = "", ...props }: InputHTMLAttributes<HTM
       )}
     />
   );
+}
+
+const BS_MONTH_LABELS = ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
+const BS_YEARS = Array.from({ length: 41 }, (_, index) => 2070 + index);
+
+export function AdminBsDateInput({ value, onChange, className = "", required = false }: { value: string | null | undefined; onChange: (adDate: string) => void; className?: string; required?: boolean }) {
+  const currentBs = adToBsString(getNepalTodayAdDate());
+  const selectedBs = adToBsString(value);
+  const initial = (selectedBs || currentBs).split("-").map(Number);
+  const [open, setOpen] = useState(false);
+  const [viewYear, setViewYear] = useState(initial[0]);
+  const [viewMonth, setViewMonth] = useState(initial[1] - 1);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const days = buildBsMonthDays(viewYear, viewMonth, -1);
+  const firstOffset = days[0]?.weekdayIndex ?? 0;
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const moveMonth = (amount: number) => {
+    const next = viewMonth + amount;
+    if (next < 0) { setViewYear((year) => year - 1); setViewMonth(11); }
+    else if (next > 11) { setViewYear((year) => year + 1); setViewMonth(0); }
+    else setViewMonth(next);
+  };
+  const toggleCalendar = () => {
+    if (!open) {
+      const shown = (selectedBs || currentBs).split("-").map(Number);
+      setViewYear(shown[0]);
+      setViewMonth(shown[1] - 1);
+    }
+    setOpen((shown) => !shown);
+  };
+
+  return <div ref={rootRef} className={cx("relative", className)}>
+    <button type="button" aria-haspopup="dialog" aria-expanded={open} onClick={toggleCalendar} className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm outline-none transition hover:border-slate-600 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20">
+      <span className={selectedBs ? "text-white" : "text-slate-500"}>{selectedBs ? `${selectedBs} BS` : "Choose Nepali date"}</span><CalendarDays className="h-4 w-4 shrink-0 text-amber-300" />
+    </button>
+    {required ? <input tabIndex={-1} aria-hidden="true" required value={value ?? ""} onChange={() => undefined} className="pointer-events-none absolute inset-0 -z-10 opacity-0" /> : null}
+    {open ? <div role="dialog" aria-label="Nepali calendar" className="absolute left-0 top-[calc(100%+0.5rem)] z-[180] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-2xl">
+      <div className="flex items-center justify-between gap-2"><button type="button" onClick={() => moveMonth(-1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" aria-label="Previous Nepali month"><ChevronLeft className="h-4 w-4"/></button><div className="text-center"><div className="font-black text-white">{BS_MONTH_LABELS[viewMonth]}</div><div className="text-xs text-amber-300">{viewYear} BS</div></div><button type="button" onClick={() => moveMonth(1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" aria-label="Next Nepali month"><ChevronRight className="h-4 w-4"/></button></div>
+      <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase text-slate-500">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => <span key={day}>{day}</span>)}</div>
+      <div className="mt-2 grid grid-cols-7 gap-1">{Array.from({ length: firstOffset }, (_, index) => <span key={`empty-${index}`} />)}{days.map((item) => { const itemBs = `${viewYear}-${String(viewMonth + 1).padStart(2,"0")}-${String(item.bsDay).padStart(2,"0")}`; const selected = itemBs === selectedBs; const today = itemBs === currentBs; return <button key={item.bsDay} type="button" onClick={() => { onChange(item.adDate); setOpen(false); }} className={cx("aspect-square rounded-lg text-sm font-semibold transition", selected ? "bg-amber-400 text-slate-950" : today ? "border border-amber-400 text-amber-200" : "text-slate-300 hover:bg-slate-800")}>{item.bsDay}</button>; })}</div>
+      <div className="mt-4 flex justify-between border-t border-slate-800 pt-3"><button type="button" onClick={() => { onChange(getNepalTodayAdDate()); setOpen(false); }} className="text-xs font-semibold text-amber-300">Today</button>{value ? <button type="button" onClick={() => { onChange(""); setOpen(false); }} className="text-xs font-semibold text-rose-300">Clear date</button> : null}</div>
+    </div> : null}
+  </div>;
+}
+
+export function LegacyAdminBsDateInput({ value, onChange, className = "", required = false }: { value: string | null | undefined; onChange: (adDate: string) => void; className?: string; required?: boolean }) {
+  const currentBs = adToBsString(getNepalTodayAdDate());
+  const bs = adToBsString(value) || currentBs;
+  const [year, month, day] = bs.split("-").map(Number);
+  const commit = (nextYear: number, nextMonth: number, nextDay: number) => {
+    let safeDay = nextDay;
+    let ad = bsStringToAdDate(`${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`);
+    while (!ad && safeDay > 1) {
+      safeDay -= 1;
+      ad = bsStringToAdDate(`${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`);
+    }
+    if (ad) onChange(ad);
+  };
+  return <div className={cx("grid grid-cols-[1.25fr_1.8fr_1fr_auto] gap-2", className)}>
+    <select aria-label="BS year" value={value ? year : ""} required={required} onChange={(event) => event.target.value ? commit(Number(event.target.value), month, day) : onChange("")} className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"><option value="">Year</option>{BS_YEARS.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+    <select aria-label="BS month" value={value ? month : ""} required={required} onChange={(event) => event.target.value ? commit(year, Number(event.target.value), day) : onChange("")} className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"><option value="">Month</option>{BS_MONTH_LABELS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select>
+    <select aria-label="BS day" value={value ? day : ""} required={required} onChange={(event) => event.target.value ? commit(year, month, Number(event.target.value)) : onChange("")} className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"><option value="">Day</option>{Array.from({ length: 32 }, (_, index) => index + 1).map((item) => <option key={item} value={item}>{item}</option>)}</select>
+    {value ? <button type="button" aria-label="Clear Nepali date" onClick={() => onChange("")} className="rounded-lg border border-slate-700 px-2 text-slate-400 hover:text-white">×</button> : <span />}
+  </div>;
+}
+
+export function AdminBsMonthInput({ value, onChange, max }: { value: string; onChange: (bsMonth: string) => void; max?: string }) {
+  const adValue = bsStringToAdDate(`${value}-01`) || "";
+  return <AdminBsDateInput value={adValue} required onChange={(adDate) => {
+    if (!adDate) return;
+    const next = adToBsString(adDate).slice(0, 7);
+    if (!max || next <= max) onChange(next);
+  }} />;
 }
 
 export function AdminTextarea({ className = "", ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {

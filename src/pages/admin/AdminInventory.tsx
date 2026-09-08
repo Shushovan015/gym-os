@@ -41,7 +41,7 @@ import type {
   StockMovementType,
   Supplier,
 } from "@src/features/inventory/types";
-import { friendlyAdminError } from "./adminUtils";
+import { formatDateTime, friendlyAdminError } from "./adminUtils";
 
 type ProductForm = {
   title: string;
@@ -1501,7 +1501,7 @@ export default function AdminInventory() {
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
                   {m.previous_quantity} → {m.resulting_quantity} ·{" "}
-                  {new Date(m.created_at).toLocaleString()}
+                  {formatDateTime(m.created_at)}
                 </div>
                 {m.notes ? (
                   <p className="mt-2 text-sm text-slate-400">{m.notes}</p>

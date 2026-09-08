@@ -1,4 +1,4 @@
-export type MembershipType = "monthly" | "quarterly" | "yearly" | "trial";
+export type MembershipType = string;
 export type MembershipStatus = "active" | "paused" | "cancelled" | "expired";
 export type PaymentStatus = "paid" | "unpaid" | "overdue";
 export type AttendanceStatus = "present" | "late" | "absent" | "excused";
@@ -10,6 +10,8 @@ export type MemberRow = {
   full_name: string;
   email: string | null;
   phone: string;
+  address?: string | null;
+  photo_url?: string | null;
   membership_type: MembershipType;
   membership_status: MembershipStatus;
   start_date: string | null;
