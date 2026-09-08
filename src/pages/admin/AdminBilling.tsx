@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Banknote,
+  ListFilter,
   FilePlus2,
   Printer,
   ReceiptText,
+  RotateCcw,
   Search,
   WalletCards,
 } from "lucide-react";
@@ -597,39 +599,28 @@ export default function AdminBilling() {
           icon={Banknote}
         />
       </div>
-      <AdminCard>
-        <div className="grid gap-3 md:grid-cols-5">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
-            <AdminInput
-              className="pl-9"
-              placeholder="Search bills by number or customer"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+      <AdminCard padded={false}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/10 text-amber-300"><ListFilter className="h-4 w-4" /></span>
+            <div><h2 className="text-sm font-black text-white">Filter bills</h2><p className="text-xs text-slate-500">Search or narrow the billing history</p></div>
           </div>
-          <AdminField label="From date (BS)"><AdminBsDateInput value={dateFrom} onChange={setDateFrom} /></AdminField>
-          <AdminField label="To date (BS)"><AdminBsDateInput value={dateTo} onChange={setDateTo} /></AdminField>
-          <AdminSelect
-            value={paymentFilter}
-            onChange={(e) => setPaymentFilter(e.target.value)}
-            options={[
-              { value: "all", label: "All payments" },
-              { value: "unpaid", label: "Unpaid" },
-              { value: "partially_paid", label: "Partially paid" },
-              { value: "paid", label: "Paid" },
-            ]}
-          />
-          <AdminSelect
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            options={[
-              { value: "all", label: "All invoices" },
-              { value: "draft", label: "Draft" },
-              { value: "issued", label: "Issued" },
-              { value: "cancelled", label: "Cancelled" },
-            ]}
-          />
+          {search || dateFrom || dateTo || paymentFilter !== "all" || statusFilter !== "all" ? <AdminButton variant="ghost" className="min-h-8 px-2.5 py-1 text-xs" onClick={() => { setSearch(""); setDateFrom(""); setDateTo(""); setPaymentFilter("all"); setStatusFilter("all"); setPage(1); }}><RotateCcw className="h-3.5 w-3.5" />Reset filters</AdminButton> : null}
+        </div>
+        <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(240px,1.25fr)_minmax(390px,1.6fr)_minmax(165px,.65fr)_minmax(165px,.65fr)] xl:items-end">
+          <AdminField label="Search bills">
+            <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><AdminInput className="pl-9" placeholder="Invoice, member or phone" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></div>
+          </AdminField>
+          <div>
+            <div className="mb-1.5 text-xs font-semibold text-slate-300">Billing date range (BS)</div>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+              <AdminBsDateInput value={dateFrom} onChange={(value) => { setDateFrom(value); setPage(1); }} />
+              <span className="hidden text-xs font-semibold text-slate-600 sm:block">to</span>
+              <AdminBsDateInput value={dateTo} onChange={(value) => { setDateTo(value); setPage(1); }} />
+            </div>
+          </div>
+          <AdminField label="Payment status"><AdminSelect value={paymentFilter} onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }} options={[{ value: "all", label: "All payments" }, { value: "unpaid", label: "Unpaid" }, { value: "partially_paid", label: "Partially paid" }, { value: "paid", label: "Paid" }]} /></AdminField>
+          <AdminField label="Invoice status"><AdminSelect value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} options={[{ value: "all", label: "All invoices" }, { value: "draft", label: "Draft" }, { value: "issued", label: "Issued" }, { value: "cancelled", label: "Cancelled" }]} /></AdminField>
         </div>
       </AdminCard>
       {filtered.length === 0 ? (
