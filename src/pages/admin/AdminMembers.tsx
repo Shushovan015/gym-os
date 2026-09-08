@@ -13,7 +13,6 @@ import {
   UserRound,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
-import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
   AdminBsDateInput,
@@ -50,9 +49,9 @@ import type {
 } from "./adminTypes";
 import { membershipStatuses, paymentStatuses } from "./adminTypes";
 import {
+  addDays,
   cx,
   defaultAdminSettings,
-  diffInDays,
   emptyMemberForm,
   formatDateTime,
   formatDisplayDate,
@@ -258,6 +257,9 @@ export default function AdminMembers() {
   const initialAbsent = Number(searchParams.get("absent") || 0);
 
   const [members, setMembers] = useState<MemberRow[]>([]);
+  const [memberCount, setMemberCount] = useState(0);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(new Set());
+  const [memberSummary, setMemberSummary] = useState({ active: 0, payment_follow_up: 0, deleted: 0 });
   const [settings, setSettings] = useState<AdminSettings>(defaultAdminSettings);
   const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -314,20 +316,36 @@ export default function AdminMembers() {
   const [csvOpen, setCsvOpen] = useState(false);
 
   const loadMembers = async () => {
-    const [settingsRes, membersRes, plansRes] = await Promise.all([
-      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
-      supabase.from("pricing_items").select("id,title,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
-    ]);
-
-    if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });
+    setLoading(true);
+    let query = supabase.from("members").select("*", { count: "exact" });
+    if (deletedFilter === "active") query = query.is("deleted_at", null);
+    if (deletedFilter === "deleted") query = query.not("deleted_at", "is", null);
+    if (searchTerm.trim()) {
+      const term = searchTerm.trim().replace(/[,%()]/g, " ");
+      query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
+    }
+    if (planFilter !== "all") query = query.eq("membership_type", planFilter);
+    if (paymentFilter !== "all") query = query.eq("payment_status", paymentFilter);
+    if (createdSince) query = query.gte("created_at", `${createdSince}T00:00:00`);
+    if (absentDays > 0) query = query.eq("membership_status", "active").or(`last_visit_date.is.null,last_visit_date.lt.${addDays(todayAd, -absentDays)}`);
+    if (membershipFilter === "expiring") query = query.gte("end_date", todayAd).lte("end_date", addDays(todayAd, expiringDays));
+    else if (membershipFilter === "expired") query = query.or(`membership_status.eq.expired,end_date.lt.${todayAd}`);
+    else if (membershipFilter !== "all") query = query.eq("membership_status", membershipFilter);
+    if (sortKey === "name_asc") query = query.order("full_name").order("id");
+    else if (sortKey === "end_date_asc") query = query.order("end_date", { ascending: true, nullsFirst: false }).order("id");
+    else if (sortKey === "created_desc") query = query.order("created_at", { ascending: false }).order("id", { ascending: false });
+    else query = query.order("updated_at", { ascending: false }).order("id", { ascending: false });
+    const from = (currentPage - 1) * rowsPerPage;
+    const membersRes = await query.range(from, from + rowsPerPage - 1);
     if (membersRes.error) {
       setMessage(membersRes.error.message);
       setLoading(false);
       return;
     }
     setMembers((membersRes.data ?? []) as MemberRow[]);
-    setMembershipPlans((plansRes.data ?? []) as MembershipPlan[]);
+    setMemberCount(membersRes.count ?? 0);
+    const summaryRes = await supabase.rpc("admin_member_summary");
+    if (summaryRes.data) setMemberSummary(summaryRes.data as typeof memberSummary);
     setLoading(false);
   };
 
@@ -335,64 +353,22 @@ export default function AdminMembers() {
     let alive = true;
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
       supabase.from("pricing_items").select("id,title,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
-    ]).then(([settingsRes, membersRes, plansRes]) => {
+    ]).then(([settingsRes, plansRes]) => {
       if (!alive) return;
       if (settingsRes.data) setSettings({ ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) });
-      if (membersRes.error) {
-        setMessage(membersRes.error.message);
-      } else {
-        setMembers((membersRes.data ?? []) as MemberRow[]);
-      }
       setMembershipPlans((plansRes.data ?? []) as MembershipPlan[]);
-      setLoading(false);
     });
     return () => {
       alive = false;
     };
   }, []);
 
-  const filteredMembers = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    const absentCutoff = absentDays > 0 ? new Date(`${todayAd}T00:00:00`) : null;
-    if (absentCutoff) absentCutoff.setDate(absentCutoff.getDate() - absentDays);
-    const absentCutoffText = absentCutoff ? absentCutoff.toISOString().slice(0, 10) : "";
+  useEffect(() => { void loadMembers(); }, [absentDays, createdSince, deletedFilter, membershipFilter, paymentFilter, planFilter, searchTerm, sortKey, currentPage]);
 
-    const rows = members.filter((member) => {
-      if (deletedFilter === "active" && member.deleted_at) return false;
-      if (deletedFilter === "deleted" && !member.deleted_at) return false;
-      if (query) {
-        const haystack = [member.full_name, member.member_id, member.phone, member.email ?? ""].join(" ").toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
-      if (planFilter !== "all" && member.membership_type !== planFilter) return false;
-      if (paymentFilter !== "all" && member.payment_status !== paymentFilter) return false;
-      if (createdSince && member.created_at.slice(0, 10) < createdSince) return false;
-      if (absentDays > 0 && member.membership_status === "active") {
-        const last = member.last_visit_date ?? "";
-        if (last && last >= absentCutoffText) return false;
-      }
-      if (membershipFilter === "all") return true;
-      if (membershipFilter === "expiring") {
-        const daysLeft = member.end_date ? diffInDays(todayAd, member.end_date) : null;
-        return daysLeft !== null && daysLeft >= 0 && daysLeft <= expiringDays;
-      }
-      if (membershipFilter === "expired") return getMemberLifecycle(member, todayAd) === "expired";
-      return member.membership_status === membershipFilter;
-    });
-
-    return rows.sort((a, b) => {
-      if (sortKey === "name_asc") return a.full_name.localeCompare(b.full_name);
-      if (sortKey === "end_date_asc") return String(a.end_date ?? "9999-12-31").localeCompare(String(b.end_date ?? "9999-12-31"));
-      if (sortKey === "created_desc") return b.created_at.localeCompare(a.created_at);
-      return b.updated_at.localeCompare(a.updated_at);
-    });
-  }, [absentDays, createdSince, deletedFilter, expiringDays, members, membershipFilter, paymentFilter, planFilter, searchTerm, sortKey, todayAd]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / rowsPerPage));
+  const totalPages = Math.max(1, Math.ceil(memberCount / rowsPerPage));
   const safePage = Math.min(currentPage, totalPages);
-  const pagedMembers = filteredMembers.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
+  const pagedMembers = members;
   const validCsvRows = csvRows.filter((row) => row.errors.length === 0);
   const invalidCsvRows = csvRows.filter((row) => row.errors.length > 0);
   const activePlanNames = membershipPlans.map((plan) => plan.title.trim()).filter(Boolean);
@@ -449,6 +425,25 @@ export default function AdminMembers() {
     if (hasValidationErrors(errors)) return;
 
     setSaving(true);
+    const normalizedEmail = normalizedForm.email?.trim() ?? "";
+    const conflictFilters = [
+      `member_id.eq.${normalizedForm.member_id.replace(/[,()]/g, "")}`,
+      `phone.eq.${normalizedForm.phone.replace(/[,()]/g, "")}`,
+      ...(normalizedEmail ? [`email.ilike.${normalizedEmail.replace(/[,()]/g, "")}`] : []),
+    ];
+    let conflictQuery = supabase.from("members").select("id,member_id,phone,email").or(conflictFilters.join(",")).limit(1);
+    if (editingId) conflictQuery = conflictQuery.neq("id", editingId);
+    const { data: conflicts, error: conflictError } = await conflictQuery;
+    if (conflictError) {
+      setSaving(false);
+      setMessage(conflictError.message);
+      return;
+    }
+    if (conflicts?.length) {
+      setSaving(false);
+      setFormErrors({ member_id: "Member ID, phone or email is already used by another member." });
+      return;
+    }
     let photoUrl = normalizedForm.photo_url;
     if (memberPhotoFile) {
       const extension = memberPhotoFile.name.split(".").pop()?.toLowerCase() || "jpg";
@@ -512,6 +507,26 @@ export default function AdminMembers() {
     }
     setMessage("Member restored.");
     await loadMembers();
+  };
+
+  const bulkSetMembersDeleted = async (deleted: boolean) => {
+    const ids = Array.from(selectedMemberIds);
+    if (!ids.length) return;
+    const action = deleted ? "move to the deleted list" : "restore";
+    if (!window.confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${ids.length} selected members?`)) return;
+    const { error } = await supabase.from("members").update({ deleted_at: deleted ? new Date().toISOString() : null }).in("id", ids);
+    if (error) { setMessage(error.message); return; }
+    setSelectedMemberIds(new Set());
+    setMessage(`${ids.length} members ${deleted ? "moved to the deleted list" : "restored"}.`);
+    await loadMembers();
+  };
+
+  const toggleMemberSelection = (id: number) => {
+    setSelectedMemberIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const loadMemberProfile = async (member: MemberRow) => {
@@ -857,21 +872,32 @@ export default function AdminMembers() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <AdminCard className="p-4">
           <div className="text-xs text-slate-500">Visible records</div>
-          <div className="mt-1 text-2xl font-black text-white">{filteredMembers.length}</div>
+          <div className="mt-1 text-2xl font-black text-white">{memberCount}</div>
         </AdminCard>
         <AdminCard className="p-4">
           <div className="text-xs text-slate-500">Active members</div>
-          <div className="mt-1 text-2xl font-black text-white">{members.filter((member) => !member.deleted_at && getMemberLifecycle(member, todayAd) === "active").length}</div>
+          <div className="mt-1 text-2xl font-black text-white">{memberSummary.active}</div>
         </AdminCard>
         <AdminCard className="p-4">
           <div className="text-xs text-slate-500">Payment follow-up</div>
-          <div className="mt-1 text-2xl font-black text-white">{members.filter((member) => !member.deleted_at && member.payment_status !== "paid").length}</div>
+          <div className="mt-1 text-2xl font-black text-white">{memberSummary.payment_follow_up}</div>
         </AdminCard>
         <AdminCard className="p-4">
           <div className="text-xs text-slate-500">Deleted members</div>
-          <div className="mt-1 text-2xl font-black text-white">{members.filter((member) => member.deleted_at).length}</div>
+          <div className="mt-1 text-2xl font-black text-white">{memberSummary.deleted}</div>
         </AdminCard>
       </div>
+
+      {selectedMemberIds.size > 0 ? (
+        <AdminCard className="flex flex-col gap-3 border-amber-400/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="font-semibold text-white">{selectedMemberIds.size} member{selectedMemberIds.size === 1 ? "" : "s"} selected</div>
+          <div className="flex flex-wrap gap-2">
+            <AdminButton type="button" variant="danger" onClick={() => bulkSetMembersDeleted(true)}><Trash2 className="h-4 w-4" />Delete selected</AdminButton>
+            <AdminButton type="button" variant="secondary" onClick={() => bulkSetMembersDeleted(false)}><RotateCcw className="h-4 w-4" />Restore selected</AdminButton>
+            <AdminButton type="button" variant="ghost" onClick={() => setSelectedMemberIds(new Set())}>Clear selection</AdminButton>
+          </div>
+        </AdminCard>
+      ) : null}
 
       <AdminCard padded={false}>
         <div className="hidden lg:block">
@@ -880,6 +906,19 @@ export default function AdminMembers() {
               <table className="min-w-full divide-y divide-slate-800 text-sm">
                 <thead className="bg-slate-900/80 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
                   <tr>
+                    <th className="w-12 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all members on this page"
+                        checked={pagedMembers.length > 0 && pagedMembers.every((member) => selectedMemberIds.has(member.id))}
+                        onChange={(event) => setSelectedMemberIds((current) => {
+                          const next = new Set(current);
+                          pagedMembers.forEach((member) => event.target.checked ? next.add(member.id) : next.delete(member.id));
+                          return next;
+                        })}
+                        className="h-4 w-4 accent-amber-300"
+                      />
+                    </th>
                     <th className="px-4 py-3">Member</th>
                     <th className="px-4 py-3">Plan</th>
                     <th className="px-4 py-3">Membership</th>
@@ -891,6 +930,7 @@ export default function AdminMembers() {
                 <tbody className="divide-y divide-slate-800">
                   {pagedMembers.map((member) => (
                     <tr key={member.id} className="bg-slate-950/60 hover:bg-slate-900/65">
+                      <td className="px-4 py-4"><input type="checkbox" aria-label={`Select ${member.full_name}`} checked={selectedMemberIds.has(member.id)} onChange={() => toggleMemberSelection(member.id)} className="h-4 w-4 accent-amber-300" /></td>
                       <td className="px-4 py-4">
                         <button type="button" onClick={() => loadMemberProfile(member)} className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300">
                           <div className="font-semibold text-white">{member.full_name}</div>
@@ -936,10 +976,7 @@ export default function AdminMembers() {
           {pagedMembers.map((member) => (
             <article key={member.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
               <div className="flex items-start justify-between gap-3">
-                <button type="button" onClick={() => loadMemberProfile(member)} className="text-left">
-                  <div className="font-semibold text-white">{member.full_name}</div>
-                  <div className="text-xs text-slate-500">{member.member_id}</div>
-                </button>
+                <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Select ${member.full_name}`} checked={selectedMemberIds.has(member.id)} onChange={() => toggleMemberSelection(member.id)} className="mt-1 h-4 w-4 accent-amber-300" /><button type="button" onClick={() => loadMemberProfile(member)} className="text-left"><div className="font-semibold text-white">{member.full_name}</div><div className="text-xs text-slate-500">{member.member_id}</div></button></div>
                 <AdminBadge tone={memberStatusTone(member, todayAd)}>{member.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(member, todayAd))}</AdminBadge>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">

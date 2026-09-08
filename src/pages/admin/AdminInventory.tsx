@@ -7,10 +7,10 @@ import {
   PackagePlus,
   Plus,
   Search,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
-import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
   AdminButton,
@@ -130,6 +130,9 @@ export default function AdminInventory() {
   const navigate = useNavigate();
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [variants, setVariants] = useState<InventoryVariant[]>([]);
+  const [inventoryCount, setInventoryCount] = useState(0);
+  const [inventoryCategories, setInventoryCategories] = useState<string[]>([]);
+  const [inventorySummary, setInventorySummary] = useState({ units: 0, low: 0, out: 0, cost: 0, retail: 0 });
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,7 +142,7 @@ export default function AdminInventory() {
   const [stockFilter, setStockFilter] = useState(() => { const value = searchParams.get("stock"); return value === "low" || value === "out" ? value : "all"; });
   const [activeFilter, setActiveFilter] = useState("active");
   const [page, setPage] = useState(1);
-  const pageSize = 12;
+  const pageSize = 10;
   const [productOpen, setProductOpen] = useState(searchParams.get("action") === "add-product");
   const [editing, setEditing] = useState<InventoryProduct | null>(null);
   const [productForm, setProductForm] = useState<ProductForm>(emptyProduct);
@@ -167,33 +170,51 @@ export default function AdminInventory() {
   const [stockBuyingPrice, setStockBuyingPrice] = useState("");
   const [stockSupplierId, setStockSupplierId] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set());
 
   const load = async () => {
-    const [p, v, s] = await Promise.all([
-      fetchAllPages<InventoryProduct>((from, to) => supabase
-        .from("shop_items")
-        .select(
-          "id,title,category,description,image,is_active,sku,brand,unit,barcode,supplier_id,inventory_enabled,cost_price_minor,selling_price_minor,low_stock_threshold,inventory_notes,deactivated_at",
-        )
-        .eq("inventory_enabled", true)
-        .order("title").order("id").range(from, to)),
-      fetchAllPages<InventoryVariant>((from, to) => supabase
-        .from("inventory_product_variants")
-        .select("*")
-        .order("created_at").order("id").range(from, to)),
+    setLoading(true);
+    const [paged, s] = await Promise.all([
+      supabase.rpc("admin_inventory_page", { p_search: search.trim(), p_category: category, p_stock: stockFilter, p_active: activeFilter, p_offset: (page - 1) * pageSize, p_limit: pageSize }),
       supabase.from("inventory_suppliers").select("*").order("name"),
     ]);
-    const issue = p.error ?? v.error ?? s.error;
+    const issue = paged.error ?? s.error;
     if (issue) setMessage(issue.message);
-    setProducts((p.data ?? []) as InventoryProduct[]);
-    setVariants((v.data ?? []) as InventoryVariant[]);
+    const data = paged.data as { total?: number; rows?: Array<{ product: InventoryProduct; variant: InventoryVariant }>; categories?: string[]; summary?: typeof inventorySummary } | null;
+    setProducts((data?.rows ?? []).map((row) => row.product));
+    setVariants((data?.rows ?? []).map((row) => row.variant));
+    setInventoryCount(data?.total ?? 0);
+    setInventoryCategories(data?.categories ?? []);
+    if (data?.summary) setInventorySummary(data.summary);
     setSuppliers((s.data ?? []) as Supplier[]);
     setLoading(false);
+  };
+
+  const setProductsActive = async (productIds: number[], active: boolean) => {
+    const ids = Array.from(new Set(productIds));
+    if (!ids.length) return;
+    const verb = active ? "restore" : "delete";
+    if (!window.confirm(`${verb.charAt(0).toUpperCase() + verb.slice(1)} ${ids.length} selected inventory product${ids.length === 1 ? "" : "s"}? Existing bill history will be kept.`)) return;
+    const productResult = await supabase.from("shop_items").update({ is_active: active, deactivated_at: active ? null : new Date().toISOString() }).in("id", ids);
+    if (productResult.error) { setMessage(productResult.error.message); return; }
+    const variantResult = await supabase.from("inventory_product_variants").update({ is_active: active }).in("product_id", ids);
+    if (variantResult.error) { setMessage(variantResult.error.message); return; }
+    setSelectedProductIds(new Set());
+    setMessage(`${ids.length} inventory product${ids.length === 1 ? "" : "s"} ${active ? "restored" : "deleted"}.`);
+    await load();
+  };
+
+  const toggleProductSelection = (id: number) => {
+    setSelectedProductIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
   useEffect(() => {
     const timeout = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeout);
-  }, []);
+  }, [activeFilter, category, page, search, stockFilter]);
 
   const rows = useMemo(
     () =>
@@ -210,75 +231,13 @@ export default function AdminInventory() {
         ),
     [products, variants],
   );
-  const filtered = useMemo(
-    () =>
-      rows.filter(({ product, variant }) => {
-        const q = search.trim().toLowerCase();
-        const threshold =
-          variant.low_stock_threshold ?? product.low_stock_threshold;
-        if (
-          q &&
-          !`${product.title} ${product.category} ${product.sku ?? ""} ${variant.name} ${variant.sku}`
-            .toLowerCase()
-            .includes(q)
-        )
-          return false;
-        if (category !== "all" && product.category !== category) return false;
-        if (
-          activeFilter === "active" &&
-          (!product.is_active || !variant.is_active)
-        )
-          return false;
-        if (
-          activeFilter === "inactive" &&
-          product.is_active &&
-          variant.is_active
-        )
-          return false;
-        if (stockFilter === "out" && variant.current_quantity > 0) return false;
-        if (
-          stockFilter === "low" &&
-          !(
-            variant.current_quantity > 0 &&
-            variant.current_quantity <= threshold
-          )
-        )
-          return false;
-        if (stockFilter === "in" && variant.current_quantity <= threshold)
-          return false;
-        return true;
-      }),
-    [rows, search, category, stockFilter, activeFilter],
-  );
-  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const totalUnits = rows.reduce(
-    (sum, row) => sum + row.variant.current_quantity,
-    0,
-  );
-  const low = rows.filter(
-    ({ product, variant }) =>
-      variant.current_quantity > 0 &&
-      variant.current_quantity <=
-        (variant.low_stock_threshold ?? product.low_stock_threshold),
-  ).length;
-  const out = rows.filter(
-    ({ variant }) => variant.current_quantity <= 0,
-  ).length;
-  const costValue = rows.reduce(
-    (sum, { product, variant }) =>
-      sum +
-      variant.current_quantity *
-        (variant.cost_price_minor ?? product.cost_price_minor),
-    0,
-  );
-  const retailValue = rows.reduce(
-    (sum, { product, variant }) =>
-      sum +
-      variant.current_quantity *
-        (variant.selling_price_minor ?? product.selling_price_minor),
-    0,
-  );
+  const pageRows = rows;
+  const pages = Math.max(1, Math.ceil(inventoryCount / pageSize));
+  const totalUnits = inventorySummary.units;
+  const low = inventorySummary.low;
+  const out = inventorySummary.out;
+  const costValue = inventorySummary.cost;
+  const retailValue = inventorySummary.retail;
 
   const openProduct = (product?: InventoryProduct) => {
     setEditing(product ?? null);
@@ -670,7 +629,7 @@ export default function AdminInventory() {
             }}
             options={[
               { value: "all", label: "All categories" },
-              ...Array.from(new Set(products.map((p) => p.category))).map(
+              ...inventoryCategories.map(
                 (value) => ({ value, label: value }),
               ),
             ]}
@@ -699,6 +658,16 @@ export default function AdminInventory() {
           />
         </div>
       </AdminCard>
+      {selectedProductIds.size > 0 ? (
+        <AdminCard className="flex flex-col gap-3 border-amber-400/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="font-semibold text-white">{selectedProductIds.size} product{selectedProductIds.size === 1 ? "" : "s"} selected</div>
+          <div className="flex flex-wrap gap-2">
+            <AdminButton variant="danger" onClick={() => setProductsActive(Array.from(selectedProductIds), false)}><Trash2 className="h-4 w-4" />Delete selected</AdminButton>
+            <AdminButton variant="secondary" onClick={() => setProductsActive(Array.from(selectedProductIds), true)}><Archive className="h-4 w-4" />Restore selected</AdminButton>
+            <AdminButton variant="ghost" onClick={() => setSelectedProductIds(new Set())}>Clear selection</AdminButton>
+          </div>
+        </AdminCard>
+      ) : null}
       {pageRows.length === 0 ? (
         <AdminEmptyState
           title={
@@ -729,13 +698,16 @@ export default function AdminInventory() {
               return (
                 <AdminCard key={variant.id}>
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="flex items-start gap-3">
+                      <input type="checkbox" aria-label={`Select ${product.title}`} checked={selectedProductIds.has(product.id)} onChange={() => toggleProductSelection(product.id)} className="mt-1 h-4 w-4 accent-amber-300" />
+                      <div>
                       <h3 className="font-black text-white">{product.title}</h3>
                       <p className="text-xs text-slate-500">
                         {variant.name !== "Default"
                           ? variant.name
                           : product.category}
                       </p>
+                      </div>
                     </div>
                     <AdminBadge
                       tone={stockTone(variant.current_quantity, threshold)}
@@ -791,6 +763,9 @@ export default function AdminInventory() {
                     >
                       History
                     </AdminButton>
+                    <AdminButton variant="danger" onClick={() => setProductsActive([product.id], product.is_active === false)}>
+                      {product.is_active === false ? "Restore" : "Delete"}
+                    </AdminButton>
                   </div>
                 </AdminCard>
               );
@@ -801,6 +776,19 @@ export default function AdminInventory() {
               <table className="hidden min-w-full text-sm md:table">
                 <thead className="bg-slate-900 text-left text-xs uppercase text-slate-500">
                   <tr>
+                    <th className="w-12 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all inventory products on this page"
+                        checked={pageRows.length > 0 && pageRows.every(({ product }) => selectedProductIds.has(product.id))}
+                        onChange={(event) => setSelectedProductIds((current) => {
+                          const next = new Set(current);
+                          pageRows.forEach(({ product }) => event.target.checked ? next.add(product.id) : next.delete(product.id));
+                          return next;
+                        })}
+                        className="h-4 w-4 accent-amber-300"
+                      />
+                    </th>
                     {[
                       "Product",
                       "Category",
@@ -822,6 +810,7 @@ export default function AdminInventory() {
                       product.low_stock_threshold;
                     return (
                       <tr key={variant.id} className="bg-slate-950/60">
+                        <td className="px-4 py-4"><input type="checkbox" aria-label={`Select ${product.title}`} checked={selectedProductIds.has(product.id)} onChange={() => toggleProductSelection(product.id)} className="h-4 w-4 accent-amber-300" /></td>
                         <td className="px-4 py-4">
                           <button
                             className="font-bold text-white hover:text-amber-200"
@@ -955,6 +944,9 @@ export default function AdminInventory() {
                             >
                               Edit option
                             </AdminButton>
+                            <AdminButton variant="danger" onClick={() => setProductsActive([product.id], product.is_active === false)}>
+                              {product.is_active === false ? "Restore" : "Delete"}
+                            </AdminButton>
                           </div>
                         </td>
                       </tr>
@@ -967,7 +959,7 @@ export default function AdminInventory() {
         </>
       )}
       <div className="flex items-center justify-between text-sm text-slate-400">
-        <span>{filtered.length} variants</span>
+        <span>{inventoryCount} variants</span>
         <div className="flex gap-2">
           <AdminButton
             variant="secondary"
@@ -1042,7 +1034,7 @@ export default function AdminInventory() {
                   />
                   <datalist id="inventory-categories">
                     {Array.from(
-                      new Set(products.map((product) => product.category)),
+                      new Set(inventoryCategories),
                     ).map((value) => (
                       <option key={value} value={value} />
                     ))}

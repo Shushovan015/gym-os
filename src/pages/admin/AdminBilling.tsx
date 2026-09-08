@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Banknote,
   ListFilter,
@@ -49,7 +49,6 @@ import type {
   PaymentMethod,
 } from "@src/features/billing/types";
 import { calculateInvoiceTotals } from "@src/features/billing/calculations";
-import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   formatMoney,
   majorToMinor,
@@ -108,6 +107,8 @@ export default function AdminBilling() {
     receipt_footer: "Thank you for choosing us.",
   });
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [invoiceCount, setInvoiceCount] = useState(0);
+  const [billingSummary, setBillingSummary] = useState({ revenue_today: 0, revenue_month: 0, invoices_today: 0, unpaid: 0, partially_paid: 0, outstanding: 0 });
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [variants, setVariants] = useState<InventoryVariant[]>([]);
@@ -157,47 +158,75 @@ export default function AdminBilling() {
   const [cancellationReason, setCancellationReason] = useState("");
 
   const load = async () => {
-    const [i, m, p, v, s, pricing, training] = await Promise.all([
-      fetchAllPages<InvoiceRow>((from, to) => supabase.from("invoices").select("*").order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
-      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").is("deleted_at", null).order("full_name").order("id").range(from, to)),
-      supabase
-        .from("shop_items")
-        .select(
-          "id,title,category,description,image,is_active,sku,brand,unit,barcode,supplier_id,inventory_enabled,cost_price_minor,selling_price_minor,low_stock_threshold,inventory_notes,deactivated_at",
-        )
-        .eq("inventory_enabled", true)
-        .eq("is_active", true)
-        .order("title"),
-      supabase
-        .from("inventory_product_variants")
-        .select("*")
-        .eq("is_active", true)
-        .order("sku"),
+    let invoiceQuery = supabase.from("invoices").select("*", { count: "exact" });
+    if (search.trim()) {
+      const term = search.trim().replace(/[,%()]/g, " ");
+      invoiceQuery = invoiceQuery.or(`invoice_number.ilike.%${term}%,customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%`);
+    }
+    if (paymentFilter !== "all") invoiceQuery = invoiceQuery.eq("payment_status", paymentFilter);
+    if (statusFilter !== "all") invoiceQuery = invoiceQuery.eq("invoice_status", statusFilter);
+    if (dateFrom) invoiceQuery = invoiceQuery.gte("billing_date", dateFrom);
+    if (dateTo) invoiceQuery = invoiceQuery.lte("billing_date", dateTo);
+    const invoiceFrom = (page - 1) * 10;
+    const [i, s, pricing, training] = await Promise.all([
+      invoiceQuery.order("created_at", { ascending: false }).order("id", { ascending: false }).range(invoiceFrom, invoiceFrom + 9),
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("pricing_items").select("id,title,price,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
       supabase.from("personal_training_plans").select("id,title:name,price:details,is_active").eq("is_active", true).order("sort_order"),
     ]);
-    const issue = i.error ?? m.error ?? p.error ?? v.error ?? s.error ?? pricing.error ?? training.error;
+    const issue = i.error ?? s.error ?? pricing.error ?? training.error;
     if (issue) setMessage(issue.message);
     setInvoices((i.data ?? []) as InvoiceRow[]);
-    setMembers((m.data ?? []) as MemberRow[]);
-    setProducts((p.data ?? []) as InventoryProduct[]);
-    setVariants((v.data ?? []) as InventoryVariant[]);
+    setInvoiceCount(i.count ?? 0);
     setMembershipPlans((pricing.data ?? []) as BillablePlan[]);
     setTrainingPlans((training.data ?? []) as BillablePlan[]);
     if (s.data) setSettings((x) => ({ ...x, ...(s.data as BillingSettings) }));
+    const summary = await supabase.rpc("admin_billing_summary");
+    if (summary.data) setBillingSummary(summary.data as typeof billingSummary);
     setLoading(false);
   };
   useEffect(() => {
     const timeout = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeout);
-  }, []);
+  }, [dateFrom, dateTo, page, paymentFilter, search, statusFilter]);
+  useEffect(() => {
+    if (!createOpen || customerMode !== "member") return;
+    const timeout = window.setTimeout(async () => {
+      const state = location.state as LocationState | null;
+      let query = supabase.from("members").select("*").is("deleted_at", null);
+      if (state?.memberId && !memberSearch.trim()) query = query.eq("id", state.memberId);
+      else {
+        const term = memberSearch.trim().replace(/[,%()]/g, " ");
+        if (!term) { setMembers([]); return; }
+        query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%`);
+      }
+      const { data, error } = await query.order("full_name").limit(8);
+      if (error) setCreateError(error.message);
+      else setMembers((data ?? []) as MemberRow[]);
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [createOpen, customerMode, location.state, memberSearch]);
+  useEffect(() => {
+    if (!createOpen || lineType !== "product") return;
+    const timeout = window.setTimeout(async () => {
+      const { data, error } = await supabase.rpc("admin_inventory_page", {
+        p_search: productSearch.trim(), p_category: "all", p_stock: "all", p_active: "active", p_offset: 0, p_limit: 10,
+      });
+      if (error) { setCreateError(error.message); return; }
+      const rows = ((data as { rows?: Array<{ product: InventoryProduct; variant: InventoryVariant }> } | null)?.rows ?? []);
+      setProducts(Array.from(new Map(rows.map((row) => [row.product.id, row.product])).values()));
+      setVariants(rows.map((row) => row.variant));
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [createOpen, lineType, productSearch]);
   useEffect(() => {
     const state = location.state as LocationState | null;
     if (!loading && state?.memberId) {
-      const member = members.find((m) => m.id === state.memberId);
-      if (member) {
-        const timeout = window.setTimeout(() => {
+      const timeout = window.setTimeout(async () => {
+        const { data: member, error } = await supabase.from("members").select("*").eq("id", state.memberId).is("deleted_at", null).maybeSingle();
+        if (error) { setMessage(error.message); return; }
+        if (member) {
+          setMembers([member as MemberRow]);
           setMemberId(String(member.id));
           setCustomerName(member.full_name);
           setCustomerPhone(member.phone);
@@ -213,44 +242,14 @@ export default function AdminBilling() {
           );
           setCreateOpen(true);
           window.history.replaceState({}, document.title);
-        }, 0);
-        return () => window.clearTimeout(timeout);
-      }
+        }
+      }, 0);
+      return () => window.clearTimeout(timeout);
     }
-  }, [loading, location.state, members, today]);
-  const filtered = useMemo(
-    () =>
-      invoices.filter((invoice) => {
-        const q = search.trim().toLowerCase();
-        if (
-          q &&
-          !`${invoice.invoice_number ?? "draft"} ${invoice.customer_name} ${invoice.customer_phone ?? ""}`
-            .toLowerCase()
-            .includes(q)
-        )
-          return false;
-        if (paymentFilter !== "all" && invoice.payment_status !== paymentFilter)
-          return false;
-        if (statusFilter !== "all" && invoice.invoice_status !== statusFilter)
-          return false;
-        if (dateFrom && invoice.billing_date < dateFrom) return false;
-        if (dateTo && invoice.billing_date > dateTo) return false;
-        return true;
-      }),
-    [invoices, search, paymentFilter, statusFilter, dateFrom, dateTo],
-  );
-  const issued = invoices.filter((i) => i.invoice_status === "issued");
-  const pageSize = 20;
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageInvoices = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const month = today.slice(0, 7);
-  const revenueToday = issued
-    .filter((i) => i.billing_date === today)
-    .reduce((s, i) => s + i.paid_minor, 0);
-  const revenueMonth = issued
-    .filter((i) => i.billing_date.startsWith(month))
-    .reduce((s, i) => s + i.paid_minor, 0);
-  const outstanding = issued.reduce((s, i) => s + i.balance_minor, 0);
+  }, [loading, location.state, today]);
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(invoiceCount / pageSize));
+  const pageInvoices = invoices;
   const automaticPrice = majorToMinor(linePrice, settings.currency_minor_unit);
   const billLines = lineType === "product" ? lines : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
   const totals = calculateInvoiceTotals(
@@ -407,6 +406,11 @@ export default function AdminBilling() {
       description: line.description,
       quantity: line.quantity,
       unit_price_minor: line.unitPriceMinor,
+      unit_cost_minor: line.variantId
+        ? (variants.find((variant) => variant.id === line.variantId)?.cost_price_minor
+          ?? products.find((product) => product.id === line.productId)?.cost_price_minor
+          ?? 0)
+        : null,
       discount_minor: line.discountMinor,
       tax_minor: index === billLines.length - 1 ? totals.taxMinor : 0,
       line_total_minor:
@@ -562,40 +566,32 @@ export default function AdminBilling() {
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
         <AdminMetricCard
           label="Revenue today"
-          value={formatMoney(revenueToday, settings.currency_code)}
+          value={formatMoney(billingSummary.revenue_today, settings.currency_code)}
           icon={Banknote}
         />
         <AdminMetricCard
           label="Revenue this month"
-          value={formatMoney(revenueMonth, settings.currency_code)}
+          value={formatMoney(billingSummary.revenue_month, settings.currency_code)}
           icon={WalletCards}
         />
         <AdminMetricCard
           label="Invoices today"
-          value={String(
-            invoices.filter(
-              (i) => i.billing_date === today && i.invoice_status !== "draft",
-            ).length,
-          )}
+          value={String(billingSummary.invoices_today)}
           icon={ReceiptText}
         />
         <AdminMetricCard
           label="Unpaid"
-          value={String(
-            issued.filter((i) => i.payment_status === "unpaid").length,
-          )}
+          value={String(billingSummary.unpaid)}
           icon={ReceiptText}
         />
         <AdminMetricCard
           label="Partially paid"
-          value={String(
-            issued.filter((i) => i.payment_status === "partially_paid").length,
-          )}
+          value={String(billingSummary.partially_paid)}
           icon={ReceiptText}
         />
         <AdminMetricCard
           label="Outstanding"
-          value={formatMoney(outstanding, settings.currency_code)}
+          value={formatMoney(billingSummary.outstanding, settings.currency_code)}
           icon={Banknote}
         />
       </div>
@@ -623,20 +619,20 @@ export default function AdminBilling() {
           <AdminField label="Invoice status"><AdminSelect value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} options={[{ value: "all", label: "All invoices" }, { value: "draft", label: "Draft" }, { value: "issued", label: "Issued" }, { value: "cancelled", label: "Cancelled" }]} /></AdminField>
         </div>
       </AdminCard>
-      {filtered.length === 0 ? (
+      {invoices.length === 0 ? (
         <AdminEmptyState
           title={
-            invoices.length === 0
+            invoiceCount === 0
               ? "No bills created yet"
               : `No bills found${search ? ` for “${search}”` : ""}`
           }
           description={
-            invoices.length === 0
+            invoiceCount === 0
               ? "Create your first membership bill or shop sale."
               : "Try a different customer, bill number or filter."
           }
           action={
-            invoices.length === 0 ? (
+            invoiceCount === 0 ? (
               <AdminButton variant="primary" onClick={() => openCreate()}>
                 Create First Bill
               </AdminButton>
@@ -743,7 +739,7 @@ export default function AdminBilling() {
         </>
       )}
       <div className="flex items-center justify-between text-sm text-slate-400">
-        <span>{filtered.length} invoices</span>
+        <span>{invoiceCount} invoices</span>
         <div className="flex items-center gap-2">
           <AdminButton
             variant="secondary"

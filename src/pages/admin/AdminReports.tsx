@@ -76,12 +76,15 @@ export default function AdminReports() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    const reportDays = getBsMonthDates(month, currentBsDate);
+    const startDate = reportDays[0]?.ad ?? getNepalTodayAdDate();
+    const endDate = reportDays.at(-1)?.ad ?? startDate;
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").range(from, to)),
-      fetchAllPages<InvoiceRow>((from, to) => supabase.from("invoices").select("*").range(from, to)),
-      fetchAllPages<InvoiceItemRow>((from, to) => supabase.from("invoice_items").select("*").range(from, to)),
-      fetchAllPages<PaymentRow>((from, to) => supabase.from("invoice_payments").select("id,invoice_id,amount_minor,payment_method,payment_date,is_reversal").range(from, to)),
+      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").gte("created_at", `${startDate}T00:00:00`).lte("created_at", `${endDate}T23:59:59`).range(from, to)),
+      fetchAllPages<InvoiceRow>((from, to) => supabase.from("invoices").select("*").gte("billing_date", startDate).lte("billing_date", endDate).range(from, to)),
+      fetchAllPages<InvoiceItemRow>((from, to) => supabase.from("invoice_items").select("*,invoices!inner(billing_date,invoice_status)").gte("invoices.billing_date", startDate).lte("invoices.billing_date", endDate).eq("invoices.invoice_status", "issued").range(from, to)),
+      fetchAllPages<PaymentRow>((from, to) => supabase.from("invoice_payments").select("id,invoice_id,amount_minor,payment_method,payment_date,is_reversal").gte("payment_date", startDate).lte("payment_date", endDate).range(from, to)),
       fetchAllPages<InventoryProduct>((from, to) => supabase.from("shop_items").select("*").eq("inventory_enabled", true).range(from, to)),
       fetchAllPages<InventoryVariant>((from, to) => supabase.from("inventory_product_variants").select("*").range(from, to)),
     ]).then(([settingsRes, membersRes, invoicesRes, itemsRes, paymentsRes, productsRes, variantsRes]) => {
@@ -100,7 +103,7 @@ export default function AdminReports() {
       setLoading(false);
     });
     return () => { alive = false; };
-  }, []);
+  }, [currentBsDate, month]);
 
   const report = useMemo(() => {
     const calendarDays = getBsMonthDates(month, currentBsDate);
@@ -156,7 +159,7 @@ export default function AdminReports() {
       const current = productMap.get(item.description) ?? { value: 0, count: 0, cost: 0 };
       current.value += Math.round(item.quantity * item.unit_price_minor) - item.discount_minor;
       current.count += item.quantity;
-      current.cost += item.quantity * (variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
+      current.cost += item.quantity * (item.unit_cost_minor ?? variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
       productMap.set(item.description, current);
     });
 
@@ -179,7 +182,7 @@ export default function AdminReports() {
       const cost = sum(dayItems.map((item) => {
         const product = item.product_id ? productById.get(item.product_id) : undefined;
         const variant = item.variant_id ? variantById.get(item.variant_id) : undefined;
-        return item.quantity * (variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
+        return item.quantity * (item.unit_cost_minor ?? variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
       }));
       const detailMap = new Map<string, { units: number; revenue: number; cost: number }>();
       dayItems.forEach((item) => {
@@ -188,7 +191,7 @@ export default function AdminReports() {
         const current = detailMap.get(item.description) ?? { units: 0, revenue: 0, cost: 0 };
         current.units += item.quantity;
         current.revenue += Math.round(item.quantity * item.unit_price_minor) - item.discount_minor;
-        current.cost += item.quantity * (variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
+        current.cost += item.quantity * (item.unit_cost_minor ?? variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
         detailMap.set(item.description, current);
       });
       const products = Array.from(detailMap, ([name, detail]) => ({ name, ...detail, profit: detail.revenue - detail.cost })).sort((a, b) => b.revenue - a.revenue);

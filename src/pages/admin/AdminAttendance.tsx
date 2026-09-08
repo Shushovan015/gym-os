@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import NepaliDate from "nepali-date-converter";
 import { CalendarDays, Check, Info, RotateCcw, Search, UserRound, X } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
-import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
   AdminButton,
@@ -64,6 +63,9 @@ export default function AdminAttendance() {
   const [activeCell, setActiveCell] = useState("");
   const [activeHolidayDate, setActiveHolidayDate] = useState("");
   const [profileMember, setProfileMember] = useState<MemberRow | null>(null);
+  const [page, setPage] = useState(1);
+  const [memberCount, setMemberCount] = useState(0);
+  const pageSize = 10;
 
   const bsDays = useMemo(
     () => buildBsMonthDays(selectedBsYear, selectedBsMonth, settings.weekly_closing_day),
@@ -103,39 +105,36 @@ export default function AdminAttendance() {
     return bsDays.filter((day) => day.bsDay >= start && day.bsDay <= start + 6);
   }, [bsDays, focusDay, viewMode]);
 
-  const filteredMembers = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    const activeMembers = members.filter((member) => !member.deleted_at);
-    if (!query) return activeMembers;
-    return activeMembers.filter((member) =>
-      [member.full_name, member.member_id, member.phone, member.email ?? ""].join(" ").toLowerCase().includes(query)
-    );
-  }, [members, searchTerm]);
+  const filteredMembers = members;
+  const pageCount = Math.max(1, Math.ceil(memberCount / pageSize));
 
   const selectedDayInfo = visibleDays[0] ?? todayDay ?? bsDays[0];
   const selectedHoliday = selectedDayInfo ? holidayByDate.get(selectedDayInfo.adDate) : undefined;
   const selectedDayUnavailable = Boolean(selectedDayInfo?.isClosingDay || (settings.attendance_holiday_lock && selectedHoliday));
   const todayHoliday = holidayByDate.get(todayAd);
 
-  const loadAttendanceData = async (bsYear: number, bsMonth: number, nextSettings = settings) => {
+  const loadAttendanceData = async (bsYear: number, bsMonth: number, memberIds: number[], nextSettings = settings) => {
     const days = buildBsMonthDays(bsYear, bsMonth, nextSettings.weekly_closing_day);
     const start = days[0]?.adDate ?? todayAd;
     const end = days[days.length - 1]?.adDate ?? todayAd;
 
-    const [recordsRes, deletedRes, holidaysRes] = await Promise.all([
-      fetchAllPages<AttendanceRow>((from, to) => supabase
+    const recordsQuery = supabase
         .from("attendance_records")
         .select("id, member_ref, attendance_date, status, deleted_at")
         .gte("attendance_date", start).lte("attendance_date", end).is("deleted_at", null)
-        .order("attendance_date", { ascending: false }).order("id", { ascending: false }).range(from, to)),
-      supabase
+        .order("attendance_date", { ascending: false }).order("id", { ascending: false });
+    const deletedQuery = supabase
         .from("attendance_records")
         .select("id, member_ref, attendance_date, status, deleted_at")
         .gte("attendance_date", start)
         .lte("attendance_date", end)
         .not("deleted_at", "is", null)
         .order("deleted_at", { ascending: false })
-        .limit(150),
+        .limit(10);
+
+    const [recordsRes, deletedRes, holidaysRes] = await Promise.all([
+      memberIds.length ? recordsQuery.in("member_ref", memberIds) : Promise.resolve({ data: [], error: null }),
+      memberIds.length ? deletedQuery.in("member_ref", memberIds) : Promise.resolve({ data: [], error: null }),
       supabase
         .from("attendance_holidays")
         .select("id, holiday_date, name")
@@ -156,36 +155,42 @@ export default function AdminAttendance() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      supabase.from("members").select("*").order("full_name", { ascending: true }).limit(5000),
-    ]).then(async ([settingsRes, membersRes]) => {
+    supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle().then(({ data, error }) => {
       if (!alive) return;
-      const nextSettings = settingsRes.data ? { ...defaultAdminSettings, ...(settingsRes.data as AdminSettings) } : defaultAdminSettings;
-      if (membersRes.error) {
-        setMessage(membersRes.error.message);
-      } else {
-        setSettings(nextSettings);
-        setMembers((membersRes.data ?? []) as MemberRow[]);
-        await loadAttendanceData(selectedBsYear, selectedBsMonth, nextSettings);
-      }
-      setLoading(false);
+      if (error) setMessage(error.message);
+      setSettings(data ? { ...defaultAdminSettings, ...(data as AdminSettings) } : defaultAdminSettings);
     });
 
     return () => {
       alive = false;
     };
-    // Initial load only. Month changes call loadAttendanceData through changeMonth to avoid duplicate reloads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const changeMonth = async (year: number, month: number) => {
+  useEffect(() => {
+    let alive = true;
     setLoading(true);
+    let query = supabase.from("members").select("*", { count: "exact" }).is("deleted_at", null);
+    const term = searchTerm.trim().replace(/[,%()]/g, " ");
+    if (term) query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
+    query.order("full_name", { ascending: true }).range((page - 1) * pageSize, page * pageSize - 1).then(async ({ data, count, error }) => {
+      if (!alive) return;
+      if (error) setMessage(error.message);
+      const nextMembers = (data ?? []) as MemberRow[];
+      setMembers(nextMembers);
+      setMemberCount(count ?? 0);
+      await loadAttendanceData(selectedBsYear, selectedBsMonth, nextMembers.map((member) => member.id));
+      if (alive) setLoading(false);
+    });
+    return () => { alive = false; };
+    // settings changes only after its initial database load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, searchTerm, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]);
+
+  const changeMonth = async (year: number, month: number) => {
     setMessage("");
     setSelectedBsYear(year);
     setSelectedBsMonth(month);
-    await loadAttendanceData(year, month);
-    setLoading(false);
+    setPage(1);
   };
 
   const setAttendance = async (member: MemberRow, day: DayCell, present: boolean) => {
@@ -223,7 +228,7 @@ export default function AdminAttendance() {
       }
     }
 
-    await loadAttendanceData(selectedBsYear, selectedBsMonth);
+    await loadAttendanceData(selectedBsYear, selectedBsMonth, members.map((item) => item.id));
     setMessage(present ? `${member.full_name} marked present.` : `${member.full_name}'s attendance was removed. You can restore it below.`);
     setActiveCell("");
   };
@@ -235,7 +240,7 @@ export default function AdminAttendance() {
       return;
     }
     setMessage("Attendance restored.");
-    await loadAttendanceData(selectedBsYear, selectedBsMonth);
+    await loadAttendanceData(selectedBsYear, selectedBsMonth, members.map((item) => item.id));
   };
 
   const setHoliday = async (day: DayCell) => {
@@ -252,7 +257,7 @@ export default function AdminAttendance() {
     if (error) setMessage(error.message);
     else {
       setMessage("Holiday saved.");
-      await loadAttendanceData(selectedBsYear, selectedBsMonth);
+      await loadAttendanceData(selectedBsYear, selectedBsMonth, members.map((item) => item.id));
     }
     setActiveHolidayDate("");
   };
@@ -265,7 +270,7 @@ export default function AdminAttendance() {
     if (error) setMessage(error.message);
     else {
       setMessage("Holiday removed.");
-      await loadAttendanceData(selectedBsYear, selectedBsMonth);
+      await loadAttendanceData(selectedBsYear, selectedBsMonth, members.map((item) => item.id));
     }
     setActiveHolidayDate("");
   };
@@ -333,13 +338,13 @@ export default function AdminAttendance() {
           />
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <AdminInput value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search members by name, ID or phone" className="pl-9" />
+            <AdminInput value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }} placeholder="Search members by name, ID or phone" className="pl-9" />
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
             <div className="text-xs text-slate-500">Visible members</div>
-            <div className="mt-1 text-2xl font-black text-white">{filteredMembers.length}</div>
+            <div className="mt-1 text-2xl font-black text-white">{memberCount}</div>
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
             <div className="text-xs text-slate-500">Marked present</div>
@@ -501,6 +506,16 @@ export default function AdminAttendance() {
                 </div>
               </article>
             ))}
+          </div>
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-slate-400">
+              Showing {memberCount === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, memberCount)} of {memberCount} members
+            </div>
+            <div className="flex items-center gap-2">
+              <AdminButton type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</AdminButton>
+              <span className="min-w-20 text-center text-sm text-slate-300">{page} / {pageCount}</span>
+              <AdminButton type="button" variant="secondary" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}>Next</AdminButton>
+            </div>
           </div>
         </>
       )}
