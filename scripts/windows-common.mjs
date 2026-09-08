@@ -11,6 +11,7 @@ export const appUrl = "http://127.0.0.1:4173";
 export const launchUrl = `${appUrl}/admin`;
 export const healthUrl = `${appUrl}/__gym_health`;
 export const adminHealthUrl = "http://127.0.0.1:4174/health";
+export const edgeFunctionUrl = "http://127.0.0.1:54321/functions/v1/send-progress-report";
 export const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 export const dockerCommand = process.platform === "win32" ? "docker.exe" : "docker";
 
@@ -33,6 +34,12 @@ export async function frontendIsHealthy() {
 }
 export async function adminServiceIsHealthy() {
   try { const response = await fetch(adminHealthUrl, { cache: "no-store" }); const body = response.ok ? await response.json() : null; return body?.ok === true && body?.service === "gym-local-admin"; } catch { return false; }
+}
+export async function edgeRuntimeIsHealthy() {
+  try {
+    const response = await fetch(edgeFunctionUrl, { method: "OPTIONS", cache: "no-store" });
+    return response.ok;
+  } catch { return false; }
 }
 export function readFrontendPid() {
   if (!existsSync(pidFile)) return null;

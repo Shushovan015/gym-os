@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { adminServiceIsHealthy, appUrl, dockerCommand, frontendIsHealthy, isDockerReady, launchUrl, projectRoot, runtimeDir, runNpm, waitFor } from "./windows-common.mjs";
+import { adminServiceIsHealthy, dockerCommand, edgeRuntimeIsHealthy, frontendIsHealthy, isDockerReady, launchUrl, projectRoot, runtimeDir, runNpm, waitFor } from "./windows-common.mjs";
 
 function fail(message) {
   console.error(`\n${message}\n\nThe Gym Management System could not start.`);
@@ -31,7 +31,12 @@ console.log("Starting database...");
 const status = runNpm(["run", "supabase:status"], { stdio: "ignore" });
 if (status.status !== 0) {
   if (runNpm(["run", "supabase:start"]).status !== 0) fail("The local database could not start.");
+} else if (!(await edgeRuntimeIsHealthy())) {
+  console.log("Restarting Supabase to recover a stopped service...");
+  if (runNpm(["run", "supabase:stop"]).status !== 0 || runNpm(["run", "supabase:start"]).status !== 0) fail("The complete local database stack could not start.");
 } else console.log("Local Supabase is already running.");
+
+if (!(await waitFor(edgeRuntimeIsHealthy, 30, 1000))) fail("The member report service did not start.");
 
 if (!existsSync(join(projectRoot, "dist", "index.html"))) {
   console.log("Production build is missing. Building the application...");
