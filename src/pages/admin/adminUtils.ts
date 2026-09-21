@@ -42,6 +42,8 @@ export const defaultAdminSettings: AdminSettings = {
   date_display_preference: "bs",
   attendance_holiday_lock: true,
   invoice_prefix: "GYM",
+  invoice_start_number: 1,
+  bill_sender_email: null,
   currency_code: "NPR",
   currency_minor_unit: 2,
   tax_enabled: false,

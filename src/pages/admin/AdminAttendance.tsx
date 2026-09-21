@@ -1,3 +1,4 @@
+import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import NepaliDate from "nepali-date-converter";
@@ -58,6 +59,8 @@ export default function AdminAttendance() {
   const [focusDay, setFocusDay] = useState(initialBs.getDate());
   const [viewMode, setViewMode] = useState<ViewMode>("day");
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebouncedValue(searchTerm);
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [activeCell, setActiveCell] = useState("");
@@ -113,24 +116,24 @@ export default function AdminAttendance() {
   const selectedDayUnavailable = Boolean(selectedDayInfo?.isClosingDay || (settings.attendance_holiday_lock && selectedHoliday));
   const todayHoliday = holidayByDate.get(todayAd);
 
-  const loadAttendanceData = async (bsYear: number, bsMonth: number, memberIds: number[], nextSettings = settings) => {
+  const loadAttendanceData = async (bsYear: number, bsMonth: number, memberIds: number[], nextSettings = settings, isCurrent = () => true) => {
     const days = buildBsMonthDays(bsYear, bsMonth, nextSettings.weekly_closing_day);
     const start = days[0]?.adDate ?? todayAd;
     const end = days[days.length - 1]?.adDate ?? todayAd;
 
     const recordsQuery = supabase
-        .from("attendance_records")
-        .select("id, member_ref, attendance_date, status, deleted_at")
-        .gte("attendance_date", start).lte("attendance_date", end).is("deleted_at", null)
-        .order("attendance_date", { ascending: false }).order("id", { ascending: false });
+      .from("attendance_records")
+      .select("id, member_ref, attendance_date, status, deleted_at")
+      .gte("attendance_date", start).lte("attendance_date", end).is("deleted_at", null)
+      .order("attendance_date", { ascending: false }).order("id", { ascending: false });
     const deletedQuery = supabase
-        .from("attendance_records")
-        .select("id, member_ref, attendance_date, status, deleted_at")
-        .gte("attendance_date", start)
-        .lte("attendance_date", end)
-        .not("deleted_at", "is", null)
-        .order("deleted_at", { ascending: false })
-        .limit(10);
+      .from("attendance_records")
+      .select("id, member_ref, attendance_date, status, deleted_at")
+      .gte("attendance_date", start)
+      .lte("attendance_date", end)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false })
+      .limit(10);
 
     const [recordsRes, deletedRes, holidaysRes] = await Promise.all([
       memberIds.length ? recordsQuery.in("member_ref", memberIds) : Promise.resolve({ data: [], error: null }),
@@ -143,6 +146,7 @@ export default function AdminAttendance() {
         .order("holiday_date", { ascending: true }),
     ]);
 
+    if (!isCurrent()) return;
     if (recordsRes.error || deletedRes.error || holidaysRes.error) {
       setMessage(recordsRes.error?.message || deletedRes.error?.message || holidaysRes.error?.message || "Attendance load failed.");
       return;
@@ -168,9 +172,10 @@ export default function AdminAttendance() {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
+    if (searchTerm !== debouncedSearch) return;
+    setResultsLoading(true);
     let query = supabase.from("members").select("*", { count: "exact" }).is("deleted_at", null);
-    const term = searchTerm.trim().replace(/[,%()]/g, " ");
+    const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
     if (term) query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
     query.order("full_name", { ascending: true }).range((page - 1) * pageSize, page * pageSize - 1).then(async ({ data, count, error }) => {
       if (!alive) return;
@@ -178,13 +183,13 @@ export default function AdminAttendance() {
       const nextMembers = (data ?? []) as MemberRow[];
       setMembers(nextMembers);
       setMemberCount(count ?? 0);
-      await loadAttendanceData(selectedBsYear, selectedBsMonth, nextMembers.map((member) => member.id));
-      if (alive) setLoading(false);
+      await loadAttendanceData(selectedBsYear, selectedBsMonth, nextMembers.map((member) => member.id), settings, () => alive);
+      if (alive) { setLoading(false); setResultsLoading(false); }
     });
     return () => { alive = false; };
     // settings changes only after its initial database load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchTerm, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]);
+  }, [page, searchTerm, debouncedSearch, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]);
 
   const changeMonth = async (year: number, month: number) => {
     setMessage("");
@@ -319,9 +324,18 @@ export default function AdminAttendance() {
       </div>
 
       <AdminCard>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_1.4fr]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1fr_0.6fr_1fr]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <AdminInput value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }} placeholder="Search members by name, ID or phone" className="pl-9" />
+          </div>
           <AdminSelect<number> options={yearOptions} value={selectedBsYear} onChange={(event) => changeMonth(Number(event.target.value), selectedBsMonth)} />
           <AdminSelect<number> options={monthOptions} value={selectedBsMonth} onChange={(event) => changeMonth(selectedBsYear, Number(event.target.value))} />
+            <AdminSelect<number>
+            options={bsDays.map((day) => ({ value: day.bsDay, label: `Day ${formatNepaliNumber(day.bsDay)}` }))}
+            value={focusDay}
+            onChange={(event) => setFocusDay(Number(event.target.value))}
+          />
           <AdminSelect<ViewMode>
             options={[
               { value: "day", label: "Day view" },
@@ -331,15 +345,6 @@ export default function AdminAttendance() {
             value={viewMode}
             onChange={(event) => setViewMode(event.target.value as ViewMode)}
           />
-          <AdminSelect<number>
-            options={bsDays.map((day) => ({ value: day.bsDay, label: `Day ${formatNepaliNumber(day.bsDay)}` }))}
-            value={focusDay}
-            onChange={(event) => setFocusDay(Number(event.target.value))}
-          />
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <AdminInput value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }} placeholder="Search members by name, ID or phone" className="pl-9" />
-          </div>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
@@ -389,7 +394,7 @@ export default function AdminAttendance() {
         </AdminCard>
       ) : null}
 
-      {filteredMembers.length === 0 ? (
+      {resultsLoading || searchTerm !== debouncedSearch ? <AdminLoading label="Searching attendance..." /> : filteredMembers.length === 0 ? (
         <AdminEmptyState title="No members available" description="Add members first or adjust the search field." />
       ) : (
         <>

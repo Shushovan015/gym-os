@@ -1,3 +1,4 @@
+import { useScrollLock } from "./hooks/useScrollLock";
 import Navbar from "./components/Navbar";
 import AppRoutes from "./routes/AppRoutes";
 import GlobalLoader from "./components/GlobalLoader";
@@ -11,6 +12,7 @@ export default function App() {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith("/admin");
   const [maintenance, setMaintenance] = useState(false);
+  useScrollLock(maintenance);
 
   useEffect(() => {
     if (!isAdminRoute || location.pathname === "/admin/login") return;
@@ -33,7 +35,7 @@ export default function App() {
       </main>
       {!isAdminRoute ? <Footer /> : null}
       <ToastHost />
-      {maintenance ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/95 p-6 text-center text-white"><div className="max-w-md rounded-xl border border-amber-400/40 bg-slate-900 p-8 shadow-2xl"><h2 className="text-xl font-black">System maintenance in progress</h2><p className="mt-3 text-slate-300">Database restore is currently running. Please do not close the application or computer.</p></div></div> : null}
+      {maintenance ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/95 p-6 text-center text-white"><div className="max-h-[calc(100dvh-3rem)] overflow-auto overscroll-contain max-w-md rounded-xl border border-amber-400/40 bg-slate-900 p-8 shadow-2xl"><h2 className="text-xl font-black">System maintenance in progress</h2><p className="mt-3 text-slate-300">Database restore is currently running. Please do not close the application or computer.</p></div></div> : null}
     </div>
   );
 }
