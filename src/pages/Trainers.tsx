@@ -1,3 +1,4 @@
+import { useScrollLock } from "@src/hooks/useScrollLock";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDispatch, useSelector } from "react-redux";
@@ -186,16 +187,16 @@ export default function Trainers() {
   const metrics = page.strength_metrics?.length ? page.strength_metrics : fallbackMetrics;
   const zones = page.equipment_zones?.length ? page.equipment_zones : fallbackZones;
 
+  useScrollLock(Boolean(selectedTrainer));
   useEffect(() => {
     if (!selectedTrainer) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setSelectedId(null);
     };
     window.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = previous;
+
       window.removeEventListener("keydown", onKey);
     };
   }, [selectedTrainer]);
@@ -335,7 +336,7 @@ export default function Trainers() {
               {selectedTrainer && details ? (
                 <motion.div className="fixed inset-0 z-[120] bg-black/72 p-4 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedId(null)}>
                   <motion.div
-                    className="mx-auto flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--public-line)] bg-[#11100e]"
+                    className="mx-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--public-line)] bg-[#11100e]"
                     initial={{ y: 18, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     exit={{ y: 18, opacity: 0 }}
@@ -347,7 +348,7 @@ export default function Trainers() {
                         <X className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="overflow-y-auto">
+                    <div className="min-h-0 overflow-auto overscroll-contain">
                       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr]">
                         <ImageFrame src={selectedTrainer.image} alt={selectedTrainer.name} className="h-[360px] rounded-none border-0 lg:h-full" imgClassName="object-contain bg-[#0d0c0b]" />
                         <div className="p-5 sm:p-7">

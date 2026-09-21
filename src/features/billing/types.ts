@@ -4,6 +4,7 @@ export type PaymentMethod = "cash" | "card" | "bank_transfer" | "digital_wallet"
 export type InvoiceItemType = "membership" | "personal_training" | "product" | "miscellaneous";
 
 export type InvoiceRow = {
+  invoice_email_deliveries?: { status: string } | null;
   id: number; invoice_number: string | null; member_ref: number | null; customer_name: string;
   customer_phone: string | null; customer_email: string | null; billing_date: string; due_date: string | null;
   invoice_status: InvoiceStatus; payment_status: BillingPaymentStatus; currency_code: string;

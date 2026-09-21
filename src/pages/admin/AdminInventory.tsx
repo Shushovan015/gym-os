@@ -1,3 +1,5 @@
+import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
+import { useLatestRequest } from "@src/hooks/useLatestRequest";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -138,6 +140,8 @@ export default function AdminInventory() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [category, setCategory] = useState("all");
   const [stockFilter, setStockFilter] = useState(() => { const value = searchParams.get("stock"); return value === "low" || value === "out" ? value : "all"; });
   const [activeFilter, setActiveFilter] = useState("active");
@@ -172,12 +176,16 @@ export default function AdminInventory() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set());
 
+  const beginRequest = useLatestRequest(JSON.stringify([search, activeFilter, category, page, stockFilter]));
   const load = async () => {
-    setLoading(true);
+    if (search !== debouncedSearch) return;
+    const isCurrent = beginRequest();
+    setResultsLoading(true);
     const [paged, s] = await Promise.all([
-      supabase.rpc("admin_inventory_page", { p_search: search.trim(), p_category: category, p_stock: stockFilter, p_active: activeFilter, p_offset: (page - 1) * pageSize, p_limit: pageSize }),
+      supabase.rpc("admin_inventory_page", { p_search: debouncedSearch.trim(), p_category: category, p_stock: stockFilter, p_active: activeFilter, p_offset: (page - 1) * pageSize, p_limit: pageSize }),
       supabase.from("inventory_suppliers").select("*").order("name"),
     ]);
+    if (!isCurrent()) return;
     const issue = paged.error ?? s.error;
     if (issue) setMessage(issue.message);
     const data = paged.data as { total?: number; rows?: Array<{ product: InventoryProduct; variant: InventoryVariant }>; categories?: string[]; summary?: typeof inventorySummary } | null;
@@ -187,7 +195,7 @@ export default function AdminInventory() {
     setInventoryCategories(data?.categories ?? []);
     if (data?.summary) setInventorySummary(data.summary);
     setSuppliers((s.data ?? []) as Supplier[]);
-    setLoading(false);
+    setLoading(false); setResultsLoading(false);
   };
 
   const setProductsActive = async (productIds: number[], active: boolean) => {
@@ -214,7 +222,7 @@ export default function AdminInventory() {
   useEffect(() => {
     const timeout = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeout);
-  }, [activeFilter, category, page, search, stockFilter]);
+  }, [activeFilter, category, page, search, debouncedSearch, stockFilter]);
 
   const rows = useMemo(
     () =>
@@ -668,7 +676,7 @@ export default function AdminInventory() {
           </div>
         </AdminCard>
       ) : null}
-      {pageRows.length === 0 ? (
+      {resultsLoading || search !== debouncedSearch ? <AdminLoading label="Searching inventory..." /> : pageRows.length === 0 ? (
         <AdminEmptyState
           title={
             products.length === 0

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
+import { useLatestRequest } from "@src/hooks/useLatestRequest";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Banknote,
+  Mail,
   ListFilter,
   FilePlus2,
   Printer,
@@ -117,6 +120,8 @@ export default function AdminBilling() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -153,14 +158,63 @@ export default function AdminBilling() {
   );
   const [productSearch, setProductSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
+  const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
+  const [productResultsFor, setProductResultsFor] = useState<string | null>(null);
   const [successInvoice, setSuccessInvoice] = useState<InvoiceRow | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
 
+  const [sendTarget, setSendTarget] = useState<InvoiceRow | null>(null);
+  const [sendRecipient, setSendRecipient] = useState("");
+  const [sendLoading, setSendLoading] = useState(false);
+  const [sendingBill, setSendingBill] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const [sentIds, setSentIds] = useState<Set<number>>(new Set());
+  const sendGuard = useRef(false);
+  const recipientRequest = useRef(0);
+  const prepareSend = async (invoice: InvoiceRow) => {
+    const requestId = ++recipientRequest.current;
+    setSendTarget(invoice); setSendRecipient(""); setSendError(""); setSendLoading(true);
+    const { data, error } = await supabase.from("members").select("email").eq("id", invoice.member_ref).is("deleted_at", null).maybeSingle();
+    if (requestId !== recipientRequest.current) return;
+    setSendLoading(false);
+    if (error || !data?.email) setSendError("Save an email address on the member's profile first.");
+    else setSendRecipient(data.email);
+  };
+  const sendBill = async () => {
+    if (!sendTarget || !sendRecipient || sendGuard.current) return;
+    sendGuard.current = true; setSendingBill(true); setSendError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("send-bill", { body: { invoice_id: sendTarget.id, expected_email: sendRecipient } });
+      if (error) {
+        let explanation = error.message;
+        if ("context" in error && error.context instanceof Response) {
+          const body = await error.context.json().catch(() => null);
+          explanation = body?.error || explanation;
+        }
+        throw new Error(explanation);
+      }
+      if (!data?.ok) throw new Error(data?.error || "Bill delivery could not be confirmed.");
+      setSentIds((current) => new Set([...current, sendTarget.id]));
+      setMessage(data.already_sent ? "This bill has already been sent. No duplicate was sent." : `Bill ${sendTarget.invoice_number} accepted for delivery to ${sendRecipient}.`);
+      setSendTarget(null);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Could not send the bill. Check your connection and retry.");
+    } finally { sendGuard.current = false; setSendingBill(false); }
+  };
+  const sendButton = (invoice: InvoiceRow) => {
+    const sent = sentIds.has(invoice.id) || invoice.invoice_email_deliveries?.status === "sent";
+    return <AdminButton variant="secondary" disabled={sent || sendingBill || invoice.invoice_status !== "issued" || !invoice.member_ref} onClick={() => void prepareSend(invoice)} title={!invoice.member_ref ? "Link this bill to a member with a saved email address" : undefined}><Mail className="h-4 w-4" />{sent ? "Bill sent" : "Send Bill"}</AdminButton>;
+  };
+
+  const beginRequest = useLatestRequest(JSON.stringify([search, dateFrom, dateTo, page, paymentFilter, statusFilter]));
   const load = async () => {
-    let invoiceQuery = supabase.from("invoices").select("*", { count: "exact" });
-    if (search.trim()) {
-      const term = search.trim().replace(/[,%()]/g, " ");
+    if (search !== debouncedSearch) return;
+    const isCurrent = beginRequest();
+    setResultsLoading(true);
+    let invoiceQuery = supabase.from("invoices").select("*, invoice_email_deliveries(status)", { count: "exact" });
+    if (debouncedSearch.trim()) {
+      const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
       invoiceQuery = invoiceQuery.or(`invoice_number.ilike.%${term}%,customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%`);
     }
     if (paymentFilter !== "all") invoiceQuery = invoiceQuery.eq("payment_status", paymentFilter);
@@ -174,6 +228,7 @@ export default function AdminBilling() {
       supabase.from("pricing_items").select("id,title,price,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
       supabase.from("personal_training_plans").select("id,title:name,price:details,is_active").eq("is_active", true).order("sort_order"),
     ]);
+    if (!isCurrent()) return;
     const issue = i.error ?? s.error ?? pricing.error ?? training.error;
     if (issue) setMessage(issue.message);
     setInvoices((i.data ?? []) as InvoiceRow[]);
@@ -182,15 +237,17 @@ export default function AdminBilling() {
     setTrainingPlans((training.data ?? []) as BillablePlan[]);
     if (s.data) setSettings((x) => ({ ...x, ...(s.data as BillingSettings) }));
     const summary = await supabase.rpc("admin_billing_summary");
+    if (!isCurrent()) return;
     if (summary.data) setBillingSummary(summary.data as typeof billingSummary);
-    setLoading(false);
+    setLoading(false); setResultsLoading(false);
   };
   useEffect(() => {
     const timeout = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeout);
-  }, [dateFrom, dateTo, page, paymentFilter, search, statusFilter]);
+  }, [dateFrom, dateTo, page, paymentFilter, search, debouncedSearch, statusFilter]);
   useEffect(() => {
     if (!createOpen || customerMode !== "member") return;
+    let alive = true;
     const timeout = window.setTimeout(async () => {
       const state = location.state as LocationState | null;
       let query = supabase.from("members").select("*").is("deleted_at", null);
@@ -201,23 +258,27 @@ export default function AdminBilling() {
         query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%`);
       }
       const { data, error } = await query.order("full_name").limit(8);
-      if (error) setCreateError(error.message);
-      else setMembers((data ?? []) as MemberRow[]);
-    }, 250);
-    return () => window.clearTimeout(timeout);
+      if (!alive) return;
+      if (error) { setMembers([]); setMemberResultsFor(memberSearch); setCreateError(error.message); }
+      else { setMembers((data ?? []) as MemberRow[]); setMemberResultsFor(memberSearch); }
+    }, 350);
+    return () => { alive = false; window.clearTimeout(timeout); };
   }, [createOpen, customerMode, location.state, memberSearch]);
   useEffect(() => {
     if (!createOpen || lineType !== "product") return;
+    let alive = true;
     const timeout = window.setTimeout(async () => {
       const { data, error } = await supabase.rpc("admin_inventory_page", {
         p_search: productSearch.trim(), p_category: "all", p_stock: "all", p_active: "active", p_offset: 0, p_limit: 10,
       });
-      if (error) { setCreateError(error.message); return; }
+      if (!alive) return;
+      if (error) { setProducts([]); setVariants([]); setProductResultsFor(productSearch); setCreateError(error.message); return; }
       const rows = ((data as { rows?: Array<{ product: InventoryProduct; variant: InventoryVariant }> } | null)?.rows ?? []);
       setProducts(Array.from(new Map(rows.map((row) => [row.product.id, row.product])).values()));
       setVariants(rows.map((row) => row.variant));
-    }, 250);
-    return () => window.clearTimeout(timeout);
+      setProductResultsFor(productSearch);
+    }, 350);
+    return () => { alive = false; window.clearTimeout(timeout); };
   }, [createOpen, lineType, productSearch]);
   useEffect(() => {
     const state = location.state as LocationState | null;
@@ -619,7 +680,7 @@ export default function AdminBilling() {
           <AdminField label="Invoice status"><AdminSelect value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} options={[{ value: "all", label: "All invoices" }, { value: "draft", label: "Draft" }, { value: "issued", label: "Issued" }, { value: "cancelled", label: "Cancelled" }]} /></AdminField>
         </div>
       </AdminCard>
-      {invoices.length === 0 ? (
+      {resultsLoading || search !== debouncedSearch ? <AdminLoading label="Searching bills..." /> : invoices.length === 0 ? (
         <AdminEmptyState
           title={
             invoiceCount === 0
@@ -670,6 +731,7 @@ export default function AdminBilling() {
                   >
                     View Bill
                   </AdminButton>
+                  {sendButton(invoice)}
                 </div>
               </AdminCard>
             ))}
@@ -729,6 +791,7 @@ export default function AdminBilling() {
                         >
                           View
                         </AdminButton>
+                        {sendButton(invoice)}
                       </td>
                     </tr>
                   ))}
@@ -817,7 +880,8 @@ export default function AdminBilling() {
                   <AdminInput placeholder="Start typing a name or member ID" value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberId(""); setCustomerName(""); }} />
                   {memberSearch.trim() && !memberId ? (
                     <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 p-1">
-                      {members.filter((member) => `${member.full_name} ${member.member_id}`.toLowerCase().includes(memberSearch.toLowerCase())).slice(0, 8).map((member) => (
+                      {memberResultsFor !== memberSearch ? <p className="p-2 text-sm text-slate-400">Searching members...</p> : members.length === 0 ? <p className="p-2 text-sm text-slate-400">No members found.</p> : null}
+                      {(memberResultsFor === memberSearch ? members : []).slice(0, 8).map((member) => (
                         <button key={member.id} type="button" className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { selectMember(String(member.id)); setMemberSearch(`${member.full_name} (${member.member_id})`); }}>
                           {member.full_name} <span className="text-slate-500">{member.member_id}</span>
                         </button>
@@ -892,20 +956,9 @@ export default function AdminBilling() {
                       onChange={(e) => setProductSearch(e.target.value)}
                     />
                   </AdminField>
+                  {productResultsFor !== productSearch ? <p className="mt-2 text-sm text-slate-400">Searching products...</p> : null}
                   <div className="mt-3 grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
-                    {variants
-                      .filter((variant) => {
-                        const product = products.find(
-                          (item) => item.id === variant.product_id,
-                        );
-                        const query = productSearch.trim().toLowerCase();
-                        return (
-                          !query ||
-                          `${product?.title ?? ""} ${product?.category ?? ""} ${variant.name} ${variant.sku}`
-                            .toLowerCase()
-                            .includes(query)
-                        );
-                      })
+                    {(productResultsFor === productSearch ? variants : [])
                       .map((variant) => {
                         const product = products.find(
                           (item) => item.id === variant.product_id,
@@ -1165,6 +1218,7 @@ export default function AdminBilling() {
                 <Printer className="h-4 w-4" />
                 Print bill
               </AdminButton>
+              {sendButton(detail)}
               {detail.invoice_status === "issued" &&
               detail.balance_minor > 0 ? (
                 <AdminButton
@@ -1189,9 +1243,9 @@ export default function AdminBilling() {
         {detail ? (
           <div
             id="printable-invoice"
-            className="invoice-print rounded-xl bg-white p-6 text-slate-900"
+            className="invoice-print rounded-xl bg-white p-3 sm:p-6 text-slate-900"
           >
-            <div className="flex justify-between gap-6 border-b pb-5">
+            <div className="flex flex-col sm:flex-row justify-between gap-6 border-b pb-5">
               <div className="flex gap-3">
                 {settings.logo_url ? (
                   <img
@@ -1329,6 +1383,14 @@ export default function AdminBilling() {
           </div>
         ) : null}
       </AdminDrawer>
+      <AdminDialog open={Boolean(sendTarget)} title={`Send bill ${sendTarget?.invoice_number ?? ""}?`} onClose={() => { if (!sendGuard.current) { recipientRequest.current += 1; setSendTarget(null); } }} footer={<div className="flex flex-wrap justify-end gap-2"><AdminButton disabled={sendingBill} onClick={() => { recipientRequest.current += 1; setSendTarget(null); }}>Cancel</AdminButton><AdminButton variant="primary" disabled={sendLoading || sendingBill || !sendRecipient || !settings.bill_sender_email} onClick={() => void sendBill()}>{sendingBill ? "Sending..." : "Confirm and send"}</AdminButton></div>}>
+        <div className="space-y-3" aria-live="polite">
+          {sendLoading ? <AdminLoading label="Checking member email..." /> : <p className="break-words text-sm text-slate-300">Send this invoice to <b>{sendRecipient || "the member's saved email"}</b> from <b>{settings.bill_sender_email || "an unconfigured sender"}</b>?</p>}
+          <p className="text-sm text-slate-400">Includes billing details and a printable invoice. Internet is required. An invoice can only be sent once.</p>
+          {!settings.bill_sender_email ? <AdminNotice tone="warning">Configure Bill sender email in System Settings first.</AdminNotice> : null}
+          {sendError ? <AdminNotice tone="danger">{sendError}</AdminNotice> : null}
+        </div>
+      </AdminDialog>
       <AdminDialog
         open={paymentOpen}
         title="Record payment"

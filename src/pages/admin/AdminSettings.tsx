@@ -44,6 +44,8 @@ function validateSettings(form: AdminSettingsType) {
   if (!/^[A-Z0-9-]{1,12}$/.test(form.invoice_prefix)) errors.invoice_prefix = "Use 1-12 uppercase letters, numbers or hyphens.";
   if (!/^[A-Z]{3}$/.test(form.currency_code)) errors.currency_code = "Use a three-letter currency code.";
   if (form.tax_rate_basis_points < 0 || form.tax_rate_basis_points > 10000) errors.tax_rate_basis_points = "Tax rate must be between 0% and 100%.";
+  if (!Number.isSafeInteger(form.invoice_start_number) || form.invoice_start_number < 1) errors.invoice_start_number = "Enter a positive whole number.";
+  if (form.bill_sender_email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(form.bill_sender_email)) errors.bill_sender_email = "Enter a valid sender email.";
   return errors;
 }
 
@@ -125,6 +127,8 @@ export default function AdminSettings() {
       date_display_preference: "bs",
       attendance_holiday_lock: form.attendance_holiday_lock,
       invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
+      invoice_start_number: form.invoice_start_number,
+      bill_sender_email: form.bill_sender_email?.trim() || null,
       currency_code: form.currency_code.trim().toUpperCase(),
       currency_minor_unit: form.currency_minor_unit,
       tax_enabled: form.tax_enabled,
@@ -222,6 +226,8 @@ export default function AdminSettings() {
           <AdminCard>
             <AdminSectionTitle title="Billing and inventory" description="Currency, tax, invoice numbering and stock safeguards." />
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <AdminField label="Starting invoice number" error={errors.invoice_start_number} hint="Set before issuing the first bill after this update. Cannot move backwards or change after numbering starts. Existing bills keep their numbers."><AdminInput type="number" min={1} step={1} value={form.invoice_start_number} onChange={(event) => update("invoice_start_number", Number(event.target.value))} /></AdminField>
+              <AdminField label="Bill sender email" error={errors.bill_sender_email} hint="Use an address on your verified Resend domain. Sending bills requires internet."><AdminInput type="email" value={form.bill_sender_email ?? ""} onChange={(event) => update("bill_sender_email", event.target.value)} placeholder="billing@yourgym.com" /></AdminField>
               <AdminField label="Invoice prefix" error={errors.invoice_prefix}><AdminInput value={form.invoice_prefix} onChange={(event) => update("invoice_prefix", event.target.value.toUpperCase())} /></AdminField>
               <AdminField label="Currency code" error={errors.currency_code}><AdminInput maxLength={3} value={form.currency_code} onChange={(event) => update("currency_code", event.target.value.toUpperCase())} /></AdminField>
               <AdminField label="Tax behavior"><AdminSelect options={[{value:"false",label:"Tax disabled"},{value:"true",label:"Tax enabled"}]} value={String(form.tax_enabled)} onChange={(event) => update("tax_enabled", event.target.value === "true")} /></AdminField>

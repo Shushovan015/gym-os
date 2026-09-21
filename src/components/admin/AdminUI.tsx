@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { useScrollLock } from "@src/hooks/useScrollLock";
 import type {
   ButtonHTMLAttributes,
   ComponentType,
@@ -22,7 +24,11 @@ const toneClasses: Record<Tone, string> = {
   muted: "border-slate-700 bg-slate-800/70 text-slate-300",
 };
 
+const modalStack: Array<{ token: symbol; layer: number }> = [];
+const topModal = () => modalStack.reduce<(typeof modalStack)[number] | undefined>((top, item) => !top || item.layer >= top.layer ? item : top, undefined)?.token;
+
 function useAdminModal(open: boolean, onClose: () => void) {
+  useScrollLock(open);
   const panelRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
   useEffect(() => {
@@ -30,13 +36,25 @@ function useAdminModal(open: boolean, onClose: () => void) {
   }, [onClose]);
   useEffect(() => {
     if (!open) return;
+    const token = Symbol("modal");
+    const layer = Number.parseInt(getComputedStyle(panelRef.current?.parentElement ?? document.body).zIndex, 10) || 0;
+    modalStack.push({ token, layer });
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const oldOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const timer = window.setTimeout(() => panelRef.current?.querySelector<HTMLElement>("[autofocus], input, select, textarea, button")?.focus(), 0);
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") closeRef.current(); };
+
+    const timer = window.setTimeout(() => { if (topModal() === token) panelRef.current?.querySelector<HTMLElement>("[autofocus], input, select, textarea, button")?.focus(); }, 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (topModal() !== token) return;
+      if (event.key === "Escape") { event.preventDefault(); closeRef.current(); }
+      if (event.key === "Tab") {
+        const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]') ?? []).filter((element) => element.getClientRects().length > 0);
+        const first = controls[0]; const last = controls.at(-1);
+        if (!first) { event.preventDefault(); panelRef.current?.focus(); }
+        else if (event.shiftKey && (document.activeElement === first || !panelRef.current?.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && (document.activeElement === last || !panelRef.current?.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+      }
+    };
     document.addEventListener("keydown", onKeyDown);
-    return () => { window.clearTimeout(timer); document.removeEventListener("keydown", onKeyDown); document.body.style.overflow = oldOverflow; previous?.focus(); };
+    return () => { modalStack.splice(modalStack.findIndex((item) => item.token === token), 1); window.clearTimeout(timer); document.removeEventListener("keydown", onKeyDown); if (previous?.isConnected) previous.focus(); };
   }, [open]);
   return panelRef;
 }
@@ -220,14 +238,26 @@ export function AdminBsDateInput({ value, onChange, className = "", required = f
   const [viewYear, setViewYear] = useState(initial[0]);
   const [viewMonth, setViewMonth] = useState(initial[1] - 1);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const calendarRef = useAdminModal(open, () => setOpen(false));
+  const [position, setPosition] = useState({ left: 16, top: 16 });
   const days = buildBsMonthDays(viewYear, viewMonth, -1);
   const firstOffset = days[0]?.weekdayIndex ?? 0;
 
   useEffect(() => {
     if (!open) return;
-    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false); };
+    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node) && !calendarRef.current?.contains(event.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const reposition = () => {
+      const bounds = rootRef.current?.getBoundingClientRect();
+      if (bounds) setPosition({ left: Math.max(16, Math.min(bounds.left, window.innerWidth - 368)), top: Math.max(16, Math.min(bounds.bottom + 8, window.innerHeight - 440)) });
+    };
+    window.addEventListener("resize", reposition);
+    return () => window.removeEventListener("resize", reposition);
   }, [open]);
 
   const moveMonth = (amount: number) => {
@@ -242,6 +272,8 @@ export function AdminBsDateInput({ value, onChange, className = "", required = f
       setViewYear(shown[0]);
       setViewMonth(shown[1] - 1);
     }
+    const bounds = rootRef.current?.getBoundingClientRect();
+    if (bounds) setPosition({ left: Math.max(16, Math.min(bounds.left, window.innerWidth - 368)), top: Math.max(16, Math.min(bounds.bottom + 8, window.innerHeight - 440)) });
     setOpen((shown) => !shown);
   };
 
@@ -250,12 +282,12 @@ export function AdminBsDateInput({ value, onChange, className = "", required = f
       <span className={selectedBs ? "text-white" : "text-slate-500"}>{selectedBs ? `${selectedBs} BS` : "Choose Nepali date"}</span><CalendarDays className="h-4 w-4 shrink-0 text-amber-300" />
     </button>
     {required ? <input tabIndex={-1} aria-hidden="true" required value={value ?? ""} onChange={() => undefined} className="pointer-events-none absolute inset-0 -z-10 opacity-0" /> : null}
-    {open ? <div role="dialog" aria-label="Nepali calendar" className="absolute left-0 top-[calc(100%+0.5rem)] z-[180] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-2xl">
+    {open ? createPortal(<div className="fixed inset-0 z-[180]" onClick={() => setOpen(false)}><section ref={calendarRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Nepali calendar" style={position} onClick={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain fixed w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-2xl">
       <div className="flex items-center justify-between gap-2"><button type="button" onClick={() => moveMonth(-1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" aria-label="Previous Nepali month"><ChevronLeft className="h-4 w-4"/></button><div className="text-center"><div className="font-black text-white">{BS_MONTH_LABELS[viewMonth]}</div><div className="text-xs text-amber-300">{viewYear} BS</div></div><button type="button" onClick={() => moveMonth(1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" aria-label="Next Nepali month"><ChevronRight className="h-4 w-4"/></button></div>
       <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase text-slate-500">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => <span key={day}>{day}</span>)}</div>
       <div className="mt-2 grid grid-cols-7 gap-1">{Array.from({ length: firstOffset }, (_, index) => <span key={`empty-${index}`} />)}{days.map((item) => { const itemBs = `${viewYear}-${String(viewMonth + 1).padStart(2,"0")}-${String(item.bsDay).padStart(2,"0")}`; const selected = itemBs === selectedBs; const today = itemBs === currentBs; return <button key={item.bsDay} type="button" onClick={() => { onChange(item.adDate); setOpen(false); }} className={cx("aspect-square rounded-lg text-sm font-semibold transition", selected ? "bg-amber-400 text-slate-950" : today ? "border border-amber-400 text-amber-200" : "text-slate-300 hover:bg-slate-800")}>{item.bsDay}</button>; })}</div>
       <div className="mt-4 flex justify-between border-t border-slate-800 pt-3"><button type="button" onClick={() => { onChange(getNepalTodayAdDate()); setOpen(false); }} className="text-xs font-semibold text-amber-300">Today</button>{value ? <button type="button" onClick={() => { onChange(""); setOpen(false); }} className="text-xs font-semibold text-rose-300">Clear date</button> : null}</div>
-    </div> : null}
+    </section></div>, document.body) : null}
   </div>;
 }
 
@@ -448,19 +480,19 @@ export function AdminDrawer({
     "2xl": "max-w-5xl",
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[120]">
       <button type="button" tabIndex={-1} aria-hidden="true" aria-label="Close drawer" onClick={onClose} className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" />
       <aside
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal="true" aria-label={title} tabIndex={-1}
         className={cx(
-          "absolute right-0 top-0 flex h-full w-full flex-col border-l border-slate-800 bg-slate-950 shadow-2xl",
+          "absolute right-0 top-0 flex h-[100dvh] w-full min-w-0 flex-col overflow-hidden border-l border-slate-800 bg-slate-950 shadow-2xl",
           sizes[size]
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-4 py-4 sm:px-5">
+        <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-800 px-4 py-4 sm:px-5">
           <div>
             <h2 className="text-xl font-black tracking-normal text-white">{title}</h2>
             {description ? <p className="mt-1 text-sm text-slate-400">{description}</p> : null}
@@ -469,10 +501,10 @@ export function AdminDrawer({
             <X className="h-4 w-4" />
           </AdminButton>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
-        {footer ? <div className="border-t border-slate-800 px-4 py-4 sm:px-5">{footer}</div> : null}
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain px-4 py-4 sm:px-5">{children}</div>
+        {footer ? <div className="shrink-0 max-h-[30dvh] overflow-auto border-t border-slate-800 px-4 py-4 sm:px-5">{footer}</div> : null}
       </aside>
-    </div>
+    </div>, document.body
   );
 }
 
@@ -497,11 +529,11 @@ export function AdminDialog({
   if (!open) return null;
 
   const sizes = { md: "max-w-xl", lg: "max-w-2xl", xl: "max-w-3xl", "2xl": "max-w-4xl" };
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[130] grid place-items-center p-4">
       <button type="button" tabIndex={-1} aria-hidden="true" aria-label="Close dialog" onClick={onClose} className="absolute inset-0 bg-slate-950/72 backdrop-blur-sm" />
-      <section ref={panelRef} role="dialog" aria-modal="true" className={cx("relative z-10 flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-2xl", sizes[size])}>
-        <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
+      <section ref={panelRef} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className={cx("relative z-10 flex max-h-[calc(100dvh-2rem)] min-w-0 w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-2xl", sizes[size])}>
+        <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
           <div>
             <h2 className="text-xl font-black tracking-normal text-white">{title}</h2>
             {description ? <p className="mt-1 text-sm text-slate-400">{description}</p> : null}
@@ -510,10 +542,10 @@ export function AdminDialog({
             <X className="h-4 w-4" />
           </AdminButton>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer ? <div className="border-t border-slate-800 px-5 py-4">{footer}</div> : null}
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain px-5 py-4">{children}</div>
+        {footer ? <div className="shrink-0 max-h-[30dvh] overflow-auto border-t border-slate-800 px-5 py-4">{footer}</div> : null}
       </section>
-    </div>
+    </div>, document.body
   );
 }
 

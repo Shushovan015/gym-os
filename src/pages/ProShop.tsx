@@ -1,3 +1,4 @@
+import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
@@ -141,6 +142,7 @@ export default function ProShop() {
   );
   const [activeCategory, setActiveCategory] = useState("All");
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
@@ -153,13 +155,13 @@ export default function ProShop() {
   const itemsPerPage = Math.max(1, Number(page.items_per_page || 8));
   const featuredCount = products.filter((item) => item.is_featured).length;
   const filteredProducts = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = debouncedQuery.trim().toLowerCase();
     return products.filter((item) => {
       if (activeCategory !== "All" && item.category !== activeCategory) return false;
       if (!q) return true;
       return [item.title, item.description, item.category, item.badge].join(" ").toLowerCase().includes(q);
     });
-  }, [activeCategory, products, query]);
+  }, [activeCategory, products, debouncedQuery]);
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
   const paginated = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const summaryCards =
@@ -260,8 +262,9 @@ export default function ProShop() {
           {loading ? <div className="mt-5"><LoadingState label="Loading products..." /></div> : null}
           {error ? <div className="mt-5"><ErrorState message={error} /></div> : null}
 
+          {query !== debouncedQuery ? <div className="mt-5"><LoadingState label="Searching products..." /></div> : null}
           <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            {paginated.map((item) => (
+            {(query === debouncedQuery ? paginated : []).map((item) => (
               <Card key={`${item.id}-${item.title}`} className="flex flex-col p-0">
                 <ImageFrame src={item.image} alt={item.title} className="aspect-square rounded-b-none border-0" />
                 <div className="flex flex-1 flex-col p-5">
@@ -283,7 +286,7 @@ export default function ProShop() {
             ))}
           </div>
 
-          {!loading && paginated.length === 0 ? (
+          {!loading && query === debouncedQuery && paginated.length === 0 ? (
             <div className="mt-8">
               <EmptyState title="No products found" description="Try a different category or search term." />
             </div>
