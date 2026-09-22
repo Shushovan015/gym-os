@@ -1,3 +1,4 @@
+import { useScrollLock } from "@src/hooks/useScrollLock";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
@@ -127,12 +128,7 @@ export default function AdminLayout() {
     };
   }, []);
 
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [mobileOpen]);
+  useScrollLock(mobileOpen);
 
   const userLabel = useMemo(() => user?.email ?? "Admin user", [user?.email]);
 

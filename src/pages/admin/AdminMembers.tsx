@@ -1,3 +1,5 @@
+import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
+import { useLatestRequest } from "@src/hooks/useLatestRequest";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -266,6 +268,8 @@ export default function AdminMembers() {
   const [message, setMessage] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebouncedValue(searchTerm);
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [membershipFilter, setMembershipFilter] = useState<MembershipFilter>(
     searchParams.get("expiring") ? "expiring" : ((searchParams.get("membership") as MembershipFilter | null) ?? "all")
   );
@@ -315,13 +319,16 @@ export default function AdminMembers() {
   const [importing, setImporting] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
 
+  const beginRequest = useLatestRequest(JSON.stringify([searchTerm, absentDays, createdSince, deletedFilter, membershipFilter, paymentFilter, planFilter, sortKey, currentPage]));
   const loadMembers = async () => {
-    setLoading(true);
+    if (searchTerm !== debouncedSearch) return;
+    const isCurrent = beginRequest();
+    setResultsLoading(true);
     let query = supabase.from("members").select("*", { count: "exact" });
     if (deletedFilter === "active") query = query.is("deleted_at", null);
     if (deletedFilter === "deleted") query = query.not("deleted_at", "is", null);
-    if (searchTerm.trim()) {
-      const term = searchTerm.trim().replace(/[,%()]/g, " ");
+    if (debouncedSearch.trim()) {
+      const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
       query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
     }
     if (planFilter !== "all") query = query.eq("membership_type", planFilter);
@@ -337,16 +344,19 @@ export default function AdminMembers() {
     else query = query.order("updated_at", { ascending: false }).order("id", { ascending: false });
     const from = (currentPage - 1) * rowsPerPage;
     const membersRes = await query.range(from, from + rowsPerPage - 1);
+    if (!isCurrent()) return;
     if (membersRes.error) {
+      setMembers([]); setMemberCount(0);
       setMessage(membersRes.error.message);
-      setLoading(false);
+      setLoading(false); setResultsLoading(false);
       return;
     }
     setMembers((membersRes.data ?? []) as MemberRow[]);
     setMemberCount(membersRes.count ?? 0);
     const summaryRes = await supabase.rpc("admin_member_summary");
+    if (!isCurrent()) return;
     if (summaryRes.data) setMemberSummary(summaryRes.data as typeof memberSummary);
-    setLoading(false);
+    setLoading(false); setResultsLoading(false);
   };
 
   useEffect(() => {
@@ -364,7 +374,7 @@ export default function AdminMembers() {
     };
   }, []);
 
-  useEffect(() => { void loadMembers(); }, [absentDays, createdSince, deletedFilter, membershipFilter, paymentFilter, planFilter, searchTerm, sortKey, currentPage]);
+  useEffect(() => { void loadMembers(); }, [absentDays, createdSince, deletedFilter, membershipFilter, paymentFilter, planFilter, searchTerm, debouncedSearch, sortKey, currentPage]);
 
   const totalPages = Math.max(1, Math.ceil(memberCount / rowsPerPage));
   const safePage = Math.min(currentPage, totalPages);
@@ -899,6 +909,8 @@ export default function AdminMembers() {
         </AdminCard>
       ) : null}
 
+      {resultsLoading || searchTerm !== debouncedSearch ? <AdminLoading label="Searching members..." /> : null}
+      <div hidden={resultsLoading || searchTerm !== debouncedSearch}>
       <AdminCard padded={false}>
         <div className="hidden lg:block">
           <AdminTableShell>
@@ -1010,6 +1022,7 @@ export default function AdminMembers() {
         ) : null}
         <PaginationControls currentPage={safePage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </AdminCard>
+      </div>
 
       <AdminDialog
         open={formOpen}
@@ -1082,10 +1095,14 @@ export default function AdminMembers() {
             </div>
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <BsAdDateField label="Start date" adValue={form.start_date} onChangeAd={(value) => updateForm("start_date", value)} error={formErrors.start_date} />
-              <BsAdDateField label="End date" adValue={form.end_date} onChangeAd={(value) => updateForm("end_date", value)} error={formErrors.end_date} />
-              <BsAdDateField label="Last visit" adValue={form.last_visit_date} onChangeAd={(value) => updateForm("last_visit_date", value)} error={formErrors.last_visit_date} />
               <BsAdDateField label="Payment due" adValue={form.payment_due_date} onChangeAd={(value) => updateForm("payment_due_date", value)} error={formErrors.payment_due_date} />
             </div>
+            {editingId && (
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <BsAdDateField label="End date" adValue={form.end_date} onChangeAd={(value) => updateForm("end_date", value)} error={formErrors.end_date} />
+                <BsAdDateField label="Last visit" adValue={form.last_visit_date} onChangeAd={(value) => updateForm("last_visit_date", value)} error={formErrors.last_visit_date} />
+              </div>
+            )}
           </AdminCard>
 
           <AdminCard>

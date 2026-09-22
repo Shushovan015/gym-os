@@ -1,7 +1,7 @@
 -- Gmail credentials remain in Edge Function secrets, never in this table.
-alter table public.admin_settings add column bill_sender_email text;
+alter table public.admin_settings add column if not exists bill_sender_email text;
 
-create table public.invoice_email_deliveries (
+create table if not exists public.invoice_email_deliveries (
   invoice_id bigint primary key references public.invoices(id),
   status text not null check (status in ('sending', 'sent', 'failed', 'uncertain')),
   attempt_id uuid not null default gen_random_uuid(),
@@ -13,10 +13,24 @@ create table public.invoice_email_deliveries (
   message_id text,
   error_message text
 );
+-- Upgrade a delivery table created by the earlier Resend migration, preserving history.
+alter table public.invoice_email_deliveries
+  add column if not exists attempt_id uuid not null default gen_random_uuid(),
+  add column if not exists sender_email text not null default '',
+  add column if not exists sent_by uuid references auth.users(id) on delete set null,
+  add column if not exists started_at timestamptz not null default now(),
+  add column if not exists message_id text;
+do $$ begin
+  if exists(select 1 from information_schema.columns where table_schema='public' and table_name='invoice_email_deliveries' and column_name='payload') then
+    alter table public.invoice_email_deliveries alter column payload drop not null;
+    update public.invoice_email_deliveries set status='uncertain' where status='sending';
+  end if;
+end $$;
 alter table public.invoice_email_deliveries enable row level security;
 revoke all on public.invoice_email_deliveries from public, anon, authenticated;
 grant select(invoice_id,status,recipient_email,sender_email,sent_at,error_message) on public.invoice_email_deliveries to authenticated;
 grant all on public.invoice_email_deliveries to service_role;
+drop policy if exists invoice_email_admin_read on public.invoice_email_deliveries;
 create policy invoice_email_admin_read on public.invoice_email_deliveries
 for select to authenticated using (public.is_admin());
 

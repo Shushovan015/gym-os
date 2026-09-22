@@ -8,12 +8,17 @@
 
    ```powershell
    npx supabase migration list --local
-   npx supabase migration up --local
+   npx supabase migration up --local --include-all
    npm run build
    ```
 
    The new migration is
    `supabase/migrations/202609220002_inventory_pricing_bill_numbers.sql`.
+   After merging main, also apply `202609220003_merge_billing_compatibility.sql`.
+   `--include-all` includes main's earlier 20260921 migrations if this installation
+   already applied the feature branch's 20260922 migrations. The compatibility
+   migration preserves Gmail delivery history and combines manual bill numbers
+   with main's configurable starting number and permanent automatic sequence.
    Review any other pending migrations first. Never use `db:reset` on the real
    gym database. This update has only been applied to a disposable test database,
    not your real gym database.
@@ -55,6 +60,9 @@ for sending email.
 - Optional Bill Number uses the existing `invoices.invoice_number` field, so the
   same value appears in the table, details, printout and emailed invoice.
 - Leave it blank to retain the existing prefix/year/sequence automatic format.
+  The automatic sequence now follows main's Starting invoice number setting and
+  continues across year/prefix changes. Issued or rolled-back automatic numbers
+  are not reused. Configure the starting number before automatic numbering begins.
   Enter 1-64 letters, numbers, hyphens, underscores or slashes for a manual number.
   Surrounding whitespace is trimmed. New duplicate numbers are rejected,
   including case differences; legacy numbers are not rewritten.
