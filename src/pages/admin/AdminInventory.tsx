@@ -1,3 +1,4 @@
+import { inventoryPriceToMinor } from "@src/features/billing/pricing";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -50,6 +51,7 @@ type ProductForm = {
   brand: string;
   unit: string;
   barcode: string;
+  wholesale: string;
   cost: string;
   price: string;
   threshold: string;
@@ -68,6 +70,7 @@ type VariantForm = {
   color: string;
   flavour: string;
   packageSize: string;
+  wholesale: string;
   cost: string;
   price: string;
   threshold: string;
@@ -79,6 +82,7 @@ const emptyProduct: ProductForm = {
   brand: "",
   unit: "piece",
   barcode: "",
+  wholesale: "0",
   cost: "0",
   price: "0",
   threshold: "3",
@@ -97,6 +101,7 @@ const emptyVariant: VariantForm = {
   color: "",
   flavour: "",
   packageSize: "",
+  wholesale: "",
   cost: "",
   price: "",
   threshold: "",
@@ -250,6 +255,7 @@ export default function AdminInventory() {
             brand: product.brand ?? "",
             unit: product.unit,
             barcode: product.barcode ?? "",
+            wholesale: minorToInput(product.wholesale_price_minor),
             cost: minorToInput(product.cost_price_minor),
             price: minorToInput(product.selling_price_minor),
             threshold: String(product.low_stock_threshold),
@@ -265,13 +271,15 @@ export default function AdminInventory() {
     setProductOpen(true);
   };
   const saveProduct = async () => {
-    const cost = majorToMinor(productForm.cost);
-    const price = majorToMinor(productForm.price);
+    const wholesale = inventoryPriceToMinor(productForm.wholesale);
+    const cost = inventoryPriceToMinor(productForm.cost);
+    const price = inventoryPriceToMinor(productForm.price);
     const threshold = Number(productForm.threshold);
     const startingStock = Number(productForm.startingStock);
     if (
       !productForm.title.trim() ||
       !productForm.category.trim() ||
+      wholesale === null ||
       cost === null ||
       price === null ||
       !Number.isFinite(threshold) ||
@@ -298,6 +306,7 @@ export default function AdminInventory() {
       brand: productForm.brand.trim() || null,
       unit: productForm.unit.trim() || "piece",
       barcode: productForm.barcode.trim() || null,
+      wholesale_price_minor: wholesale,
       cost_price_minor: cost,
       selling_price_minor: price,
       low_stock_threshold: threshold,
@@ -382,11 +391,13 @@ export default function AdminInventory() {
       );
       return;
     }
-    const cost = variantForm.cost ? majorToMinor(variantForm.cost) : null;
-    const price = variantForm.price ? majorToMinor(variantForm.price) : null;
+    const wholesale = variantForm.wholesale ? inventoryPriceToMinor(variantForm.wholesale) : null;
+    const cost = variantForm.cost ? inventoryPriceToMinor(variantForm.cost) : null;
+    const price = variantForm.price ? inventoryPriceToMinor(variantForm.price) : null;
     const threshold =
       variantForm.threshold === "" ? null : Number(variantForm.threshold);
     if (
+      (wholesale === null && variantForm.wholesale) ||
       (cost === null && variantForm.cost) ||
       (price === null && variantForm.price) ||
       (threshold !== null && (!Number.isFinite(threshold) || threshold < 0))
@@ -408,6 +419,7 @@ export default function AdminInventory() {
       color: variantForm.color.trim() || null,
       flavour: variantForm.flavour.trim() || null,
       package_size: variantForm.packageSize.trim() || null,
+      wholesale_price_minor: wholesale,
       cost_price_minor: cost,
       selling_price_minor: price,
       low_stock_threshold: threshold,
@@ -433,6 +445,7 @@ export default function AdminInventory() {
   };
   const recordStock = async () => {
     if (!stockVariant) return;
+    if (stockMode === "add" && stockBuyingPrice && inventoryPriceToMinor(stockBuyingPrice) === null) { setMessage("Enter a valid non-negative cost price with at most two decimal places."); return; }
     const raw = Number(movementQuantity);
     if (!Number.isFinite(raw) || raw <= 0) {
       setMessage("Quantity must be greater than zero.");
@@ -725,8 +738,10 @@ export default function AdminInventory() {
                             ? "0 available"
                             : `${variant.current_quantity} in stock`}
                       </div>
+                      <div className="mt-1 text-sm text-slate-400">Cost: {formatMoney(variant.cost_price_minor ?? product.cost_price_minor)}</div>
+                      <div className="mt-1 text-sm text-slate-400">Wholesale: {formatMoney(variant.wholesale_price_minor ?? product.wholesale_price_minor)}</div>
                       <div className="mt-1 text-sm text-slate-400">
-                        {formatMoney(
+                        Selling: {formatMoney(
                           variant.selling_price_minor ??
                             product.selling_price_minor,
                         )}
@@ -793,6 +808,8 @@ export default function AdminInventory() {
                       "Product",
                       "Category",
                       "Stock",
+                      "Cost price",
+                      "Wholesale price",
                       "Selling price",
                       "Status",
                       "Actions",
@@ -838,6 +855,8 @@ export default function AdminInventory() {
                               : "Available"}
                           </div>
                         </td>
+                        <td className="px-4 py-4 text-slate-300">{formatMoney(variant.cost_price_minor ?? product.cost_price_minor)}</td>
+                        <td className="px-4 py-4 text-slate-300">{formatMoney(variant.wholesale_price_minor ?? product.wholesale_price_minor)}</td>
                         <td className="px-4 py-4 text-slate-300">
                           {formatMoney(
                             variant.selling_price_minor ??
@@ -925,6 +944,7 @@ export default function AdminInventory() {
                                   color: variant.color ?? "",
                                   flavour: variant.flavour ?? "",
                                   packageSize: variant.package_size ?? "",
+                                  wholesale: variant.wholesale_price_minor === null ? "" : minorToInput(variant.wholesale_price_minor),
                                   cost:
                                     variant.cost_price_minor === null
                                       ? ""
@@ -1056,7 +1076,7 @@ export default function AdminInventory() {
             <h3 className="text-sm font-black text-white">Price</h3>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <AdminField
-                label="Buying price"
+                label="Cost price"
                 hint="How much the gym paid for one item."
               >
                 <AdminInput
@@ -1069,6 +1089,7 @@ export default function AdminInventory() {
                   }
                 />
               </AdminField>
+              <AdminField label="Wholesale price *" hint="Price for wholesale customers."><AdminInput type="number" min="0" step="0.01" value={productForm.wholesale} onChange={(e) => setProductForm((f) => ({ ...f, wholesale: e.target.value }))} /></AdminField>
               <AdminField
                 label="Selling price *"
                 hint="What the customer pays."
@@ -1311,6 +1332,7 @@ export default function AdminInventory() {
                 }
               />
             </AdminField>
+            <AdminField label="Wholesale price" hint="Leave blank to use the product wholesale price."><AdminInput type="number" min="0" step="0.01" value={variantForm.wholesale} onChange={(e) => setVariantForm((f) => ({ ...f, wholesale: e.target.value }))} /></AdminField>
             <AdminField
               label="Selling price"
               hint="Leave blank to use the product price."
@@ -1353,7 +1375,7 @@ export default function AdminInventory() {
                   }
                 />
               </AdminField>
-              <AdminField label="Buying price">
+              <AdminField label="Cost price">
                 <AdminInput
                   type="number"
                   min="0"

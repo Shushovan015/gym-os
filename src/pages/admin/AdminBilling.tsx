@@ -1,3 +1,5 @@
+import { customerTypeLabels, inventoryPrice, validBillNumber, type CustomerType } from "@src/features/billing/pricing";
+import { useBillEmail } from "@src/features/billing/useBillEmail";
 import { useCallback, useEffect, useState } from "react";
 import {
   Banknote,
@@ -124,6 +126,8 @@ export default function AdminBilling() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [billNumber, setBillNumber] = useState("");
+  const [productCustomerType, setProductCustomerType] = useState<CustomerType>("general");
   const [memberId, setMemberId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -156,6 +160,8 @@ export default function AdminBilling() {
   const [successInvoice, setSuccessInvoice] = useState<InvoiceRow | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
+
+  const billEmail = useBillEmail([...invoices, ...(detail ? [detail] : [])], settings.bill_sender_email, setMessage);
 
   const load = async () => {
     let invoiceQuery = supabase.from("invoices").select("*", { count: "exact" });
@@ -234,6 +240,8 @@ export default function AdminBilling() {
           setDueDate(today);
           setNotes("");
           setLines([]);
+          setBillNumber("");
+          setProductCustomerType("general");
           setDiscount("0");
           setPaymentAmount("0");
           setLineType("membership");
@@ -267,6 +275,8 @@ export default function AdminBilling() {
     setDueDate(today);
     setNotes("");
     setLines([]);
+    setBillNumber("");
+    setProductCustomerType("general");
     setDiscount("0");
     setPaymentAmount("0");
     setPaymentTouched(false);
@@ -332,11 +342,14 @@ export default function AdminBilling() {
       : null;
     if (variant && product) {
       const description = `${product.title}${variant.name !== "Default" ? ` — ${variant.name}` : ""}`;
-      const unitPriceMinor = variant.selling_price_minor ?? product.selling_price_minor;
-      setLines((current) => current.some((line)=>line.variantId===variant.id) ? current : [...current, { key: makeKey(), itemType: "product", productId: product.id, variantId: variant.id, description, quantity: 1, unitPriceMinor, discountMinor: 0 }]);
+      let unitPriceMinor: number;
+      try { unitPriceMinor = inventoryPrice(product, variant, productCustomerType); }
+      catch (error) { setCreateError(error instanceof Error ? error.message : "Invalid product price."); return; }
+      setLines((current) => current.some((line)=>line.variantId===variant.id && line.customerType===productCustomerType) ? current : [...current, { key: makeKey(), itemType: "product", productId: product.id, variantId: variant.id, description, customerType: productCustomerType, quantity: 1, unitPriceMinor, discountMinor: 0 }]);
     }
   };
   const createInvoice = async () => {
+    if (!validBillNumber(billNumber)) { setCreateError("Bill number must be 1-64 letters, numbers, hyphens, underscores or slashes."); return; }
     setCreateError("");
     if (customerMode === "member" && !memberId) {
       setCreateError("Select a gym member from the search results before creating the bill.");
@@ -378,6 +391,7 @@ export default function AdminBilling() {
       const invoiceRes = await supabase
       .from("invoices")
       .insert({
+        invoice_number: billNumber.trim() || null,
         member_ref: memberId ? Number(memberId) : null,
         customer_name: customerName.trim(),
         customer_phone: customerPhone.trim() || null,
@@ -394,13 +408,14 @@ export default function AdminBilling() {
       .select("id")
       .single();
       if (invoiceRes.error) {
-        setCreateError(friendlyAdminError(invoiceRes.error.message));
+        setCreateError(invoiceRes.error.code === "23505" ? "This bill number is already used. Enter another number or leave it blank for automatic numbering." : friendlyAdminError(invoiceRes.error.message));
         return;
       }
       const invoiceId = Number(invoiceRes.data.id);
       const itemPayload = billLines.map((line, index) => ({
       invoice_id: invoiceId,
       item_type: line.itemType,
+      customer_type: line.itemType === "product" ? (line.customerType ?? "general") : null,
       product_id: line.productId,
       variant_id: line.variantId,
       description: line.description,
@@ -670,6 +685,7 @@ export default function AdminBilling() {
                   >
                     View Bill
                   </AdminButton>
+                  {billEmail.button(invoice)}
                 </div>
               </AdminCard>
             ))}
@@ -729,6 +745,7 @@ export default function AdminBilling() {
                         >
                           View
                         </AdminButton>
+                        {billEmail.button(invoice)}
                       </td>
                     </tr>
                   ))}
@@ -786,6 +803,7 @@ export default function AdminBilling() {
         }
       >
         <div className="space-y-6">
+          <AdminField label="Bill Number" hint="Optional. Leave blank for automatic numbering. Each number must be unique."><AdminInput value={billNumber} maxLength={64} onChange={(e) => setBillNumber(e.target.value)} placeholder="Automatic" /></AdminField>
           <section>
             <h3 className="text-sm font-black text-white">Customer</h3>
             <div className="mt-3 grid grid-cols-2 gap-3">
@@ -885,6 +903,7 @@ export default function AdminBilling() {
             <div className="space-y-4">
               {lineType === "product" ? (
                 <div>
+                  <AdminField label="Customer type" hint="Applies to products you add next. Existing lines keep their saved price; remove and re-add a line to change its type."><AdminSelect value={productCustomerType} onChange={(e) => setProductCustomerType(e.target.value as CustomerType)} options={Object.entries(customerTypeLabels).map(([value, label]) => ({ value, label }))} /></AdminField>
                   <AdminField label="Search products">
                     <AdminInput
                       placeholder="Search protein, shirt, creatine..."
@@ -928,9 +947,7 @@ export default function AdminBilling() {
                             <div className="mt-1 flex justify-between text-xs text-slate-400">
                               <span>
                                 {formatMoney(
-                                  variant.selling_price_minor ??
-                                    product?.selling_price_minor ??
-                                    0,
+                                  (productCustomerType === "wholesale" ? variant.wholesale_price_minor ?? product?.wholesale_price_minor : variant.selling_price_minor ?? product?.selling_price_minor) ?? 0,
                                   settings.currency_code,
                                 )}
                               </span>
@@ -1006,6 +1023,7 @@ export default function AdminBilling() {
                 >
                   <div>
                     <b className="text-white">{line.description}</b>
+                    <div className="text-xs text-slate-400">{customerTypeLabels[line.customerType ?? "general"]} - {formatMoney(line.unitPriceMinor, settings.currency_code)} each</div>
                     <div className="mt-2 flex items-center gap-2">
                       <AdminButton
                         className="h-9 min-h-9 w-9 p-0"
@@ -1165,6 +1183,7 @@ export default function AdminBilling() {
                 <Printer className="h-4 w-4" />
                 Print bill
               </AdminButton>
+              {billEmail.button(detail)}
               {detail.invoice_status === "issued" &&
               detail.balance_minor > 0 ? (
                 <AdminButton
@@ -1252,7 +1271,7 @@ export default function AdminBilling() {
                     <td className="py-3">
                       {item.description}
                       <div className="text-xs text-slate-500">
-                        {item.item_type.replaceAll("_", " ")}
+                        {item.item_type === "product" ? customerTypeLabels[item.customer_type ?? "general"] : item.item_type.replaceAll("_", " ")}
                       </div>
                     </td>
                     <td>{item.quantity}</td>
@@ -1329,6 +1348,7 @@ export default function AdminBilling() {
           </div>
         ) : null}
       </AdminDrawer>
+      {billEmail.dialog}
       <AdminDialog
         open={paymentOpen}
         title="Record payment"

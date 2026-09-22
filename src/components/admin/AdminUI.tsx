@@ -22,6 +22,10 @@ const toneClasses: Record<Tone, string> = {
   muted: "border-slate-700 bg-slate-800/70 text-slate-300",
 };
 
+// A Send Bill confirmation can open over the invoice drawer.
+const openModalTokens: symbol[] = [];
+let originalBodyOverflow = "";
+
 function useAdminModal(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
@@ -31,12 +35,24 @@ function useAdminModal(open: boolean, onClose: () => void) {
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const oldOverflow = document.body.style.overflow;
+    const token = Symbol("admin-modal");
+    if (!openModalTokens.length) originalBodyOverflow = document.body.style.overflow;
+    openModalTokens.push(token);
     document.body.style.overflow = "hidden";
     const timer = window.setTimeout(() => panelRef.current?.querySelector<HTMLElement>("[autofocus], input, select, textarea, button")?.focus(), 0);
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") closeRef.current(); };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && openModalTokens.at(-1) === token) closeRef.current();
+    };
     document.addEventListener("keydown", onKeyDown);
-    return () => { window.clearTimeout(timer); document.removeEventListener("keydown", onKeyDown); document.body.style.overflow = oldOverflow; previous?.focus(); };
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("keydown", onKeyDown);
+      const wasTopmost = openModalTokens.at(-1) === token;
+      const index = openModalTokens.indexOf(token);
+      if (index !== -1) openModalTokens.splice(index, 1);
+      if (!openModalTokens.length) document.body.style.overflow = originalBodyOverflow;
+      if (wasTopmost && previous?.isConnected) previous.focus();
+    };
   }, [open]);
   return panelRef;
 }

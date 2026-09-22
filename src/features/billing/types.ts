@@ -14,6 +14,7 @@ export type InvoiceRow = {
 };
 
 export type InvoiceItemRow = {
+  customer_type: import("./pricing").CustomerType | null;
   id: number; invoice_id: number; item_type: InvoiceItemType; product_id: number | null;
   variant_id: number | null; description: string; quantity: number; unit_price_minor: number;
   discount_minor: number; tax_minor: number; line_total_minor: number;
@@ -27,6 +28,7 @@ export type InvoicePaymentRow = {
 };
 
 export type DraftLine = {
+  customerType?: import("./pricing").CustomerType;
   key: string; itemType: InvoiceItemType; productId: number | null; variantId: number | null;
   description: string; quantity: number; unitPriceMinor: number; discountMinor: number;
   membershipPeriodStart?: string; membershipPeriodEnd?: string;

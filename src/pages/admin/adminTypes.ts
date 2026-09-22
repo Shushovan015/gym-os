@@ -122,6 +122,7 @@ export type AdminSettings = {
   date_display_preference: DateDisplayPreference;
   attendance_holiday_lock: boolean;
   invoice_prefix: string;
+  bill_sender_email: string | null;
   currency_code: string;
   currency_minor_unit: number;
   tax_enabled: boolean;
