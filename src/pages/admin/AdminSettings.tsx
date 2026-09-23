@@ -44,7 +44,7 @@ function validateSettings(form: AdminSettingsType) {
 if (!/^[A-Z0-9-]{1,12}$/.test(form.invoice_prefix)) errors.invoice_prefix = "Use 1-12 uppercase letters, numbers or hyphens.";
   if (!/^[A-Z]{3}$/.test(form.currency_code)) errors.currency_code = "Use a three-letter currency code.";
   if (form.tax_rate_basis_points < 0 || form.tax_rate_basis_points > 10000) errors.tax_rate_basis_points = "Tax rate must be between 0% and 100%.";
-  if (!Number.isSafeInteger(form.invoice_start_number) || form.invoice_start_number < 1) errors.invoice_start_number = "Enter a positive whole number.";
+  if (!Number.isSafeInteger(form.invoice_start_number) || form.invoice_start_number < 1 || form.invoice_start_number >= Number.MAX_SAFE_INTEGER) errors.invoice_start_number = "Enter a positive whole number.";
   if (form.bill_sender_email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(form.bill_sender_email.trim())) errors.bill_sender_email = "Enter a valid Gmail or Google Workspace email address.";
   return errors;
 }
@@ -226,7 +226,6 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
           <AdminCard>
             <AdminSectionTitle title="Billing and inventory" description="Currency, tax, invoice numbering and stock safeguards." />
 <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <AdminField label="Starting invoice number" error={errors.invoice_start_number} hint="Set before issuing the first bill after this update. Cannot move backwards or change after numbering starts. Existing bills keep their numbers."><AdminInput type="number" min={1} step={1} value={form.invoice_start_number} onChange={(event) => update("invoice_start_number", Number(event.target.value))} /></AdminField>
               <AdminField label="Bill sender email" error={errors.bill_sender_email} hint="Your Gmail / Google Workspace address. Must match the server's GMAIL_USER. The App Password belongs only in the server environment file."><AdminInput type="email" value={form.bill_sender_email ?? ""} onChange={(event) => update("bill_sender_email", event.target.value)} placeholder="yourgym@gmail.com" /></AdminField>
               <AdminField label="Invoice prefix" error={errors.invoice_prefix}><AdminInput value={form.invoice_prefix} onChange={(event) => update("invoice_prefix", event.target.value.toUpperCase())} /></AdminField>
               <AdminField label="Currency code" error={errors.currency_code}><AdminInput maxLength={3} value={form.currency_code} onChange={(event) => update("currency_code", event.target.value.toUpperCase())} /></AdminField>
@@ -234,6 +233,7 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
               <AdminField label="Tax label"><AdminInput value={form.tax_label} onChange={(event) => update("tax_label", event.target.value)} /></AdminField>
               <AdminField label="Tax rate (%)" error={errors.tax_rate_basis_points}><AdminInput type="number" min={0} max={100} step="0.01" value={form.tax_rate_basis_points / 100} onChange={(event) => update("tax_rate_basis_points", Math.round(Number(event.target.value) * 100))} /></AdminField>
               <AdminField label="PAN / VAT number"><AdminInput value={form.pan_vat_number ?? ""} onChange={(event) => update("pan_vat_number", event.target.value)} /></AdminField>
+              <AdminField label="Bill Number" error={errors.invoice_start_number} hint="Next bill number to use. Set 1120 to make the next bill 1120. Cannot be set lower than already issued bills."><AdminInput type="number" min={1} max={Number.MAX_SAFE_INTEGER - 1} step={1} value={form.invoice_start_number} onChange={(event) => update("invoice_start_number", Number(event.target.value))} /></AdminField>
               <AdminField label="Receipt footer"><AdminTextarea value={form.receipt_footer} onChange={(event) => update("receipt_footer", event.target.value)} /></AdminField>
               <AdminField label="Negative inventory"><AdminSelect options={[{value:"false",label:"Prevent negative stock"},{value:"true",label:"Allow negative stock"}]} value={String(form.allow_negative_stock)} onChange={(event) => update("allow_negative_stock", event.target.value === "true")} /></AdminField>
             </div>

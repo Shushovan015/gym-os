@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.97.0";
 import { classifySmtpError, type SendMail } from "./gmail.ts";
-import { renderBill, validEmail } from "./template.ts";
+import { renderBill, validEmail, generateBillPDF } from "./template.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -53,6 +53,7 @@ export function createBillHandler(db: SupabaseClient, gmailUser: string, sendMai
       }
       if (!itemsResult.data?.length) return json({ error: "This bill has no items." }, 422);
       const { html, text } = renderBill(bill, itemsResult.data, settings, member.full_name);
+      const pdfBytes = await generateBillPDF(bill, itemsResult.data, settings, member.full_name);
       const { data: claim, error: claimError } = await db.rpc("claim_gmail_bill", {
         p_invoice_id: id, p_recipient: recipient, p_sender: gmailUser, p_admin_id: auth.user.id,
       });
@@ -73,9 +74,9 @@ export function createBillHandler(db: SupabaseClient, gmailUser: string, sendMai
           subject: `Invoice ${String(bill.invoice_number).replace(/[\r\n]/g, " ")} - ${String(settings.gym_name).replace(/[\r\n]/g, " ")}`,
           html, text,
           messageId: `<gym-bill-${claim.attempt_id}@${gmailUser.split("@")[1]}>`,
-          // The app stores no bill PDF. Send its escaped, self-contained printable
-          // invoice as HTML rather than exposing a public link to member records.
-          attachments: [{ filename: `invoice-${String(bill.invoice_number).replace(/[^a-zA-Z0-9-]/g, "_")}.html`, content: html, contentType: "text/html; charset=utf-8" }],
+          attachments: [
+            { filename: `invoice-${String(bill.invoice_number).replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`, content: pdfBytes, contentType: "application/pdf" },
+            { filename: `invoice-${String(bill.invoice_number).replace(/[^a-zA-Z0-9-]/g, "_")}.html`, content: html, contentType: "text/html; charset=utf-8" }],
         });
       } catch (error) {
         const failure = classifySmtpError(error);

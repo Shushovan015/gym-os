@@ -1,4 +1,5 @@
-import { customerTypeLabels, inventoryPrice, validBillNumber, type CustomerType } from "@src/features/billing/pricing";
+import { useNextBillNumber } from "@src/features/billing/useNextBillNumber";
+import { customerTypeLabels, inventoryPrice, type CustomerType } from "@src/features/billing/pricing";
 import { useBillEmail } from "@src/features/billing/useBillEmail";
 import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
 import { useLatestRequest } from "@src/hooks/useLatestRequest";
@@ -130,7 +131,7 @@ export default function AdminBilling() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
-  const [billNumber, setBillNumber] = useState("");
+  const billNumber = useNextBillNumber(createOpen);
   const [productCustomerType, setProductCustomerType] = useState<CustomerType>("general");
   const [memberId, setMemberId] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -161,7 +162,7 @@ export default function AdminBilling() {
   );
   const [productSearch, setProductSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
-const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
+  const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
   const [productResultsFor, setProductResultsFor] = useState<string | null>(null);
   const [successInvoice, setSuccessInvoice] = useState<InvoiceRow | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -240,7 +241,7 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
       setProductResultsFor(productSearch);
     }, 350);
     return () => { alive = false; window.clearTimeout(timeout); };
-  }, [createOpen, lineType, productSearch]);
+  }, [createOpen, lineType, productSearch, productCustomerType]);
   useEffect(() => {
     const state = location.state as LocationState | null;
     if (!loading && state?.memberId) {
@@ -256,7 +257,6 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
           setDueDate(today);
           setNotes("");
           setLines([]);
-          setBillNumber("");
           setProductCustomerType("general");
           setDiscount("0");
           setPaymentAmount("0");
@@ -275,7 +275,16 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
   const pageCount = Math.max(1, Math.ceil(invoiceCount / pageSize));
   const pageInvoices = invoices;
   const automaticPrice = majorToMinor(linePrice, settings.currency_minor_unit);
-  const billLines = lineType === "product" ? lines : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
+  const currentLines = lineType === "product" ? lines.map(line => {
+    if (!line.variantId) return line;
+    const variant = variants.find(v => v.id === line.variantId);
+    const product = products.find(p => p.id === line.productId);
+    const currentPrice = productCustomerType === "wholesale"
+      ? variant?.wholesale_price_minor ?? product?.wholesale_price_minor ?? line.unitPriceMinor
+      : variant?.selling_price_minor ?? product?.selling_price_minor ?? line.unitPriceMinor;
+    return { ...line, unitPriceMinor: currentPrice };
+  }) : [];
+  const billLines = lineType === "product" ? currentLines : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
   const totals = calculateInvoiceTotals(
     billLines,
     majorToMinor(discount, settings.currency_minor_unit) ?? 0,
@@ -291,7 +300,6 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
     setDueDate(today);
     setNotes("");
     setLines([]);
-    setBillNumber("");
     setProductCustomerType("general");
     setDiscount("0");
     setPaymentAmount("0");
@@ -361,11 +369,12 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
       let unitPriceMinor: number;
       try { unitPriceMinor = inventoryPrice(product, variant, productCustomerType); }
       catch (error) { setCreateError(error instanceof Error ? error.message : "Invalid product price."); return; }
-      setLines((current) => current.some((line)=>line.variantId===variant.id && line.customerType===productCustomerType) ? current : [...current, { key: makeKey(), itemType: "product", productId: product.id, variantId: variant.id, description, customerType: productCustomerType, quantity: 1, unitPriceMinor, discountMinor: 0 }]);
+      setLines((current) => current.some((line) => line.variantId === variant.id && line.customerType === productCustomerType) ? current : [...current, { key: makeKey(), itemType: "product", productId: product.id, variantId: variant.id, description, customerType: productCustomerType, quantity: 1, unitPriceMinor, discountMinor: 0 }]);
     }
   };
   const createInvoice = async () => {
-    if (!validBillNumber(billNumber)) { setCreateError("Bill number must be 1-64 letters, numbers, hyphens, underscores or slashes."); return; }
+    if (saving) return;
+    if (!billNumber.ready) { setCreateError(billNumber.error || "Bill number is not ready. Please wait and try again."); return; }
     setCreateError("");
     if (customerMode === "member" && !memberId) {
       setCreateError("Select a gym member from the search results before creating the bill.");
@@ -405,69 +414,69 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
     setSaving(true);
     try {
       const invoiceRes = await supabase
-      .from("invoices")
-      .insert({
-        invoice_number: billNumber.trim() || null,
-        member_ref: memberId ? Number(memberId) : null,
-        customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim() || null,
-        customer_email: customerEmail.trim() || null,
-        billing_date: today,
-        due_date: dueDate || null,
-        currency_code: settings.currency_code,
-        discount_minor: totals.discountMinor,
-        tax_enabled: settings.tax_enabled,
-        tax_label: settings.tax_label,
-        tax_rate_basis_points: settings.tax_rate_basis_points,
-        notes: notes.trim() || null,
-      })
-      .select("id")
-      .single();
+        .from("invoices")
+        .insert({
+          invoice_number: billNumber.numberToSave,
+          member_ref: memberId ? Number(memberId) : null,
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim() || null,
+          customer_email: customerEmail.trim() || null,
+          billing_date: today,
+          due_date: dueDate || null,
+          currency_code: settings.currency_code,
+          discount_minor: totals.discountMinor,
+          tax_enabled: settings.tax_enabled,
+          tax_label: settings.tax_label,
+          tax_rate_basis_points: settings.tax_rate_basis_points,
+          notes: notes.trim() || null,
+        })
+        .select("id")
+        .single();
       if (invoiceRes.error) {
-        setCreateError(invoiceRes.error.code === "23505" ? "This bill number is already used. Enter another number or leave it blank for automatic numbering." : friendlyAdminError(invoiceRes.error.message));
+        setCreateError(invoiceRes.error.code === "23505" ? "This bill number is already used. Please refresh and try again." : friendlyAdminError(invoiceRes.error.message));
         return;
       }
       const invoiceId = Number(invoiceRes.data.id);
       const itemPayload = billLines.map((line, index) => ({
-      invoice_id: invoiceId,
-      item_type: line.itemType,
-      customer_type: line.itemType === "product" ? (line.customerType ?? "general") : null,
-      product_id: line.productId,
-      variant_id: line.variantId,
-      description: line.description,
-      quantity: line.quantity,
-      unit_price_minor: line.unitPriceMinor,
-      unit_cost_minor: line.variantId
-        ? (variants.find((variant) => variant.id === line.variantId)?.cost_price_minor
-          ?? products.find((product) => product.id === line.productId)?.cost_price_minor
-          ?? 0)
-        : null,
-      discount_minor: line.discountMinor,
-      tax_minor: index === billLines.length - 1 ? totals.taxMinor : 0,
-      line_total_minor:
-        Math.round(line.quantity * line.unitPriceMinor) -
-        line.discountMinor +
-        (index === billLines.length - 1 ? totals.taxMinor : 0),
-      sort_order: index,
-    }));
+        invoice_id: invoiceId,
+        item_type: line.itemType,
+        customer_type: line.itemType === "product" ? (line.customerType ?? "general") : null,
+        product_id: line.productId,
+        variant_id: line.variantId,
+        description: line.description,
+        quantity: line.quantity,
+        unit_price_minor: line.unitPriceMinor,
+        unit_cost_minor: line.variantId
+          ? (variants.find((variant) => variant.id === line.variantId)?.cost_price_minor
+            ?? products.find((product) => product.id === line.productId)?.cost_price_minor
+            ?? 0)
+          : null,
+        discount_minor: line.discountMinor,
+        tax_minor: index === billLines.length - 1 ? totals.taxMinor : 0,
+        line_total_minor:
+          Math.round(line.quantity * line.unitPriceMinor) -
+          line.discountMinor +
+          (index === billLines.length - 1 ? totals.taxMinor : 0),
+        sort_order: index,
+      }));
       const itemsRes = await supabase.from("invoice_items").insert(itemPayload);
       if (itemsRes.error) {
         setCreateError(`The draft was created, but its items could not be saved: ${friendlyAdminError(itemsRes.error.message)} Please cancel it from the bill list and try again.`);
         return;
       }
       const finalRes = await supabase.rpc("finalize_invoice", {
-      p_invoice_id: invoiceId,
-      p_payment_amount_minor: initialPayment,
-      p_payment_method: paymentMethod,
-      p_payment_reference: null,
-    });
+        p_invoice_id: invoiceId,
+        p_payment_amount_minor: initialPayment,
+        p_payment_method: paymentMethod,
+        p_payment_reference: null,
+      });
       if (finalRes.error) {
         setCreateError(
-        friendlyAdminError(
-          finalRes.error.message,
-          lineDescription || "product",
-        ),
-      );
+          friendlyAdminError(
+            finalRes.error.message,
+            lineDescription || "product",
+          ),
+        );
         await load();
         return;
       }
@@ -475,7 +484,7 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
       setMessage("Invoice issued successfully.");
       await load();
       const created = (
-      Array.isArray(finalRes.data) ? finalRes.data[0] : finalRes.data
+        Array.isArray(finalRes.data) ? finalRes.data[0] : finalRes.data
       ) as InvoiceRow | undefined;
       if (created) {
         setSuccessInvoice(created);
@@ -508,8 +517,8 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
     if (items.error || payments.error)
       setMessage(
         items.error?.message ??
-          payments.error?.message ??
-          "Invoice detail failed.",
+        payments.error?.message ??
+        "Invoice detail failed.",
       );
     setDetailItems((items.data ?? []) as InvoiceItemRow[]);
     setDetailPayments((payments.data ?? []) as InvoicePaymentRow[]);
@@ -585,8 +594,8 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
         <AdminNotice
           tone={
             message.includes("success") ||
-            message.includes("recorded") ||
-            message.includes("cancelled")
+              message.includes("recorded") ||
+              message.includes("cancelled")
               ? "success"
               : "danger"
           }
@@ -695,7 +704,7 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
                   <b className="text-xl text-white">
                     {formatMoney(invoice.total_minor, invoice.currency_code)}
                   </b>
-<AdminButton
+                  <AdminButton
                     variant="secondary"
                     onClick={() => void showDetail(invoice)}
                   >
@@ -754,7 +763,7 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
                           {invoice.invoice_status}
                         </AdminBadge>
                       </td>
-<td className="px-4 py-4">
+                      <td className="px-4 py-4">
                         <AdminButton
                           variant="secondary"
                           onClick={() => void showDetail(invoice)}
@@ -810,7 +819,7 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
               </b>
               <div className="flex gap-2">
                 <AdminButton variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</AdminButton>
-                <AdminButton variant="primary" disabled={saving} onClick={() => void createInvoice()}>
+                <AdminButton variant="primary" disabled={saving || !billNumber.ready} onClick={() => void createInvoice()}>
                   {saving ? "Completing..." : "Create Bill"}
                 </AdminButton>
               </div>
@@ -819,7 +828,16 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
         }
       >
         <div className="space-y-6">
-          <AdminField label="Bill Number" hint="Optional. Leave blank for automatic numbering. Each number must be unique."><AdminInput value={billNumber} maxLength={64} onChange={(e) => setBillNumber(e.target.value)} placeholder="Automatic" /></AdminField>
+          <AdminField label="Bill Number" error={billNumber.error} hint="Auto-generated from settings. This is the next bill number to be used.">
+            <AdminInput
+              className="min-w-0 flex-1"
+              inputMode="numeric"
+              maxLength={16}
+              disabled
+              value={billNumber.value}
+              placeholder={billNumber.loading ? "Loading next number..." : "Bill number"}
+            />
+          </AdminField>
           <section>
             <h3 className="text-sm font-black text-white">Customer</h3>
             <div className="mt-3 grid grid-cols-2 gap-3">
@@ -932,15 +950,18 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
                   <div className="mt-3 grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
                     {(productResultsFor === productSearch ? variants : [])
                       .map((variant) => {
-                        const product = products.find(
-                          (item) => item.id === variant.product_id,
-                        );
+                        const product = products.find((item) => item.id === variant.product_id);
+                        console.log('variant:', variant.id, 'wholesale:', variant.wholesale_price_minor, 'selling:', variant.selling_price_minor, 'product wholesale:', product?.wholesale_price_minor, 'product selling:', product?.selling_price_minor, 'type:', productCustomerType);
+                        const price = productCustomerType === "wholesale"
+                          ? variant.wholesale_price_minor ?? product?.wholesale_price_minor
+                          : variant.selling_price_minor ?? product?.selling_price_minor;
+                        console.log('computed price:', price, 'key:', `${variant.id}-${productCustomerType}`);
                         const selected = lineVariant === String(variant.id);
                         return (
                           <button
+                            key={`${variant.id}-${productCustomerType}`}
                             type="button"
                             disabled={variant.current_quantity <= 0}
-                            key={variant.id}
                             onClick={() => selectVariant(String(variant.id))}
                             className={`rounded-lg border p-3 text-left ${selected ? "border-amber-400 bg-amber-400/10" : "border-slate-800 bg-slate-950"} disabled:opacity-45`}
                           >
@@ -952,10 +973,7 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
                             </b>
                             <div className="mt-1 flex justify-between text-xs text-slate-400">
                               <span>
-                                {formatMoney(
-                                  (productCustomerType === "wholesale" ? variant.wholesale_price_minor ?? product?.wholesale_price_minor : variant.selling_price_minor ?? product?.selling_price_minor) ?? 0,
-                                  settings.currency_code,
-                                )}
+                                {formatMoney(price ?? 0, settings.currency_code)}
                               </span>
                               <span>
                                 {variant.current_quantity > 0
@@ -971,27 +989,27 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
               ) : lineType === "membership" || lineType === "personal_training" ? (
                 <div className="space-y-3">
                   <div className="grid gap-3 md:grid-cols-2">
-                  <AdminField
-                    label={lineType === "membership" ? "Membership plan" : "Training plan"}
-                    hint={lineType === "membership" ? "Selecting a plan fills its current price automatically." : undefined}
-                  >
-                    <AdminSelect
-                      value={selectedPlanId}
-                      onChange={(event) => {
-                        const plan = (lineType === "membership" ? membershipPlans : trainingPlans).find((item) => item.id === Number(event.target.value));
-                        setSelectedPlanId(event.target.value);
-                        setLineDescription(plan?.title ?? "");
-                        setLinePrice(plan ? displayPriceToInput(plan.price) : "");
-                      }}
-                      options={[
-                        { value: "", label: "Choose a plan" },
-                        ...(lineType === "membership" ? membershipPlans : trainingPlans).map((plan) => ({ value: String(plan.id), label: `${plan.title} — ${plan.price}` })),
-                      ]}
-                    />
-                  </AdminField>
-                  <AdminField label={`Amount (${settings.currency_code})`}>
-                    <AdminInput type="number" min="0" step="0.01" value={linePrice} onChange={(event) => setLinePrice(event.target.value)} />
-                  </AdminField>
+                    <AdminField
+                      label={lineType === "membership" ? "Membership plan" : "Training plan"}
+                      hint={lineType === "membership" ? "Selecting a plan fills its current price automatically." : undefined}
+                    >
+                      <AdminSelect
+                        value={selectedPlanId}
+                        onChange={(event) => {
+                          const plan = (lineType === "membership" ? membershipPlans : trainingPlans).find((item) => item.id === Number(event.target.value));
+                          setSelectedPlanId(event.target.value);
+                          setLineDescription(plan?.title ?? "");
+                          setLinePrice(plan ? displayPriceToInput(plan.price) : "");
+                        }}
+                        options={[
+                          { value: "", label: "Choose a plan" },
+                          ...(lineType === "membership" ? membershipPlans : trainingPlans).map((plan) => ({ value: String(plan.id), label: `${plan.title} — ${plan.price}` })),
+                        ]}
+                      />
+                    </AdminField>
+                    <AdminField label={`Amount (${settings.currency_code})`}>
+                      <AdminInput type="number" min="0" step="0.01" value={linePrice} onChange={(event) => setLinePrice(event.target.value)} />
+                    </AdminField>
                   </div>
                   {lineType === "membership" ? (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
@@ -1029,7 +1047,14 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
                 >
                   <div>
                     <b className="text-white">{line.description}</b>
-                    <div className="text-xs text-slate-400">{customerTypeLabels[line.customerType ?? "general"]} - {formatMoney(line.unitPriceMinor, settings.currency_code)} each</div>
+                    <div className="text-xs text-slate-400">{customerTypeLabels[line.customerType ?? "general"]} - {formatMoney(
+                      line.variantId && line.customerType === productCustomerType
+                        ? line.unitPriceMinor
+                        : line.variantId
+                          ? (productCustomerType === "wholesale"
+                            ? (variants.find(v => v.id === line.variantId)?.wholesale_price_minor ?? products.find(p => p.id === line.productId)?.wholesale_price_minor ?? line.unitPriceMinor)
+                            : (variants.find(v => v.id === line.variantId)?.selling_price_minor ?? products.find(p => p.id === line.productId)?.selling_price_minor ?? line.unitPriceMinor))
+                          : line.unitPriceMinor, settings.currency_code)} each</div>
                     <div className="mt-2 flex items-center gap-2">
                       <AdminButton
                         className="h-9 min-h-9 w-9 p-0"
@@ -1069,7 +1094,13 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
                       <span className="text-xs text-slate-500">
                         ×{" "}
                         {formatMoney(
-                          line.unitPriceMinor,
+                          line.variantId && line.customerType === productCustomerType
+                            ? line.unitPriceMinor
+                            : line.variantId
+                              ? (productCustomerType === "wholesale"
+                                ? (variants.find(v => v.id === line.variantId)?.wholesale_price_minor ?? products.find(p => p.id === line.productId)?.wholesale_price_minor ?? line.unitPriceMinor)
+                                : (variants.find(v => v.id === line.variantId)?.selling_price_minor ?? products.find(p => p.id === line.productId)?.selling_price_minor ?? line.unitPriceMinor))
+                              : line.unitPriceMinor,
                           settings.currency_code,
                         )}
                       </span>
@@ -1078,7 +1109,15 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
                   <div className="flex items-center gap-3">
                     <b>
                       {formatMoney(
-                        Math.round(line.quantity * line.unitPriceMinor),
+                        Math.round(line.quantity * (
+                          line.variantId && line.customerType === productCustomerType
+                            ? line.unitPriceMinor
+                            : line.variantId
+                              ? (productCustomerType === "wholesale"
+                                ? (variants.find(v => v.id === line.variantId)?.wholesale_price_minor ?? products.find(p => p.id === line.productId)?.wholesale_price_minor ?? line.unitPriceMinor)
+                                : (variants.find(v => v.id === line.variantId)?.selling_price_minor ?? products.find(p => p.id === line.productId)?.selling_price_minor ?? line.unitPriceMinor))
+                              : line.unitPriceMinor
+                        )),
                         settings.currency_code,
                       )}
                     </b>
@@ -1185,13 +1224,13 @@ const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
         footer={
           detail ? (
             <div className="flex flex-wrap justify-end gap-2">
-<AdminButton variant="secondary" onClick={() => window.print()}>
+              <AdminButton variant="secondary" onClick={() => window.print()}>
                 <Printer className="h-4 w-4" />
                 Print bill
               </AdminButton>
               {billEmail.button(detail)}
               {detail.invoice_status === "issued" &&
-              detail.balance_minor > 0 ? (
+                detail.balance_minor > 0 ? (
                 <AdminButton
                   variant="primary"
                   onClick={() => setPaymentOpen(true)}

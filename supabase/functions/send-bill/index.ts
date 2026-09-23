@@ -6,20 +6,41 @@ import type { SendMail } from "./gmail.ts";
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+const isLocal = Deno.env.get("SUPABASE_LOCAL") === "true" || Deno.env.get("NODE_ENV") === "development";
 const gmailUser = Deno.env.get("GMAIL_USER")?.trim() ?? "";
 const password = Deno.env.get("GMAIL_APP_PASSWORD")?.replace(/\s/g, "") ?? "";
-const sendMail: SendMail | null = gmailUser && password ? async (message) => {
-  const transport = nodemailer.createTransport({
-    host: "smtp.gmail.com", port: 465, secure: true,
-    auth: { user: gmailUser, pass: password },
-    connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 30000,
-    tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
-    disableFileAccess: true, disableUrlAccess: true,
-  });
-  try {
-    const result = await transport.sendMail(message);
-    return { accepted: result.accepted ?? [], messageId: result.messageId };
-  } finally { transport.close(); }
-} : null;
+
+let sendMail: SendMail | null = null;
+
+if (isLocal) {
+  // Use Mailpit for local development (SMTP at host.docker.internal:1025)
+  sendMail = async (message) => {
+    const transport = nodemailer.createTransport({
+      host: "host.docker.internal", port: 1025, secure: false,
+      auth: undefined,
+      connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 20000,
+      ignoreTLS: true,
+    });
+    try {
+      const result = await transport.sendMail(message);
+      return { accepted: result.accepted ?? [], messageId: result.messageId };
+    } finally { transport.close(); }
+  };
+} else if (gmailUser && password) {
+  // Use Gmail for production
+  sendMail = async (message) => {
+    const transport = nodemailer.createTransport({
+      host: "smtp.gmail.com", port: 465, secure: true,
+      auth: { user: gmailUser, pass: password },
+      connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 30000,
+      tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
+      disableFileAccess: true, disableUrlAccess: true,
+    });
+    try {
+      const result = await transport.sendMail(message);
+      return { accepted: result.accepted ?? [], messageId: result.messageId };
+    } finally { transport.close(); }
+  };
+}
 
 Deno.serve(createBillHandler(db, gmailUser, sendMail));
