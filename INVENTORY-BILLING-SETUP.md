@@ -19,6 +19,8 @@
    already applied the feature branch's 20260922 migrations. The compatibility
    migration preserves Gmail delivery history and combines manual bill numbers
    with main's configurable starting number and permanent automatic sequence.
+   The editable numeric preview is added by
+   `202609230001_editable_bill_number.sql`; apply it before using Create Bill.
    Review any other pending migrations first. Never use `db:reset` on the real
    gym database. This update has only been applied to a disposable test database,
    not your real gym database.
@@ -57,21 +59,33 @@ for sending email.
 
 ## Bill numbers
 
-- Optional Bill Number uses the existing `invoices.invoice_number` field, so the
+- Bill Number uses the existing `invoices.invoice_number` field, so the
   same value appears in the table, details, printout and emailed invoice.
-- Leave it blank to retain the existing prefix/year/sequence automatic format.
-  The automatic sequence now follows main's Starting invoice number setting and
-  continues across year/prefix changes. Issued or rolled-back automatic numbers
-  are not reused. Configure the starting number before automatic numbering begins.
-  Enter 1-64 letters, numbers, hyphens, underscores or slashes for a manual number.
-  Surrounding whitespace is trimmed. New duplicate numbers are rejected,
-  including case differences; legacy numbers are not rewritten.
-- Manual and automatic reservations share a database lock and the existing
-  unique constraint. Automatic generation skips numbers already reserved manually.
-  Custom manual numbers do not reset the automatic counter.
-- A manual number is reserved when its draft is saved. If later creation fails,
+- In Settings > Billing and inventory, **Bill Number** sits beside PAN / VAT.
+  It is the starting/last-used number: setting **1001** makes the first new bill
+  **1002**, followed by **1003**, **1004**, etc. Configure it before numbering
+  starts; it cannot move backwards or reset an already-used sequence.
+- Create Bill loads a visible, editable suggestion. Opening or cancelling the
+  form consumes no number. Use next number refreshes the suggestion.
+- New bill numbers are plain positive integers. Existing formatted/custom bill
+  numbers remain unchanged. The legacy prefix setting does not prefix new numbers.
+- You may edit the suggestion to a higher unused number. Saving **2000** makes
+  the next suggestion **2001**. Lower numbers and duplicates are rejected;
+  leading zeroes are normalized, so **002000** cannot duplicate **2000**.
+- Automatic and edited numbers share database locks and the existing unique
+  constraint. If another user saves first, an unchanged suggestion is allocated
+  again atomically; the saved bill shows the actual number. Explicit edits are
+  validated and never silently replaced.
+- A number is reserved when its draft is saved. If later creation fails,
   that draft retains the number; cancelling it does not free the number. Assigned
-  numbers cannot be edited, including on cancelled bills.
+  numbers cannot be edited, including on cancelled bills. Rolled-back allocations
+  are not reused, so gaps are possible after a failed save.
+
+The numeric update adds `src/features/billing/useNextBillNumber.ts` and its
+`.test.tsx` tests, the `202609230001_editable_bill_number.sql` migration, and
+`supabase/tests/editable_bill_number.sql`. It updates the existing billing and
+settings pages. No new environment variables or email changes are needed.
+The new SQL tests require a disposable database named `gym_bill_number_test_*`.
 
 ## Validation performed
 
