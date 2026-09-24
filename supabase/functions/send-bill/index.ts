@@ -6,7 +6,7 @@ import type { SendMail } from "./gmail.ts";
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const isLocal = Deno.env.get("SUPABASE_LOCAL") === "true" || Deno.env.get("NODE_ENV") === "development";
+const isLocal = Deno.env.get("SUPABASE_LOCAL") === "true" || Deno.env.get("NODE_ENV") === "development" || (Deno.env.get("SUPABASE_URL") ?? "").includes("127.0.0.1");
 const gmailUser = Deno.env.get("GMAIL_USER")?.trim() ?? "";
 const password = Deno.env.get("GMAIL_APP_PASSWORD")?.replace(/\s/g, "") ?? "";
 

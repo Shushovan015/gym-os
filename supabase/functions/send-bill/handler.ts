@@ -13,14 +13,18 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 export function createBillHandler(db: SupabaseClient, gmailUser: string, sendMail: SendMail | null) {
   return async (request: Request) => {
+    console.log("send-bill: start");
     if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
     try {
+      console.log("send-bill: parsing auth");
       const token = request.headers.get("Authorization")?.match(/^Bearer (.+)$/i)?.[1];
       if (!token) return json({ error: "Sign in to send a bill." }, 401);
       const { data: auth, error: authError } = await db.auth.getUser(token);
+      console.log("send-bill: auth result", { auth: !!auth, authError: authError?.message });
       if (authError || !auth.user) return json({ error: "Your session expired. Sign in again." }, 401);
       const { data: profile, error: profileError } = await db.from("profiles").select("role").eq("id", auth.user.id).single();
+      console.log("send-bill: profile result", { profile: profile?.role, profileError: profileError?.message });
       if (profileError || profile?.role !== "admin") return json({ error: "Admin access required." }, 403);
       let body: { invoice_id?: unknown; expected_email?: unknown };
       try { body = await request.json(); } catch { return json({ error: "Invalid request." }, 400); }
@@ -90,8 +94,8 @@ export function createBillHandler(db: SupabaseClient, gmailUser: string, sendMai
       }
       await finish("sent", sent.messageId, null);
       return json({ ok: true, recipient });
-    } catch {
-      // Never log SMTP credentials or the full email payload.
+    } catch (error) {
+      console.error("send-bill error:", error);
       return json({ status: "uncertain", error: "Could not confirm delivery. Check Gmail Sent and refresh the bill before retrying." }, 500);
     }
   };
