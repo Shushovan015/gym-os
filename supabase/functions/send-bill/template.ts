@@ -9,7 +9,7 @@ export type BillItem = { customer_type?: "general" | "wholesale" | null; descrip
 export type Gym = { gym_name: string; address: string; phone: string; email: string; pan_vat_number: string | null; receipt_footer: string; currency_minor_unit: number; bill_sender_email: string | null };
 // Accept one bare mailbox only, never SMTP address lists or display-name syntax.
 export const validEmail = (value: unknown): value is string => typeof value === "string" && value.length <= 254 && /^[^\s@<>,;:"\\()[\]]+@[^\s@<>,;:"\\()[\]]+\.[^\s@<>,;:"\\()[\]]+$/.test(value);
-export const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&", "<": "<", ">": ">", '"': '"', "'": "'" })[c]!);
+export const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 export function renderBill(bill: Bill, items: BillItem[], gym: Gym, memberName: string) {
   const e = escapeHtml;
@@ -25,7 +25,7 @@ export function renderBill(bill: Bill, items: BillItem[], gym: Gym, memberName: 
   ];
   const totals: Array<[string, number]> = [["Subtotal", bill.subtotal_minor], ["Discount", -bill.discount_minor], [bill.tax_label || "Tax", bill.tax_minor], ["Total", bill.total_minor], ["Paid", bill.paid_minor], ["Balance", bill.balance_minor]];
   const text = [...summary, "", ...items.map((i) => `${i.description}${customerType(i) ? " | " + customerType(i) : ""} | ${i.quantity} x ${money(i.unit_price_minor)} | ${money(i.line_total_minor)}`), "", ...totals.map(([label, value]) => `${label}: ${money(value)}`), bill.notes ?? "", gym.receipt_footer].filter(Boolean).join("\n");
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>Invoice ${e(bill.invoice_number)}</title><style>body{font:14px Arial,sans-serif;color:#172033;max-width:800px;margin:24px auto;padding:16px;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}.totals{margin:20px 0 20px auto;max-width:340px}@media print{body{margin:0}tr{break-inside:avoid}}</style></head><body>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale-1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>Invoice ${e(bill.invoice_number)}</title><style>body{font:14px Arial,sans-serif;color:#172033;max-width:800px;margin:24px auto;padding:16px;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}.totals{margin:20px 0 20px auto;max-width:340px}@media print{body{margin:0}tr{break-inside:avoid}}</style></head><body>
     <h1>${e(gym.gym_name)}</h1><p>${e(gym.address)}<br>${e(gym.phone)} | ${e(gym.email)}${gym.pan_vat_number ? `<br>PAN/VAT: ${e(gym.pan_vat_number)}` : ""}</p>
     <h2>Invoice ${e(bill.invoice_number)}</h2><p>${summary.slice(5).map(e).join("<br>")}</p>
     <table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead><tbody>${items.map((i) => `<tr><td>${e(i.description)}${customerType(i) ? "<br>" + e(customerType(i)) : ""}${i.membership_period_start ? `<br>${e(i.membership_period_start)} to ${e(i.membership_period_end)}` : ""}</td><td>${e(i.quantity)}</td><td>${e(money(i.unit_price_minor))}</td><td>${e(money(i.line_total_minor))}</td></tr>`).join("")}</tbody></table>
@@ -38,7 +38,7 @@ export async function generateBillPDF(bill: Bill, items: BillItem[], gym: Gym, m
   const PDFDocument = (await import("pdfkit")).default;
   const doc = new PDFDocument({ margin: 50, size: "A4" });
   const chunks: Uint8Array[] = [];
-  for await (const chunk of doc) chunks.push(chunk);
+
   const customerType = (item: BillItem) => item.customer_type === "wholesale" ? "Wholesale Customer" : item.customer_type === "general" ? "General Member / Customer" : "";
   const precision = Number(gym.currency_minor_unit);
   const money = (minor: number) => `${bill.currency_code} ${(minor / 10 ** precision).toFixed(precision)}`;
@@ -116,6 +116,18 @@ export async function generateBillPDF(bill: Bill, items: BillItem[], gym: Gym, m
   doc.moveDown(1.5);
   doc.font("Helvetica-Oblique").fontSize(9).text(gym.receipt_footer, { align: "center" });
 
-  doc.end();
-  return Buffer.concat(chunks);
+  await new Promise<void>((resolve, reject) => {
+    doc.on("data", (chunk: Uint8Array) => chunks.push(chunk));
+    doc.on("end", () => resolve());
+    doc.on("error", reject);
+    doc.end();
+  });
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
 }
