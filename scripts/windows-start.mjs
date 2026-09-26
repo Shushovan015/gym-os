@@ -36,6 +36,9 @@ if (status.status !== 0) {
   if (runNpm(["run", "supabase:stop"]).status !== 0 || runNpm(["run", "supabase:start"]).status !== 0) fail("The complete local database stack could not start.");
 } else console.log("Local Supabase is already running.");
 
+  console.log("Deploying Edge Functions...");
+  if (runNpm(["run", "supabase:functions:deploy"]).status !== 0) fail("Edge Functions could not deploy.");
+
 if (!(await waitFor(edgeRuntimeIsHealthy, 30, 1000))) fail("The member report service did not start.");
 
 if (!existsSync(join(projectRoot, "dist", "index.html"))) {

@@ -15,6 +15,7 @@
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",
     "supabase:verify": "node scripts/verify-local.mjs",
+    "supabase:functions:deploy": "supabase functions deploy send-bill send-progress-report",
     "db:reset": "supabase db reset --local",
     "db:backup": "node scripts/local-db.mjs backup",
     "db:restore": "node scripts/local-db.mjs restore",
