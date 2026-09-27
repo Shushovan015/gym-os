@@ -19,14 +19,17 @@ import {
   AdminTableScroll,
   AdminTableShell,
 } from "@src/components/admin/AdminUI";
-import type { AdminSettings, AttendanceRow, HolidayRow, MemberRow } from "./adminTypes";
+import type { AdminSettings, AttendanceRow, HolidayRow, MemberRow, MemberMembershipFeeStatus } from "./adminTypes";
 import {
   BS_MONTHS,
   buildBsMonthDays,
   cx,
   defaultAdminSettings,
   formatDisplayDate,
+  formatBillingPeriod,
+  formatMembershipFeeAmount,
   getNepalTodayAdDate,
+  membershipFeeStatusTone,
   statusLabel,
 } from "./adminUtils";
 
@@ -66,6 +69,7 @@ export default function AdminAttendance() {
   const [activeCell, setActiveCell] = useState("");
   const [activeHolidayDate, setActiveHolidayDate] = useState("");
   const [profileMember, setProfileMember] = useState<MemberRow | null>(null);
+  const [memberFeeStatus, setMemberFeeStatus] = useState<MemberMembershipFeeStatus | null>(null);
   const [page, setPage] = useState(1);
   const [memberCount, setMemberCount] = useState(0);
   const pageSize = 10;
@@ -190,6 +194,24 @@ export default function AdminAttendance() {
     // settings changes only after its initial database load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchTerm, debouncedSearch, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]);
+
+  // Load membership fee status when profile member changes
+  useEffect(() => {
+    if (!profileMember) {
+      setMemberFeeStatus(null);
+      return;
+    }
+    let alive = true;
+    supabase.rpc("get_member_membership_fee_status", { p_member_id: profileMember.id }).then(({ data, error }) => {
+      if (!alive) return;
+      if (error) {
+        console.error("Failed to load membership fee status:", error.message);
+      } else {
+        setMemberFeeStatus(data as MemberMembershipFeeStatus);
+      }
+    });
+    return () => { alive = false; };
+  }, [profileMember]);
 
   const changeMonth = async (year: number, month: number) => {
     setMessage("");
@@ -603,8 +625,78 @@ export default function AdminAttendance() {
               <AdminSectionTitle title="Payment and notes" />
               <div className="mt-4 space-y-2 text-sm text-slate-300">
                 <div>Payment: <b>{statusLabel(profileMember.payment_status)}</b></div>
-                <div>Due: <b>{formatDisplayDate(profileMember.payment_due_date, settings.date_display_preference)}</b></div>
+                <div>Due: <b>{memberFeeStatus?.summary?.next_due_date ? formatDisplayDate(memberFeeStatus.summary.next_due_date, settings.date_display_preference) : formatDisplayDate(profileMember.payment_due_date, settings.date_display_preference)}</b></div>
                 <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">{profileMember.notes || "No notes."}</div>
+              </div>
+            </AdminCard>
+
+            <AdminCard>
+              <AdminSectionTitle title="Membership fee status" />
+              <div className="mt-4 space-y-4">
+                {memberFeeStatus ? (
+                  <>
+                    {memberFeeStatus.has_outstanding ? (
+                      <>
+                        <AdminNotice tone="warning" title="Outstanding membership fees">
+                          Total due: <b>{formatMembershipFeeAmount(memberFeeStatus.summary.total_due, memberFeeStatus.summary.currency_code)}</b>
+                          {memberFeeStatus.summary.overdue_count > 0 && (
+                            <span className="ml-3 text-amber-300"><b>{memberFeeStatus.summary.overdue_count}</b> overdue</span>
+                          )}
+                          {memberFeeStatus.summary.unpaid_count > 0 && (
+                            <span className="ml-3 text-slate-300"><b>{memberFeeStatus.summary.unpaid_count}</b> upcoming</span>
+                          )}
+                        </AdminNotice>
+                        {memberFeeStatus.outstanding_fees && memberFeeStatus.outstanding_fees.length > 0 && (
+                          <div className="space-y-2">
+                            {memberFeeStatus.outstanding_fees.map((fee) => (
+                              <div
+                                key={fee.id}
+                                className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div className="flex flex-col gap-1">
+                                  <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                  <div className="text-xs text-slate-400">
+                                    Due: {formatDisplayDate(fee.due_date, settings.date_display_preference)} | 
+                                    Amount: {formatMembershipFeeAmount(fee.amount_minor, fee.currency_code)} | 
+                                    Outstanding: <b>{formatMembershipFeeAmount(fee.amount_minor - fee.paid_amount_minor, fee.currency_code)}</b>
+                                  </div>
+                                </div>
+                                <AdminBadge tone={membershipFeeStatusTone(fee.status)}>{statusLabel(fee.status)}</AdminBadge>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <AdminNotice tone="success">
+                        No outstanding membership fees. All payments are up to date.
+                      </AdminNotice>
+                    )}
+                    {memberFeeStatus.paid_fees && memberFeeStatus.paid_fees.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-400 mb-2">Recent payment history</h4>
+                        <div className="space-y-2">
+                          {memberFeeStatus.paid_fees.slice(0, 6).map((fee) => (
+                            <div
+                              key={fee.id}
+                              className="flex flex-col gap-1 rounded-lg border border-slate-800 bg-slate-900/55 p-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <div className="flex flex-col gap-1">
+                                <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                <div className="text-xs text-slate-400">
+                                  Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0], settings.date_display_preference) : "Unknown date"}
+                                </div>
+                              </div>
+                              <AdminBadge tone="success">Paid</AdminBadge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <AdminLoading label="Loading membership fee status..." />
+                )}
               </div>
             </AdminCard>
           </div>

@@ -6,7 +6,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReceiptText,
   CheckCircle2,
-  FileText,
   Pencil,
   Plus,
   RotateCcw,
@@ -38,16 +37,15 @@ import {
 import type {
   AdminSettings,
   AttendanceRow,
-  GeneratedProgressReport,
-  MeasurementRow,
   MemberForm,
+  MemberMembershipFeeStatus,
   MemberReportLogRow,
   MemberRow,
+  MembershipFee,
+  MembershipFeeStatus,
   MembershipStatus,
   MembershipType,
   PaymentStatus,
-  SendProgressReportResponse,
-  TransformationRow,
 } from "./adminTypes";
 import { membershipStatuses, paymentStatuses } from "./adminTypes";
 import {
@@ -57,13 +55,15 @@ import {
   emptyMemberForm,
   formatDateTime,
   formatDisplayDate,
+  formatBillingPeriod,
+  formatMembershipFeeAmount,
   getMemberLifecycle,
   getNepalTodayAdDate,
   hasValidationErrors,
+  membershipFeeStatusTone,
   normalizePhone,
   statusLabel,
   toMemberPayload,
-  toNullableNumber,
   validateMemberForm,
 } from "./adminUtils";
 
@@ -290,30 +290,12 @@ export default function AdminMembers() {
   const [memberPhotoFile, setMemberPhotoFile] = useState<File | null>(null);
 
   const [detailMember, setDetailMember] = useState<MemberRow | null>(null);
-  const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
-  const [transformations, setTransformations] = useState<TransformationRow[]>([]);
-  const [reportLogs, setReportLogs] = useState<MemberReportLogRow[]>([]);
   const [memberAttendance, setMemberAttendance] = useState<AttendanceRow[]>([]);
+  const [memberFeeStatus, setMemberFeeStatus] = useState<MemberMembershipFeeStatus | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
-  const [generatedReport, setGeneratedReport] = useState<GeneratedProgressReport | null>(null);
-
-  const [measurementForm, setMeasurementForm] = useState({
-    recorded_at: todayAd,
-    weight_kg: "",
-    body_fat_percent: "",
-    chest_cm: "",
-    waist_cm: "",
-    hips_cm: "",
-    arm_cm: "",
-    thigh_cm: "",
-    notes: "",
-  });
-  const [transformationForm, setTransformationForm] = useState({
-    captured_at: todayAd,
-    milestone_title: "",
-    milestone_notes: "",
-  });
-  const [transformationPhotoFile, setTransformationPhotoFile] = useState<File | null>(null);
+  const [feePaymentOpen, setFeePaymentOpen] = useState<number | null>(null);
+  const [feePaymentAmount, setFeePaymentAmount] = useState("");
+  const [feePaymentMethod, setFeePaymentMethod] = useState<"cash" | "card" | "bank_transfer" | "digital_wallet" | "other">("cash");
   const [csvRows, setCsvRows] = useState<CsvParsedRow[]>([]);
   const [csvName, setCsvName] = useState("");
   const [importing, setImporting] = useState(false);
@@ -547,20 +529,23 @@ export default function AdminMembers() {
     setTransformations([]);
     setReportLogs([]);
     setMemberAttendance([]);
+    setMemberFeeStatus(null);
 
-    const [measurementsRes, transformationsRes, logsRes, attendanceRes] = await Promise.all([
+    const [measurementsRes, transformationsRes, logsRes, attendanceRes, feeStatusRes] = await Promise.all([
       supabase.from("member_measurements").select("*").eq("member_ref", member.id).order("recorded_at", { ascending: true }).limit(500),
       supabase.from("member_transformations").select("*").eq("member_ref", member.id).order("captured_at", { ascending: false }).limit(200),
       supabase.from("member_report_logs").select("*").eq("member_ref", member.id).order("sent_at", { ascending: false }).limit(20),
       supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").eq("member_ref", member.id).order("attendance_date", { ascending: false }).limit(60),
+      supabase.rpc("get_member_membership_fee_status", { p_member_id: member.id }),
     ]);
 
-    if (measurementsRes.error || transformationsRes.error || logsRes.error || attendanceRes.error) {
+    if (measurementsRes.error || transformationsRes.error || logsRes.error || attendanceRes.error || feeStatusRes.error) {
       setMessage(
         measurementsRes.error?.message ||
           transformationsRes.error?.message ||
           logsRes.error?.message ||
           attendanceRes.error?.message ||
+          feeStatusRes.error?.message ||
           "Profile load failed."
       );
     } else {
@@ -568,6 +553,7 @@ export default function AdminMembers() {
       setTransformations((transformationsRes.data ?? []) as TransformationRow[]);
       setReportLogs((logsRes.data ?? []) as MemberReportLogRow[]);
       setMemberAttendance((attendanceRes.data ?? []) as AttendanceRow[]);
+      setMemberFeeStatus(feeStatusRes.data as MemberMembershipFeeStatus);
     }
     setLoadingProfile(false);
   };
@@ -580,107 +566,25 @@ export default function AdminMembers() {
     await loadMemberProfile(member);
   };
 
-  const addMeasurement = async () => {
+  const recordMembershipFeePayment = async (fee: MembershipFee) => {
     if (!detailMember) return;
-    const { error } = await supabase.from("member_measurements").insert({
-      member_ref: detailMember.id,
-      recorded_at: measurementForm.recorded_at,
-      weight_kg: toNullableNumber(measurementForm.weight_kg),
-      body_fat_percent: toNullableNumber(measurementForm.body_fat_percent),
-      chest_cm: toNullableNumber(measurementForm.chest_cm),
-      waist_cm: toNullableNumber(measurementForm.waist_cm),
-      hips_cm: toNullableNumber(measurementForm.hips_cm),
-      arm_cm: toNullableNumber(measurementForm.arm_cm),
-      thigh_cm: toNullableNumber(measurementForm.thigh_cm),
-      notes: measurementForm.notes.trim() || null,
-    });
-
-    if (error) {
-      setMessage(error.message);
+    const amountMinor = Math.round(parseFloat(feePaymentAmount) * 100);
+    if (!amountMinor || amountMinor <= 0 || amountMinor > (fee.amount_minor - fee.paid_amount_minor)) {
+      setMessage("Invalid payment amount.");
       return;
     }
-    setMeasurementForm({
-      recorded_at: todayAd,
-      weight_kg: "",
-      body_fat_percent: "",
-      chest_cm: "",
-      waist_cm: "",
-      hips_cm: "",
-      arm_cm: "",
-      thigh_cm: "",
-      notes: "",
-    });
-    await loadMemberProfile(detailMember);
-  };
-
-  const deleteMeasurement = async (id: number) => {
-    if (!detailMember || !window.confirm("Delete this measurement log?")) return;
-    const { error } = await supabase.from("member_measurements").delete().eq("id", id);
-    if (error) setMessage(error.message);
-    else await loadMemberProfile(detailMember);
-  };
-
-  const uploadMilestoneImage = async (file: File, memberId: number) => {
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const path = `member-transformations/${memberId}/${Date.now()}-${safeName}`;
-    const { error } = await supabase.storage.from("gym-media").upload(path, file);
-    if (error) throw error;
-    return supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
-  };
-
-  const addTransformation = async () => {
-    if (!detailMember) return;
-    let photoUrl: string | null = null;
-    if (transformationPhotoFile) {
-      try {
-        photoUrl = await uploadMilestoneImage(transformationPhotoFile, detailMember.id);
-      } catch (error) {
-        setMessage(errorMessage(error));
-        return;
-      }
-    }
-
-    const { error } = await supabase.from("member_transformations").insert({
-      member_ref: detailMember.id,
-      captured_at: transformationForm.captured_at,
-      milestone_title: transformationForm.milestone_title.trim() || null,
-      milestone_notes: transformationForm.milestone_notes.trim() || null,
-      photo_url: photoUrl,
-    });
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setTransformationForm({ captured_at: todayAd, milestone_title: "", milestone_notes: "" });
-    setTransformationPhotoFile(null);
-    await loadMemberProfile(detailMember);
-  };
-
-  const deleteTransformation = async (id: number) => {
-    if (!detailMember || !window.confirm("Delete this transformation entry?")) return;
-    const { error } = await supabase.from("member_transformations").delete().eq("id", id);
-    if (error) setMessage(error.message);
-    else await loadMemberProfile(detailMember);
-  };
-
-  const sendProgressReport = async () => {
-    if (!detailMember) return;
-    const { data, error } = await supabase.functions.invoke("send-progress-report", {
-      body: { member_id: detailMember.id },
+    const { error } = await supabase.rpc("record_membership_fee_payment", {
+      p_fee_id: fee.id,
+      p_amount_minor: amountMinor,
+      p_payment_method: feePaymentMethod,
     });
     if (error) {
       setMessage(error.message);
       return;
     }
-    const response = data as SendProgressReportResponse;
-    if (!response.ok) {
-      setMessage(response.error || "Progress report failed.");
-      return;
-    }
-    setGeneratedReport(response.report ?? null);
-    setMessage("Progress report generated.");
+    setFeePaymentOpen(null);
+    setFeePaymentAmount("");
+    setMessage("Membership fee payment recorded.");
     await loadMemberProfile(detailMember);
   };
 
@@ -1212,95 +1116,129 @@ export default function AdminMembers() {
             </AdminCard>
 
             <AdminCard>
-              <AdminSectionTitle title="Body measurements" />
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <AdminBsDateInput value={measurementForm.recorded_at} onChange={(value) => setMeasurementForm((current) => ({ ...current, recorded_at: value }))} />
-                <AdminInput placeholder="Weight kg" value={measurementForm.weight_kg} onChange={(event) => setMeasurementForm((current) => ({ ...current, weight_kg: event.target.value }))} />
-                <AdminInput placeholder="Body fat %" value={measurementForm.body_fat_percent} onChange={(event) => setMeasurementForm((current) => ({ ...current, body_fat_percent: event.target.value }))} />
-                <AdminButton type="button" variant="primary" onClick={addMeasurement}>Add measurement</AdminButton>
-              </div>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-5">
-                <AdminInput placeholder="Chest cm" value={measurementForm.chest_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, chest_cm: event.target.value }))} />
-                <AdminInput placeholder="Waist cm" value={measurementForm.waist_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, waist_cm: event.target.value }))} />
-                <AdminInput placeholder="Hips cm" value={measurementForm.hips_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, hips_cm: event.target.value }))} />
-                <AdminInput placeholder="Arm cm" value={measurementForm.arm_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, arm_cm: event.target.value }))} />
-                <AdminInput placeholder="Thigh cm" value={measurementForm.thigh_cm} onChange={(event) => setMeasurementForm((current) => ({ ...current, thigh_cm: event.target.value }))} />
-              </div>
-              <AdminTextarea className="mt-3" rows={2} placeholder="Measurement notes" value={measurementForm.notes} onChange={(event) => setMeasurementForm((current) => ({ ...current, notes: event.target.value }))} />
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <div className="mb-2 text-xs font-semibold text-slate-400">Weight trend</div>
-                  <MiniLineChart values={measurements.map((item) => item.weight_kg)} stroke="#38bdf8" />
-                </div>
-                <div>
-                  <div className="mb-2 text-xs font-semibold text-slate-400">Waist trend</div>
-                  <MiniLineChart values={measurements.map((item) => item.waist_cm)} stroke="#34d399" />
-                </div>
-              </div>
-              <div className="mt-4 space-y-2">
-                {measurements.slice().reverse().slice(0, 8).map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-xs text-slate-300">
-                    <span>{item.recorded_at} | W {item.weight_kg ?? "-"} | BF {item.body_fat_percent ?? "-"} | Waist {item.waist_cm ?? "-"}</span>
-                    <AdminButton type="button" variant="danger" className="min-h-8 px-2 py-1 text-xs" onClick={() => deleteMeasurement(item.id)}>Delete</AdminButton>
-                  </div>
-                ))}
-              </div>
-            </AdminCard>
-
-            <AdminCard>
-              <AdminSectionTitle title="Transformation timeline" />
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <AdminBsDateInput value={transformationForm.captured_at} onChange={(value) => setTransformationForm((current) => ({ ...current, captured_at: value }))} />
-                <AdminInput placeholder="Milestone title" value={transformationForm.milestone_title} onChange={(event) => setTransformationForm((current) => ({ ...current, milestone_title: event.target.value }))} />
-                <AdminInput type="file" accept="image/*" onChange={(event) => setTransformationPhotoFile(event.target.files?.[0] ?? null)} />
-                <AdminButton type="button" variant="primary" onClick={addTransformation}>Add timeline entry</AdminButton>
-              </div>
-              <AdminTextarea className="mt-3" rows={2} placeholder="Milestone notes" value={transformationForm.milestone_notes} onChange={(event) => setTransformationForm((current) => ({ ...current, milestone_notes: event.target.value }))} />
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {transformations.map((item) => (
-                  <article key={item.id} className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
-                    <div className="flex items-start justify-between gap-3">
+              <AdminSectionTitle title="Membership fee status" />
+              <div className="mt-4 space-y-4">
+                {memberFeeStatus ? (
+                  <>
+                    {memberFeeStatus.has_outstanding ? (
+                      <>
+                        <AdminNotice tone="warning" title="Outstanding membership fees">
+                          Total due: <b>{formatMembershipFeeAmount(memberFeeStatus.summary.total_due, memberFeeStatus.summary.currency_code)}</b>
+                          {memberFeeStatus.summary.overdue_count > 0 && (
+                            <span className="ml-3 text-amber-300"><b>{memberFeeStatus.summary.overdue_count}</b> overdue</span>
+                          )}
+                          {memberFeeStatus.summary.unpaid_count > 0 && (
+                            <span className="ml-3 text-slate-300"><b>{memberFeeStatus.summary.unpaid_count}</b> upcoming</span>
+                          )}
+                        </AdminNotice>
+                        {memberFeeStatus.outstanding_fees && memberFeeStatus.outstanding_fees.length > 0 && (
+                          <div className="space-y-2">
+                            {memberFeeStatus.outstanding_fees.map((fee) => (
+                              <div
+                                key={fee.id}
+                                className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div className="flex flex-col gap-1">
+                                  <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                  <div className="text-xs text-slate-400">
+                                    Due: {formatDisplayDate(fee.due_date, settings.date_display_preference)} | 
+                                    Amount: {formatMembershipFeeAmount(fee.amount_minor, fee.currency_code)} | 
+                                    Outstanding: <b>{formatMembershipFeeAmount(fee.amount_minor - fee.paid_amount_minor, fee.currency_code)}</b>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <AdminBadge tone={membershipFeeStatusTone(fee.status)}>{statusLabel(fee.status)}</AdminBadge>
+                                  <AdminButton
+                                    type="button"
+                                    variant="primary"
+                                    onClick={() => {
+                                      setFeePaymentOpen(fee.id);
+                                      setFeePaymentAmount(((fee.amount_minor - fee.paid_amount_minor) / 100).toFixed(2));
+                                    }}
+                                    disabled={feePaymentOpen !== null}
+                                  >
+                                    Record payment
+                                  </AdminButton>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {feePaymentOpen && memberFeeStatus.outstanding_fees && (
+                          <>
+                            {memberFeeStatus.outstanding_fees
+                              .filter((fee) => fee.id === feePaymentOpen)
+                              .map((fee) => (
+                                <div key={fee.id} className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4">
+                                  <div className="font-semibold text-white">Record payment for {formatBillingPeriod(fee.billing_month)}</div>
+                                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                                    <AdminField label="Amount">
+                                      <AdminInput
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={feePaymentAmount}
+                                        onChange={(event) => setFeePaymentAmount(event.target.value)}
+                                        placeholder={((fee.amount_minor - fee.paid_amount_minor) / 100).toFixed(2)}
+                                      />
+                                    </AdminField>
+                                    <AdminField label="Payment method">
+                                      <AdminSelect
+                                        value={feePaymentMethod}
+                                        onChange={(event) => setFeePaymentMethod(event.target.value as typeof feePaymentMethod)}
+                                        options={[
+                                          { value: "cash", label: "Cash" },
+                                          { value: "card", label: "Card" },
+                                          { value: "bank_transfer", label: "Bank transfer" },
+                                          { value: "digital_wallet", label: "Digital wallet" },
+                                          { value: "other", label: "Other" },
+                                        ]}
+                                      />
+                                    </AdminField>
+                                  </div>
+                                  <div className="mt-3 flex gap-2">
+                                    <AdminButton type="button" variant="primary" onClick={() => recordMembershipFeePayment(fee)}>
+                                      Confirm payment
+                                    </AdminButton>
+                                    <AdminButton type="button" variant="secondary" onClick={() => setFeePaymentOpen(null)}>
+                                      Cancel
+                                    </AdminButton>
+                                  </div>
+                                </div>
+                              ))}
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <AdminNotice tone="success">
+                        No outstanding membership fees. All payments are up to date.
+                      </AdminNotice>
+                    )}
+                    {memberFeeStatus.paid_fees && memberFeeStatus.paid_fees.length > 0 && (
                       <div>
-                        <div className="font-semibold text-white">{item.milestone_title || "Milestone"}</div>
-                        <div className="text-xs text-slate-500">{formatDisplayDate(item.captured_at, settings.date_display_preference)}</div>
+                        <h4 className="text-sm font-semibold text-slate-400 mb-2">Recent payment history</h4>
+                        <div className="space-y-2">
+                          {memberFeeStatus.paid_fees.slice(0, 6).map((fee) => (
+                            <div
+                              key={fee.id}
+                              className="flex flex-col gap-1 rounded-lg border border-slate-800 bg-slate-900/55 p-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <div className="flex flex-col gap-1">
+                                <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                <div className="text-xs text-slate-400">
+                                  Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0], settings.date_display_preference) : "Unknown date"}
+                                </div>
+                              </div>
+                              <AdminBadge tone="success">Paid</AdminBadge>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <AdminButton type="button" variant="danger" className="min-h-8 px-2 py-1 text-xs" onClick={() => deleteTransformation(item.id)}>Delete</AdminButton>
-                    </div>
-                    {item.milestone_notes ? <p className="mt-2 text-sm text-slate-400">{item.milestone_notes}</p> : null}
-                    {item.photo_url ? <img src={item.photo_url} alt={item.milestone_title || "Transformation milestone"} className="mt-3 h-44 w-full rounded-lg object-cover" /> : null}
-                  </article>
-                ))}
-              </div>
-            </AdminCard>
-
-            <AdminCard>
-              <AdminSectionTitle
-                title="Progress report"
-                description="Generated by the existing Supabase Edge Function."
-                action={
-                  <AdminButton type="button" variant="secondary" onClick={sendProgressReport}>
-                    <FileText className="h-4 w-4" />
-                    Generate
-                  </AdminButton>
-                }
-              />
-              {generatedReport ? (
-                <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/55 p-4">
-                  <div className="text-sm font-semibold text-white">{generatedReport.member_name}</div>
-                  <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">
-                    {generatedReport.summary_lines.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              <div className="mt-4 space-y-2">
-                {reportLogs.slice(0, 5).map((log) => (
-                  <div key={log.id} className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-xs text-slate-400">
-                    {formatDateTime(log.sent_at)} | {log.status}
-                    {log.error_message ? ` | ${log.error_message}` : ""}
-                  </div>
-                ))}
+                    )}
+                  </>
+                ) : (
+                  <AdminLoading label="Loading membership fee status..." />
+                )}
               </div>
             </AdminCard>
 

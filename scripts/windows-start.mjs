@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { adminServiceIsHealthy, dockerCommand, edgeRuntimeIsHealthy, frontendIsHealthy, isDockerReady, launchUrl, projectRoot, runtimeDir, runNpm, waitFor } from "./windows-common.mjs";
+import { dockerCommand, isDockerReady, projectRoot, runNpm } from "./windows-common.mjs";
 
 function fail(message) {
   console.error(`\n${message}\n\nThe Gym Management System could not start.`);
@@ -27,32 +27,14 @@ if (!isDockerReady()) {
   if (!(await waitFor(isDockerReady, 60, 2000))) fail("Docker Desktop did not become ready within two minutes.");
 } else console.log("Docker is already running.");
 
-console.log("Skipping local Supabase (using hosted project)...");
-console.log("Ensure .env.local has valid VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for your hosted project.");
+console.log("Starting local Supabase...");
+if (runNpm(["run", "supabase:start"]).status !== 0) fail("Local Supabase could not start.");
 
-if (!existsSync(join(projectRoot, "dist", "index.html"))) {
-  console.log("Production build is missing. Building the application...");
-  if (runNpm(["run", "build"]).status !== 0) fail("The production application could not be built.");
-}
-
-if (!(await adminServiceIsHealthy())) {
-  console.log("Starting backup service...");
-  mkdirSync(runtimeDir, { recursive: true });
-  const log = openSync(join(runtimeDir, "admin-service.log"), "a");
-  const child = spawn(process.execPath, [join(projectRoot, "scripts", "admin-service.mjs")], { cwd: projectRoot, detached: true, windowsHide: true, stdio: ["ignore", log, log] });
-  child.unref();
-  if (!(await waitFor(adminServiceIsHealthy, 30, 1000))) fail(`The local backup service did not respond. Check ${join(runtimeDir, "admin-service.log")}.`);
-} else console.log("Backup service is already running.");
-
-if (!(await frontendIsHealthy())) {
-  console.log("Starting application...");
-  mkdirSync(runtimeDir, { recursive: true });
-  const log = openSync(join(runtimeDir, "frontend.log"), "a");
-  const child = spawn(process.execPath, [join(projectRoot, "scripts", "serve-local.mjs")], { cwd: projectRoot, detached: true, windowsHide: true, stdio: ["ignore", log, log] });
-  child.unref();
-  if (!(await waitFor(frontendIsHealthy, 30, 1000))) fail(`The frontend did not respond. Check ${join(runtimeDir, "frontend.log")}.`);
-} else console.log("Gym app is already running.");
+console.log("Starting development server...");
+const dev = spawn("npm", ["run", "dev"], { cwd: projectRoot, stdio: "inherit", shell: true });
+dev.on("exit", (code) => process.exit(code ?? 0));
 
 console.log("Opening browser...");
-spawn("cmd.exe", ["/c", "start", "", launchUrl], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-console.log(`\nGym Management System is ready.\n${launchUrl}`);
+spawn("cmd.exe", ["/c", "start", "", "http://localhost:5173/admin"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+console.log("\nGym Management System is ready.\nhttp://localhost:5173/admin");
+console.log("Press Ctrl+C to stop.");

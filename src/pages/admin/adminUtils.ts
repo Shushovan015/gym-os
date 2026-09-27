@@ -4,11 +4,12 @@ import type {
   DateDisplayPreference,
   MemberForm,
   MemberRow,
+  MembershipFeeStatus,
   MembershipStatus,
   MembershipType,
   PaymentStatus,
 } from "./adminTypes";
-import { membershipStatuses, membershipTypes, paymentStatuses } from "./adminTypes";
+import { membershipFeeStatuses, membershipStatuses, membershipTypes, paymentStatuses } from "./adminTypes";
 
 export const BS_MONTHS = [
   "Baisakh",
@@ -90,7 +91,7 @@ export function pad2(value: number) {
 }
 
 export function formatAdDate(date: Date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
 }
 
 export function getNepalTodayAdDate() {
@@ -109,14 +110,17 @@ export function getNepalTodayAdDate() {
 
 export function parseAdDate(adDate: string | null | undefined) {
   if (!adDate) return null;
-  const date = new Date(`${adDate}T00:00:00`);
+  // Parse as UTC to avoid timezone shifts
+  const [year, month, day] = adDate.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export function addDays(adDate: string, days: number) {
   const date = parseAdDate(adDate);
   if (!date) return adDate;
-  date.setDate(date.getDate() + days);
+  date.setUTCDate(date.getUTCDate() + days);
   return formatAdDate(date);
 }
 
@@ -145,7 +149,11 @@ export function formatBsDateFromAd(adDate: string | null | undefined) {
   try {
     const date = parseAdDate(adDate);
     if (!date) return adDate;
-    return new NepaliDate(date).format("YYYY-MM-DD");
+    // Use UTC components to avoid timezone issues
+    const utcYear = date.getUTCFullYear();
+    const utcMonth = date.getUTCMonth();
+    const utcDay = date.getUTCDate();
+    return new NepaliDate(utcYear, utcMonth, utcDay).format("YYYY-MM-DD");
   } catch {
     return adDate;
   }
@@ -163,13 +171,16 @@ export function bsStringToAdDate(bsDate: string) {
   try {
     const bs = new NepaliDate(value);
     if (bs.format("YYYY-MM-DD") !== value) return null;
-    return formatAdDate(bs.toJsDate());
+    // Convert to AD using toJsDate(), then extract UTC components
+    const jsDate = bs.toJsDate();
+    const utcDate = new Date(Date.UTC(jsDate.getUTCFullYear(), jsDate.getUTCMonth(), jsDate.getUTCDate()));
+    return formatAdDate(utcDate);
   } catch {
     return null;
   }
 }
 
-export function formatDisplayDate(adDate: string | null | undefined, _preference: DateDisplayPreference) {
+export function formatDisplayDate(adDate: string | null | undefined) {
   if (!adDate) return "-";
   const bs = formatBsDateFromAd(adDate);
   return `${bs} BS`;
@@ -274,9 +285,12 @@ export function buildBsMonthDays(bsYear: number, bsMonthIndex: number, closingDa
     const bsDate = new NepaliDate(bsYear, bsMonthIndex, day);
     if (bsDate.getYear() !== bsYear || bsDate.getMonth() !== bsMonthIndex) break;
     const weekdayIndex = bsDate.getDay();
+    // Convert BS date to AD using toJsDate(), then extract UTC components
+    const jsDate = bsDate.toJsDate();
+    const utcDate = new Date(Date.UTC(jsDate.getUTCFullYear(), jsDate.getUTCMonth(), jsDate.getUTCDate()));
     result.push({
       bsDay: day,
-      adDate: formatAdDate(bsDate.toJsDate()),
+      adDate: formatAdDate(utcDate),
       weekday: WEEKDAYS[weekdayIndex] ?? "Day",
       weekdayIndex,
       isClosingDay: weekdayIndex === closingDay,
@@ -303,4 +317,66 @@ export function isPaymentStatus(value: string): value is PaymentStatus {
 
 export function isMembershipType(value: string): value is MembershipType {
   return membershipTypes.includes(value as MembershipType);
+}
+
+export function isMembershipFeeStatus(value: string): value is MembershipFeeStatus {
+  return membershipFeeStatuses.includes(value as MembershipFeeStatus);
+}
+
+export function membershipFeeStatusTone(status: MembershipFeeStatus): "success" | "warning" | "danger" | "neutral" {
+  if (status === "paid") return "success";
+  if (status === "overdue") return "danger";
+  if (status === "partial") return "warning";
+  return "warning"; // unpaid
+}
+
+export function formatMembershipFeeAmount(minor: number, currencyCode: string = "NPR"): string {
+  const major = (minor / 100).toFixed(2);
+  return `${major} ${currencyCode}`;
+}
+
+export function getMonthNameFromBillingMonth(billingMonth: string): string {
+  // billing_month is stored as 'YYYY-MM-01' in AD
+  // Convert to BS to get Nepali month name
+  const adDate = new Date(`${billingMonth}T00:00:00`);
+  const bs = new NepaliDate(adDate);
+  const bsMonthIndex = bs.getMonth(); // 0-11
+  const bsYear = bs.getYear();
+  return `${BS_MONTHS[bsMonthIndex]} ${bsYear}`;
+}
+
+export function formatBillingPeriod(billingMonth: string): string {
+  // Returns "September 2026 Membership Fee"
+  return `${getMonthNameFromBillingMonth(billingMonth)} Membership Fee`;
+}
+
+export function addMonthsPreservingDay(adDate: string, months: number): string {
+  // Parse as local date to avoid timezone issues
+  const [year, month, day] = adDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  
+  const targetDay = date.getDate();
+  date.setMonth(date.getMonth() + months);
+  
+  // Handle month-end dates (e.g., Jan 31 -> Feb 28/29)
+  if (date.getDate() !== targetDay) {
+    // Day rolled over, go to last day of previous month
+    date.setDate(0);
+  }
+  
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function getNextMonthFirstDay(adDate: string): string {
+  // Get first day of current month, then add 1 month
+  const [year, month] = adDate.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  date.setMonth(date.getMonth() + 1);
+  
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}-01`;
 }

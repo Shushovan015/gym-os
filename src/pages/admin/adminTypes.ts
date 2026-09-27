@@ -1,6 +1,7 @@
 export type MembershipType = string;
 export type MembershipStatus = "active" | "paused" | "cancelled" | "expired";
 export type PaymentStatus = "paid" | "unpaid" | "overdue";
+export type MembershipFeeStatus = "paid" | "unpaid" | "overdue" | "partial";
 export type AttendanceStatus = "present" | "late" | "absent" | "excused";
 export type DateDisplayPreference = "bs" | "ad" | "both";
 
@@ -23,9 +24,49 @@ export type MemberRow = {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  membership_fee_summary?: MembershipFeeSummary;
 };
 
-export type MemberForm = Omit<MemberRow, "id" | "created_at" | "updated_at" | "deleted_at">;
+export type MembershipFee = {
+  id: number;
+  member_id: number;
+  billing_month: string;
+  amount_minor: number;
+  currency_code: string;
+  status: MembershipFeeStatus;
+  paid_amount_minor: number;
+  due_date: string;
+  paid_at: string | null;
+  paid_by: string | null;
+  invoice_id: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MembershipFeeStatus = "paid" | "unpaid" | "overdue" | "partial";
+
+export type MembershipFeeSummary = {
+  total_due: number;
+  total_paid: number;
+  overdue_count: number;
+  unpaid_count: number;
+  partial_count: number;
+  paid_count: number;
+  next_due_date: string | null;
+  next_due_amount: number | null;
+  next_due_month: string | null;
+  currency_code: string;
+};
+
+export type MemberMembershipFeeStatus = {
+  has_outstanding: boolean;
+  outstanding_fees: MembershipFee[] | null;
+  paid_fees: MembershipFee[] | null;
+  summary: MembershipFeeSummary;
+};
+
+export type MemberForm = Omit<MemberRow, "id" | "created_at" | "updated_at" | "deleted_at" | "membership_fee_summary">;
 
 export type MeasurementRow = {
   id: number;
@@ -144,4 +185,5 @@ export type SelectOption<T extends string | number = string> = {
 export const membershipTypes: MembershipType[] = ["monthly", "quarterly", "yearly", "trial"];
 export const membershipStatuses: MembershipStatus[] = ["active", "paused", "cancelled", "expired"];
 export const paymentStatuses: PaymentStatus[] = ["paid", "unpaid", "overdue"];
+export const membershipFeeStatuses: MembershipFeeStatus[] = ["paid", "unpaid", "overdue", "partial"];
 export const attendanceStatuses: AttendanceStatus[] = ["present", "late", "absent", "excused"];

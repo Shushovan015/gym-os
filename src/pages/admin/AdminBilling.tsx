@@ -35,12 +35,14 @@ import {
   AdminTableShell,
   AdminTextarea,
 } from "@src/components/admin/AdminUI";
-import type { MemberRow, AdminSettings } from "./adminTypes";
+import type { MemberRow, AdminSettings, MembershipFee, MembershipFeeStatus } from "./adminTypes";
 import {
   defaultAdminSettings,
   friendlyAdminError,
   formatBsDateFromAd,
   getNepalTodayAdDate,
+  formatBillingPeriod,
+  formatMembershipFeeAmount,
 } from "./adminUtils";
 import type {
   InventoryProduct,
@@ -145,7 +147,7 @@ export default function AdminBilling() {
   const [paymentTouched, setPaymentTouched] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
-  const [lineType, setLineType] = useState<DraftLine["itemType"]>("membership");
+  const [lineType, setLineType] = useState<DraftLine["itemType"]>("membership_fee_collection");
   const [lineDescription, setLineDescription] = useState("");
   const [linePrice, setLinePrice] = useState("");
   const [lineVariant, setLineVariant] = useState("");
@@ -167,6 +169,55 @@ export default function AdminBilling() {
   const [successInvoice, setSuccessInvoice] = useState<InvoiceRow | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
+
+  // Membership fee collection state
+  const [memberFees, setMemberFees] = useState<MembershipFee[]>([]);
+  const [selectedFeeIds, setSelectedFeeIds] = useState<number[]>([]);
+  const [memberFeesLoading, setMemberFeesLoading] = useState(false);
+  const [feeCollectionError, setFeeCollectionError] = useState("");
+
+  // Load member's unpaid membership fees when member is selected
+  useEffect(() => {
+    if (!memberId || lineType !== "membership_fee_collection") {
+      setMemberFees([]);
+      setSelectedFeeIds([]);
+      return;
+    }
+    let alive = true;
+    setMemberFeesLoading(true);
+    setFeeCollectionError("");
+    supabase
+      .from("membership_fees")
+      .select("*")
+      .eq("member_id", Number(memberId))
+      .in("status", ["unpaid", "overdue", "partial"])
+      .order("billing_month", { ascending: true })
+      .then(({ data, error }) => {
+        if (!alive) return;
+        setMemberFeesLoading(false);
+        if (error) {
+          setFeeCollectionError(error.message);
+          setMemberFees([]);
+        } else {
+          setMemberFees((data ?? []) as MembershipFee[]);
+          // Auto-select the first unpaid fee (oldest)
+          if (data && data.length > 0) {
+            setSelectedFeeIds([data[0].id]);
+          }
+        }
+      });
+    return () => { alive = false; };
+  }, [memberId, lineType]);
+
+  // Auto-set payment amount for membership fee collection
+  useEffect(() => {
+    if (lineType === "membership_fee_collection" && selectedFeeIds.length > 0) {
+      const totalMinor = memberFees
+        .filter((f) => selectedFeeIds.includes(f.id))
+        .reduce((sum, f) => sum + (f.amount_minor - f.paid_amount_minor), 0);
+      setPaymentAmount(minorToInput(totalMinor, settings.currency_minor_unit));
+    }
+  }, [selectedFeeIds, memberFees, lineType, settings.currency_minor_unit]);
 
   const billEmail = useBillEmail([...invoices, ...(detail ? [detail] : [])], settings.bill_sender_email, setMessage);
   const beginRequest = useLatestRequest(JSON.stringify([search, dateFrom, dateTo, page, paymentFilter, statusFilter]));
@@ -260,7 +311,7 @@ export default function AdminBilling() {
           setProductCustomerType("general");
           setDiscount("0");
           setPaymentAmount("0");
-          setLineType("membership");
+          setLineType("membership_fee_collection");
           setLineDescription(
             `${member.membership_type.charAt(0).toUpperCase() + member.membership_type.slice(1)} membership fee`,
           );
@@ -284,13 +335,20 @@ export default function AdminBilling() {
       : variant?.selling_price_minor ?? product?.selling_price_minor ?? line.unitPriceMinor;
     return { ...line, unitPriceMinor: currentPrice };
   }) : [];
-  const billLines = lineType === "product" ? currentLines : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
+  const billLines = lineType === "product" ? currentLines : lineType === "membership_fee_collection" ? [] : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
+  const membershipFeeTotalMinor = lineType === "membership_fee_collection"
+    ? memberFees.filter((f) => selectedFeeIds.includes(f.id)).reduce((sum, f) => sum + (f.amount_minor - f.paid_amount_minor), 0)
+    : 0;
   const totals = calculateInvoiceTotals(
     billLines,
     majorToMinor(discount, settings.currency_minor_unit) ?? 0,
     settings.tax_enabled,
     settings.tax_rate_basis_points,
   );
+  // For membership fee collection, use the calculated fee total
+  const effectiveTotals = lineType === "membership_fee_collection"
+    ? { ...totals, totalMinor: membershipFeeTotalMinor, subtotalMinor: membershipFeeTotalMinor }
+    : totals;
   const openCreate = useCallback((member?: MemberRow) => {
     setCustomerMode(member ? "member" : "walkin");
     setMemberId(member ? String(member.id) : "");
@@ -309,7 +367,7 @@ export default function AdminBilling() {
     setCreateError("");
     setCreateOpen(true);
     if (member) {
-      setLineType("membership");
+      setLineType("membership_fee_collection");
       setLineDescription(
         `${member.membership_type.charAt(0).toUpperCase() + member.membership_type.slice(1)} membership fee`,
       );
@@ -320,7 +378,7 @@ export default function AdminBilling() {
     const mode = searchParams.get("mode");
     if (
       mode !== "shop" &&
-      mode !== "membership" &&
+      mode !== "membership_fee_collection" &&
       searchParams.get("action") !== "new"
     )
       return;
@@ -331,8 +389,8 @@ export default function AdminBilling() {
         setCustomerMode("walkin");
         setCustomerName("Walk-in Customer");
       }
-      if (mode === "membership") {
-        setLineType("membership");
+      if (mode === "membership_fee_collection") {
+        setLineType("membership_fee_collection");
         setCustomerMode("member");
       }
     }, 0);
@@ -388,7 +446,7 @@ export default function AdminBilling() {
       setCreateError("Select at least one shop product for this bill.");
       return;
     }
-    if (lineType !== "product" && !lineDescription.trim()) {
+    if (lineType !== "product" && lineType !== "membership_fee_collection" && !lineDescription.trim()) {
       setCreateError(
         lineType === "miscellaneous"
           ? "Enter what this charge is for."
@@ -396,10 +454,55 @@ export default function AdminBilling() {
       );
       return;
     }
-    if (billLines.length === 0 || totals.totalMinor <= 0) {
+    if (billLines.length === 0 || effectiveTotals.totalMinor <= 0) {
       setCreateError("Enter an amount greater than zero.");
       return;
     }
+
+    // Handle membership fee collection separately
+    if (lineType === "membership_fee_collection") {
+      if (selectedFeeIds.length === 0) {
+        setCreateError("Select at least one fee period to collect.");
+        return;
+      }
+      if (!memberId) {
+        setCreateError("Select a member before collecting membership fees.");
+        return;
+      }
+      if (!paymentMethod) {
+        setCreateError("Select a payment method.");
+        return;
+      }
+      setSaving(true);
+      try {
+        const { data, error } = await supabase.rpc("record_membership_fee_payment_multi", {
+          p_fee_ids: selectedFeeIds,
+          p_payment_method: paymentMethod,
+          p_payment_date: today,
+          p_reference: null,
+          p_notes: notes.trim() || null,
+        });
+        if (error) {
+          setCreateError(friendlyAdminError(error.message));
+          return;
+        }
+        setCreateOpen(false);
+        setSelectedFeeIds([]);
+        setMemberFees([]);
+        setMessage(`Membership fees collected successfully. Invoice: ${data.invoice_number}`);
+        await load();
+      } catch (error) {
+        setCreateError(
+          error instanceof Error
+            ? `Could not collect membership fees: ${error.message}`
+            : "Could not collect membership fees. Check the local Supabase connection and try again.",
+        );
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const initialPayment = paymentTouched
       ? majorToMinor(paymentAmount, settings.currency_minor_unit)
       : totals.totalMinor;
@@ -815,7 +918,7 @@ export default function AdminBilling() {
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <b className="text-lg text-white">
-                Total: {formatMoney(totals.totalMinor, settings.currency_code)}
+                Total: {formatMoney(effectiveTotals.totalMinor, settings.currency_code)}
               </b>
               <div className="flex gap-2">
                 <AdminButton variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</AdminButton>
@@ -911,7 +1014,8 @@ export default function AdminBilling() {
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {(
                 [
-                  { value: "membership", label: "Membership" },
+                  // { value: "membership", label: "Membership" },
+                  { value: "membership_fee_collection", label: "Collect Membership Fee" },
                   { value: "product", label: "Shop Product" },
                   { value: "personal_training", label: "Personal Training" },
                   { value: "miscellaneous", label: "Other" },
@@ -926,6 +1030,9 @@ export default function AdminBilling() {
                     setSelectedPlanId("");
                     setLineDescription("");
                     setLinePrice("");
+                    setPaymentAmount("0");
+                    setPaymentTouched(false);
+                    setSelectedFeeIds([]);
                   }}
                   className={`min-h-16 rounded-lg border p-3 text-sm font-bold ${lineType === choice.value ? "border-amber-400 bg-amber-400/10 text-white" : "border-slate-800 text-slate-400 hover:text-white"}`}
                 >
@@ -985,6 +1092,106 @@ export default function AdminBilling() {
                         );
                       })}
                   </div>
+                </div>
+              ) : lineType === "membership_fee_collection" ? (
+                <div className="space-y-4">
+                  <AdminNotice tone="info" title="Collect Membership Fee">
+                    Select one or more consecutive unpaid months to collect. The total will be calculated automatically.
+                    {memberId && memberFees.length === 0 && !memberFeesLoading && (
+                      <span className="ml-2 text-amber-300">No unpaid fees found for this member.</span>
+                    )}
+                  </AdminNotice>
+                  {memberFeesLoading ? (
+                    <div className="flex justify-center py-8">
+                      <AdminLoading label="Loading unpaid fee periods..." />
+                    </div>
+                  ) : feeCollectionError ? (
+                    <AdminNotice tone="danger">Failed to load fee periods: {feeCollectionError}</AdminNotice>
+                  ) : memberFees.length === 0 ? (
+                    <AdminEmptyState title="No unpaid membership fees" description="This member has no outstanding membership fees." />
+                  ) : (
+                    <>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <AdminField label="Member">
+                          <AdminInput value={customerName} disabled />
+                        </AdminField>
+                        <AdminField label="Current Due Date">
+                          <AdminInput value={memberFees[0]?.due_date ? formatBsDateFromAd(memberFees[0].due_date) : "-"} disabled />
+                        </AdminField>
+                        <AdminField label="Total Outstanding">
+                          <AdminInput
+                            value={formatMembershipFeeAmount(
+                              memberFees.reduce((sum, f) => sum + (f.amount_minor - f.paid_amount_minor), 0),
+                              memberFees[0]?.currency_code ?? "NPR"
+                            )}
+                            disabled
+                          />
+                        </AdminField>
+                      </div>
+                      <AdminField label="Select fee periods to collect" hint="Choose one or more consecutive months. Already paid months are not shown.">
+                        <div className="grid gap-2 max-h-60 overflow-y-auto">
+                          {memberFees.map((fee) => {
+                            const isSelected = selectedFeeIds.includes(fee.id);
+                            const outstanding = fee.amount_minor - fee.paid_amount_minor;
+                            const isOverdue = fee.status === "overdue";
+                            return (
+                              <label
+                                key={fee.id}
+                                className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? "border-amber-400 bg-amber-400/10"
+                                    : isOverdue
+                                    ? "border-rose-400/30 bg-rose-400/5"
+                                    : "border-slate-800 bg-slate-950 hover:border-amber-300"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    setSelectedFeeIds((prev) =>
+                                      isSelected ? prev.filter((id) => id !== fee.id) : [...prev, fee.id]
+                                    );
+                                  }}
+                                  className="h-4 w-4 accent-amber-400"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <b className="text-white truncate">{formatBillingPeriod(fee.billing_month)}</b>
+                                    {isOverdue && <AdminBadge tone="danger" className="text-xs">Overdue</AdminBadge>}
+                                    {fee.status === "partial" && <AdminBadge tone="warning" className="text-xs">Partial</AdminBadge>}
+                                  </div>
+                                  <div className="text-xs text-slate-400">
+                                    Due: {formatBsDateFromAd(fee.due_date)} | Outstanding: <b>{formatMembershipFeeAmount(outstanding, fee.currency_code)}</b>
+                                  </div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </AdminField>
+                      {selectedFeeIds.length > 0 && (
+                        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <div className="text-sm font-bold text-white">
+                                Selected: {selectedFeeIds.length} month{selectedFeeIds.length > 1 ? "s" : ""}
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                {memberFees.filter((f) => selectedFeeIds.includes(f.id)).map((f) => formatBillingPeriod(f.billing_month)).join(", ")}
+                              </div>
+                            </div>
+                            <b className="text-lg text-amber-300">
+                              Total: {formatMembershipFeeAmount(
+                                memberFees.filter((f) => selectedFeeIds.includes(f.id)).reduce((sum, f) => sum + (f.amount_minor - f.paid_amount_minor), 0),
+                                memberFees[0]?.currency_code ?? "NPR"
+                              )}
+                            </b>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               ) : lineType === "membership" || lineType === "personal_training" ? (
                 <div className="space-y-3">
@@ -1189,21 +1396,21 @@ export default function AdminBilling() {
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
             <div className="flex justify-between">
               <span>Subtotal</span>
-              <b>{formatMoney(totals.subtotalMinor, settings.currency_code)}</b>
+              <b>{formatMoney(effectiveTotals.subtotalMinor, settings.currency_code)}</b>
             </div>
-            {totals.discountMinor > 0 ? <div className="flex justify-between">
+            {effectiveTotals.discountMinor > 0 ? <div className="flex justify-between">
               <span>Discount</span>
               <b>
-                -{formatMoney(totals.discountMinor, settings.currency_code)}
+                -{formatMoney(effectiveTotals.discountMinor, settings.currency_code)}
               </b>
             </div> : null}
             {settings.tax_enabled ? <div className="flex justify-between">
               <span>{settings.tax_label}</span>
-              <b>{formatMoney(totals.taxMinor, settings.currency_code)}</b>
+              <b>{formatMoney(effectiveTotals.taxMinor, settings.currency_code)}</b>
             </div> : null}
-            <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-base text-white"><span>Total</span><b>{formatMoney(totals.totalMinor, settings.currency_code)}</b></div>
-            <div className="flex justify-between"><span>Received</span><b>{formatMoney(paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : totals.totalMinor, settings.currency_code)}</b></div>
-            <div className="flex justify-between"><span>Balance</span><b>{formatMoney(Math.max(0, totals.totalMinor - (paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : totals.totalMinor)), settings.currency_code)}</b></div>
+            <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-base text-white"><span>Total</span><b>{formatMoney(effectiveTotals.totalMinor, settings.currency_code)}</b></div>
+            <div className="flex justify-between"><span>Received</span><b>{formatMoney(paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : effectiveTotals.totalMinor, settings.currency_code)}</b></div>
+            <div className="flex justify-between"><span>Balance</span><b>{formatMoney(Math.max(0, effectiveTotals.totalMinor - (paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : effectiveTotals.totalMinor)), settings.currency_code)}</b></div>
           </div>
         </div>
       </AdminDialog>
