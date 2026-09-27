@@ -27,19 +27,8 @@ if (!isDockerReady()) {
   if (!(await waitFor(isDockerReady, 60, 2000))) fail("Docker Desktop did not become ready within two minutes.");
 } else console.log("Docker is already running.");
 
-console.log("Starting database...");
-const status = runNpm(["run", "supabase:status"], { stdio: "ignore" });
-if (status.status !== 0) {
-  if (runNpm(["run", "supabase:start"]).status !== 0) fail("The local database could not start.");
-} else if (!(await edgeRuntimeIsHealthy())) {
-  console.log("Restarting Supabase to recover a stopped service...");
-  if (runNpm(["run", "supabase:stop"]).status !== 0 || runNpm(["run", "supabase:start"]).status !== 0) fail("The complete local database stack could not start.");
-} else console.log("Local Supabase is already running.");
-
-  console.log("Deploying Edge Functions...");
-  if (runNpm(["run", "supabase:functions:deploy"]).status !== 0) fail("Edge Functions could not deploy.");
-
-if (!(await waitFor(edgeRuntimeIsHealthy, 30, 1000))) fail("The member report service did not start.");
+console.log("Skipping local Supabase (using hosted project)...");
+console.log("Ensure .env.local has valid VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for your hosted project.");
 
 if (!existsSync(join(projectRoot, "dist", "index.html"))) {
   console.log("Production build is missing. Building the application...");
