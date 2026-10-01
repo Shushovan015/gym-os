@@ -17,7 +17,7 @@
     "supabase:verify": "node scripts/verify-local.mjs",
     "supabase:functions:deploy": "supabase functions deploy send-bill send-progress-report",
     "deploy:hosted": "node scripts/deploy-hosted.mjs",
-    "db:reset": "supabase db reset --local",
+    "db:reset": "supabase db reset --local && node scripts/create-admin-user.mjs",
     "db:backup": "node scripts/local-db.mjs backup",
     "db:restore": "node scripts/local-db.mjs restore",
     "backup:full": "node scripts/backup-cli.mjs create",

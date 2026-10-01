@@ -56,6 +56,7 @@ import {
   formatDateTime,
   formatDisplayDate,
   formatBillingPeriod,
+  formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
   getMemberLifecycle,
   getNepalTodayAdDate,
@@ -266,6 +267,7 @@ export default function AdminMembers() {
   const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [formMessage, setFormMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebouncedValue(searchTerm);
@@ -402,7 +404,14 @@ export default function AdminMembers() {
   };
 
   const updateForm = <K extends keyof MemberForm>(key: K, value: MemberForm[K]) => {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      // When creating a new member, auto-set payment_due_date to start_date if empty
+      if (!editingId && key === "start_date" && value && !current.payment_due_date) {
+        next.payment_due_date = value;
+      }
+      return next;
+    });
     setFormErrors((current) => ({ ...current, [key]: undefined }));
   };
 
@@ -410,6 +419,7 @@ export default function AdminMembers() {
     event.preventDefault();
     if (saving) return;
     setMessage("");
+    setFormMessage(null);
 
     const normalizedForm = { ...form, phone: normalizePhone(form.phone) };
     const errors = validateMemberForm(normalizedForm, members, editingId);
@@ -423,17 +433,23 @@ export default function AdminMembers() {
       `phone.eq.${normalizedForm.phone.replace(/[,()]/g, "")}`,
       ...(normalizedEmail ? [`email.ilike.${normalizedEmail.replace(/[,()]/g, "")}`] : []),
     ];
-    let conflictQuery = supabase.from("members").select("id,member_id,phone,email").or(conflictFilters.join(",")).limit(1);
+    let conflictQuery = supabase
+      .from("members")
+      .select("id,member_id,phone,email")
+      .is("deleted_at", null)
+      .or(conflictFilters.join(","))
+      .limit(1);
     if (editingId) conflictQuery = conflictQuery.neq("id", editingId);
     const { data: conflicts, error: conflictError } = await conflictQuery;
     if (conflictError) {
       setSaving(false);
-      setMessage(conflictError.message);
+      setFormMessage({ type: "error", text: conflictError.message });
       return;
     }
     if (conflicts?.length) {
       setSaving(false);
       setFormErrors({ member_id: "Member ID, phone or email is already used by another member." });
+      setFormMessage({ type: "error", text: "This member ID, phone, or email is already in use." });
       return;
     }
     let photoUrl = normalizedForm.photo_url;
@@ -443,7 +459,7 @@ export default function AdminMembers() {
       const upload = await supabase.storage.from("gym-media").upload(path, memberPhotoFile);
       if (upload.error) {
         setSaving(false);
-        setMessage(`Member photo could not be uploaded: ${upload.error.message}`);
+        setFormMessage({ type: "error", text: `Photo upload failed: ${upload.error.message}` });
         return;
       }
       photoUrl = supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
@@ -455,7 +471,16 @@ export default function AdminMembers() {
 
     if (result.error) {
       setSaving(false);
-      setMessage(result.error.message);
+      if (result.error.code === '23505') {
+        const detail = result.error.details || result.error.message || '';
+        let friendly = "This value is already in use.";
+        if (detail.includes('member_id')) friendly = "Member ID already exists.";
+        else if (detail.includes('email')) friendly = "Email already exists.";
+        else if (detail.includes('phone')) friendly = "Phone number already exists.";
+        setFormMessage({ type: "error", text: friendly });
+      } else {
+        setFormMessage({ type: "error", text: result.error.message });
+      }
       return;
     }
 
@@ -470,13 +495,8 @@ export default function AdminMembers() {
     setSaving(false);
     setFormOpen(false);
     await loadMembers();
-    setMessage(
-      webhookResult.ok
-        ? `${editingId ? "Member updated" : "Member created"} and webhook notified.`
-        : webhookResult.skipped
-          ? `${editingId ? "Member updated" : "Member created"}. Webhook is not configured.`
-          : `${editingId ? "Member updated" : "Member created"} but webhook failed: ${webhookResult.error}`
-    );
+    const action = editingId ? "updated" : "created";
+    setMessage(`${editingId ? "Member updated" : "Member created"}.`);
   };
 
   const softDeleteMember = async (member: MemberRow) => {
@@ -932,10 +952,15 @@ export default function AdminMembers() {
         open={formOpen}
         title={editingId ? "Edit member" : "Create member"}
         description="Fields are grouped for front-desk entry. All dates use the Nepali calendar (BS)."
-        onClose={() => setFormOpen(false)}
+        onClose={() => { setFormOpen(false); setFormMessage(null); }}
         size="2xl"
       >
         <form onSubmit={saveMember} className="space-y-6">
+          {formMessage && (
+            <div className={cx("rounded-lg p-3 text-sm", formMessage.type === "error" ? "bg-rose-900/40 border border-rose-700 text-rose-200" : "bg-emerald-900/40 border border-emerald-700 text-emerald-200")}>
+              {formMessage.text}
+            </div>
+          )}
           <AdminCard>
             <AdminSectionTitle title="Identity and contact" />
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1139,7 +1164,7 @@ export default function AdminMembers() {
                                 className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
                               >
                                 <div className="flex flex-col gap-1">
-                                  <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                  <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                   <div className="text-xs text-slate-400">
                                     Due: {formatDisplayDate(fee.due_date, settings.date_display_preference)} | 
                                     Amount: {formatMembershipFeeAmount(fee.amount_minor, fee.currency_code)} | 
@@ -1170,7 +1195,7 @@ export default function AdminMembers() {
                               .filter((fee) => fee.id === feePaymentOpen)
                               .map((fee) => (
                                 <div key={fee.id} className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4">
-                                  <div className="font-semibold text-white">Record payment for {formatBillingPeriod(fee.billing_month)}</div>
+                                  <div className="font-semibold text-white">Record payment for {formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                                     <AdminField label="Amount">
                                       <AdminInput
@@ -1224,7 +1249,7 @@ export default function AdminMembers() {
                               className="flex flex-col gap-1 rounded-lg border border-slate-800 bg-slate-900/55 p-3 sm:flex-row sm:items-center sm:justify-between"
                             >
                               <div className="flex flex-col gap-1">
-                                <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                 <div className="text-xs text-slate-400">
                                   Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0], settings.date_display_preference) : "Unknown date"}
                                 </div>
