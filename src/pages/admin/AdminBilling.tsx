@@ -42,6 +42,7 @@ import {
   formatBsDateFromAd,
   getNepalTodayAdDate,
   formatBillingPeriod,
+  formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
 } from "./adminUtils";
 import type {
@@ -454,7 +455,7 @@ export default function AdminBilling() {
       );
       return;
     }
-    if (billLines.length === 0 || effectiveTotals.totalMinor <= 0) {
+    if ((lineType !== "membership_fee_collection" && billLines.length === 0) || effectiveTotals.totalMinor <= 0) {
       setCreateError("Enter an amount greater than zero.");
       return;
     }
@@ -1157,7 +1158,7 @@ export default function AdminBilling() {
                                 />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 text-sm">
-                                    <b className="text-white truncate">{formatBillingPeriod(fee.billing_month)}</b>
+                                    <b className="text-white truncate">{formatBillingPeriodFromDueDate(fee.due_date)}</b>
                                     {isOverdue && <AdminBadge tone="danger" className="text-xs">Overdue</AdminBadge>}
                                     {fee.status === "partial" && <AdminBadge tone="warning" className="text-xs">Partial</AdminBadge>}
                                   </div>
@@ -1178,7 +1179,7 @@ export default function AdminBilling() {
                                 Selected: {selectedFeeIds.length} month{selectedFeeIds.length > 1 ? "s" : ""}
                               </div>
                               <div className="text-xs text-slate-400">
-                                {memberFees.filter((f) => selectedFeeIds.includes(f.id)).map((f) => formatBillingPeriod(f.billing_month)).join(", ")}
+                                {memberFees.filter((f) => selectedFeeIds.includes(f.id)).map((f) => formatBillingPeriodFromDueDate(f.due_date)).join(", ")}
                               </div>
                             </div>
                             <b className="text-lg text-amber-300">

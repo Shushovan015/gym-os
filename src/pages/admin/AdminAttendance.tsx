@@ -27,6 +27,7 @@ import {
   defaultAdminSettings,
   formatDisplayDate,
   formatBillingPeriod,
+  formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
   getNepalTodayAdDate,
   membershipFeeStatusTone,
@@ -654,7 +655,7 @@ export default function AdminAttendance() {
                                 className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
                               >
                                 <div className="flex flex-col gap-1">
-                                  <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                  <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                   <div className="text-xs text-slate-400">
                                     Due: {formatDisplayDate(fee.due_date, settings.date_display_preference)} | 
                                     Amount: {formatMembershipFeeAmount(fee.amount_minor, fee.currency_code)} | 
@@ -682,7 +683,7 @@ export default function AdminAttendance() {
                               className="flex flex-col gap-1 rounded-lg border border-slate-800 bg-slate-900/55 p-3 sm:flex-row sm:items-center sm:justify-between"
                             >
                               <div className="flex flex-col gap-1">
-                                <div className="font-semibold text-white">{formatBillingPeriod(fee.billing_month)}</div>
+                                <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                 <div className="text-xs text-slate-400">
                                   Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0], settings.date_display_preference) : "Unknown date"}
                                 </div>

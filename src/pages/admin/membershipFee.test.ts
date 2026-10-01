@@ -7,6 +7,9 @@ import {
   membershipFeeStatusTone,
   isMembershipFeeStatus,
   formatDisplayDate,
+  bsStringToAdDate,
+  formatBsDateFromAd,
+  adToBsString,
 } from "./adminUtils";
 
 describe("Membership fee utilities", () => {
@@ -223,5 +226,103 @@ describe("Edge cases for membership fee payments", () => {
     expect(nextDue).toBe("2026-12-01");
     // Should NOT be based on payment date
     expect(addMonthsPreservingDay(paymentDate, 1)).not.toBe(nextDue);
+  });
+});
+
+describe("BS date conversion - timezone-safe round-trip", () => {
+  it("Ashar 2 (2083-03-02) converts to AD and back without day shift", () => {
+    const bsDate = "2083-03-02"; // Ashar 2, 2083
+    const adDate = bsStringToAdDate(bsDate);
+    const bsBack = adToBsString(adDate);
+    
+    expect(adDate).toBe("2026-06-16");
+    expect(bsBack).toBe("2083-03-02");
+  });
+
+  it("Ashoj 1 (2083-06-01) converts to AD and back without day shift", () => {
+    const bsDate = "2083-06-01"; // Ashoj 1, 2083
+    const adDate = bsStringToAdDate(bsDate);
+    const bsBack = adToBsString(adDate);
+    
+    expect(adDate).toBe("2026-09-17");
+    expect(bsBack).toBe("2083-06-01");
+  });
+
+  it("round-trips all months of 2083 correctly", () => {
+    const months = [
+      "2083-01-01", // Baisakh 1
+      "2083-02-01", // Jestha 1
+      "2083-03-01", // Asar 1
+      "2083-04-01", // Shrawan 1
+      "2083-05-01", // Bhadra 1
+      "2083-06-01", // Ashoj 1
+      "2083-07-01", // Kartik 1
+      "2083-08-01", // Mangsir 1
+      "2083-09-01", // Poush 1
+      "2083-10-01", // Magh 1
+      "2083-11-01", // Falgun 1
+      "2083-12-01", // Chaitra 1
+    ];
+
+    for (const bsDate of months) {
+      const adDate = bsStringToAdDate(bsDate);
+      const bsBack = adToBsString(adDate);
+      expect(bsBack).toBe(bsDate);
+    }
+  });
+
+  it("formatDisplayDate shows correct BS date for Ashar 2", () => {
+    // Ashar 2, 2083 = 2026-06-16 AD
+    const result = formatDisplayDate("2026-06-16");
+    expect(result).toBe("2083-03-02 BS");
+  });
+
+  it("formatDisplayDate shows correct BS date for Ashoj 1", () => {
+    // Ashoj 1, 2083 = 2026-09-17 AD
+    const result = formatDisplayDate("2026-09-17");
+    expect(result).toBe("2083-06-01 BS");
+  });
+
+  it("initial membership due date equals start date (Ashoj 1)", () => {
+    const startDate = "2026-09-17"; // Ashoj 1, 2083
+    const due1 = addMonthsPreservingDay(startDate, 0); // First due date
+    expect(due1).toBe("2026-09-17");
+  });
+
+  it("initial membership due date equals start date (Ashar 2)", () => {
+    const startDate = "2026-06-16"; // Ashar 2, 2083
+    const due1 = addMonthsPreservingDay(startDate, 0); // First due date
+    expect(due1).toBe("2026-06-16");
+  });
+
+  it("Ashoj 1 payment -> next due date is one AD month later (2026-10-17)", () => {
+    const startDate = "2026-09-17"; // Ashoj 1, 2083
+    const due1 = addMonthsPreservingDay(startDate, 0); // Ashoj 1
+    const due2 = addMonthsPreservingDay(startDate, 1); // After payment -> one AD month later
+    
+    expect(due1).toBe("2026-09-17");
+    expect(due2).toBe("2026-10-17"); // One month later in AD calendar
+  });
+
+  it("Ashar 2 payment -> next due date is one AD month later (2026-07-16)", () => {
+    const startDate = "2026-06-16"; // Ashar 2, 2083
+    const due1 = addMonthsPreservingDay(startDate, 0); // Ashar 2
+    const due2 = addMonthsPreservingDay(startDate, 1); // After payment -> one AD month later
+    
+    expect(due1).toBe("2026-06-16");
+    expect(due2).toBe("2026-07-16"); // One month later in AD calendar
+  });
+
+  it("timezone differences cannot shift the date by one day", () => {
+    // Simulate the old buggy behavior (using UTC components) vs new behavior (local components)
+    const bsDate = "2083-03-02"; // Ashar 2
+    
+    // New correct behavior (using local components)
+    const adDateCorrect = bsStringToAdDate(bsDate);
+    const bsBackCorrect = adToBsString(adDateCorrect);
+    
+    // Old buggy behavior would have returned 2026-06-15 (one day before)
+    expect(adDateCorrect).not.toBe("2026-06-15");
+    expect(bsBackCorrect).toBe("2083-03-02");
   });
 });

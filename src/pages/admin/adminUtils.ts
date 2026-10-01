@@ -149,11 +149,7 @@ export function formatBsDateFromAd(adDate: string | null | undefined) {
   try {
     const date = parseAdDate(adDate);
     if (!date) return adDate;
-    // Use UTC components to avoid timezone issues
-    const utcYear = date.getUTCFullYear();
-    const utcMonth = date.getUTCMonth();
-    const utcDay = date.getUTCDate();
-    return new NepaliDate(utcYear, utcMonth, utcDay).format("YYYY-MM-DD");
+    return new NepaliDate(date).format("YYYY-MM-DD");
   } catch {
     return adDate;
   }
@@ -171,9 +167,10 @@ export function bsStringToAdDate(bsDate: string) {
   try {
     const bs = new NepaliDate(value);
     if (bs.format("YYYY-MM-DD") !== value) return null;
-    // Convert to AD using toJsDate(), then extract UTC components
+    // Convert to AD using toJsDate(), then extract LOCAL components
+    // toJsDate() returns a date at 22:00 UTC (04:00 Nepal next day), so local components are correct
     const jsDate = bs.toJsDate();
-    const utcDate = new Date(Date.UTC(jsDate.getUTCFullYear(), jsDate.getUTCMonth(), jsDate.getUTCDate()));
+    const utcDate = new Date(Date.UTC(jsDate.getFullYear(), jsDate.getMonth(), jsDate.getDate()));
     return formatAdDate(utcDate);
   } catch {
     return null;
@@ -285,9 +282,10 @@ export function buildBsMonthDays(bsYear: number, bsMonthIndex: number, closingDa
     const bsDate = new NepaliDate(bsYear, bsMonthIndex, day);
     if (bsDate.getYear() !== bsYear || bsDate.getMonth() !== bsMonthIndex) break;
     const weekdayIndex = bsDate.getDay();
-    // Convert BS date to AD using toJsDate(), then extract UTC components
+    // Convert BS date to AD using toJsDate(), then extract LOCAL components
+    // toJsDate() returns a date at 22:00 UTC (04:00 Nepal next day), so local components are correct
     const jsDate = bsDate.toJsDate();
-    const utcDate = new Date(Date.UTC(jsDate.getUTCFullYear(), jsDate.getUTCMonth(), jsDate.getUTCDate()));
+    const utcDate = new Date(Date.UTC(jsDate.getFullYear(), jsDate.getMonth(), jsDate.getDate()));
     result.push({
       bsDay: day,
       adDate: formatAdDate(utcDate),
@@ -345,9 +343,25 @@ export function getMonthNameFromBillingMonth(billingMonth: string): string {
   return `${BS_MONTHS[bsMonthIndex]} ${bsYear}`;
 }
 
+export function getMonthNameFromDueDate(dueDate: string): string {
+  // due_date is stored as AD date (e.g., '2026-08-24') but represents a Nepali calendar date
+  // Convert to BS to get the correct Nepali month name
+  if (!dueDate) return "";
+  const adDate = new Date(`${dueDate}T00:00:00`);
+  const bs = new NepaliDate(adDate);
+  const bsMonthIndex = bs.getMonth(); // 0-11
+  const bsYear = bs.getYear();
+  return `${BS_MONTHS[bsMonthIndex]} ${bsYear}`;
+}
+
 export function formatBillingPeriod(billingMonth: string): string {
   // Returns "September 2026 Membership Fee"
   return `${getMonthNameFromBillingMonth(billingMonth)} Membership Fee`;
+}
+
+export function formatBillingPeriodFromDueDate(dueDate: string): string {
+  // Returns "Bhadra 2083 Membership Fee" using the due_date's Nepali month
+  return `${getMonthNameFromDueDate(dueDate)} Membership Fee`;
 }
 
 export function addMonthsPreservingDay(adDate: string, months: number): string {
