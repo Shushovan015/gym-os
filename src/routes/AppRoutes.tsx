@@ -31,6 +31,7 @@ import AdminInventory from "../pages/admin/AdminInventory";
 import AdminBilling from "../pages/admin/AdminBilling";
 import AdminWebsite from "../pages/admin/AdminWebsite";
 import AdminReports from "../pages/admin/AdminReports";
+import { LegacyImportPage } from "../features/legacy-import/ui/LegacyImportPage";
 
 export default function AppRoutes() {
   const location = useLocation();
@@ -74,6 +75,7 @@ export default function AppRoutes() {
             <Route path="billing" element={<AdminBilling />} />
             <Route path="reports" element={<AdminReports />} />
             <Route path="website" element={<AdminWebsite />} />
+            <Route path="legacy-import" element={<LegacyImportPage />} />
           </Route>
         </Route>
 

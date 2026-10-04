@@ -17,6 +17,7 @@ import {
   UserRound,
   Users,
   X,
+  Database,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
@@ -51,6 +52,12 @@ const navSections: AdminNavSection[] = [
       { label: "Holidays", to: "/admin/holidays", icon: CalendarDays },
       { label: "Website", to: "/admin/website", icon: Globe2 },
       { label: "Settings", to: "/admin/settings", icon: Settings },
+    ],
+  },
+  {
+    label: "Data management",
+    items: [
+      { label: "Legacy Import", to: "/admin/legacy-import", icon: Database },
     ],
   },
 ];
