@@ -13,7 +13,7 @@ import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Loader2, Search
 import { adToBsString, buildBsMonthDays, bsStringToAdDate, cx, getNepalTodayAdDate } from "@src/pages/admin/adminUtils";
 import type { SelectOption } from "@src/pages/admin/adminTypes";
 
-type Tone = "neutral" | "success" | "warning" | "danger" | "accent" | "muted";
+export type Tone = "neutral" | "success" | "warning" | "danger" | "accent" | "muted";
 
 const toneClasses: Record<Tone, string> = {
   neutral: "border-slate-700 bg-slate-900 text-slate-100",
@@ -538,6 +538,45 @@ export function AdminDialog({
 
 export function AdminTableShell({ children }: { children: ReactNode }) {
   return <div className="overflow-hidden rounded-xl border border-slate-800">{children}</div>;
+}
+
+export function ToggleSwitch({
+  checked,
+  onChange,
+  disabled = false,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  return (
+    <label className="relative inline-flex items-center cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className="sr-only peer"
+      />
+      <div
+        className={cx(
+          "relative w-11 h-6 rounded-full transition-colors duration-200",
+          checked ? "bg-emerald-500" : "bg-slate-600",
+          disabled && "opacity-50 cursor-not-allowed"
+        )}
+      >
+        <span
+          className={cx(
+            "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200",
+            checked && "translate-x-full"
+          )}
+        />
+      </div>
+    </label>
+  );
 }
 
 export function AdminTableScroll({ children }: { children: ReactNode }) {

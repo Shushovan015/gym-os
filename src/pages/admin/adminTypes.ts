@@ -24,6 +24,9 @@ export type MemberRow = {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  is_active: boolean;
+  activated_at: string | null;
+  deactivated_at: string | null;
   membership_fee_summary?: MembershipFeeSummary;
 };
 
@@ -66,7 +69,16 @@ export type MemberMembershipFeeStatus = {
   summary: MembershipFeeSummary;
 };
 
-export type MemberForm = Omit<MemberRow, "id" | "created_at" | "updated_at" | "deleted_at" | "membership_fee_summary">;
+export type MemberForm = Omit<MemberRow, "id" | "created_at" | "updated_at" | "deleted_at" | "membership_fee_summary" | "is_active" | "activated_at" | "deactivated_at">;
+
+export type MemberStatusHistoryRow = {
+  id: number;
+  member_id: number;
+  status: "active" | "inactive";
+  changed_by: string | null;
+  changed_at: string;
+  notes: string | null;
+};
 
 export type MeasurementRow = {
   id: number;
@@ -124,6 +136,18 @@ export type SendProgressReportResponse = {
   ok: boolean;
   error?: string;
   report?: GeneratedProgressReport;
+};
+
+export type SetMemberActiveStatusParams = {
+  p_member_id: number;
+  p_is_active: boolean;
+  p_changed_by?: string;
+  p_notes?: string;
+};
+
+export type SetMemberActiveStatusResponse = {
+  ok: boolean;
+  error?: string;
 };
 
 export type AttendanceRow = {

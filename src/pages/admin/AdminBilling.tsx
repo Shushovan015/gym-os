@@ -264,7 +264,7 @@ export default function AdminBilling() {
     let alive = true;
     const timeout = window.setTimeout(async () => {
       const state = location.state as LocationState | null;
-      let query = supabase.from("members").select("*").is("deleted_at", null);
+      let query = supabase.from("members").select("*").is("deleted_at", null).eq("is_active", true);
       if (state?.memberId && !memberSearch.trim()) query = query.eq("id", state.memberId);
       else {
         const term = memberSearch.trim().replace(/[,%()]/g, " ");
@@ -298,7 +298,7 @@ export default function AdminBilling() {
     const state = location.state as LocationState | null;
     if (!loading && state?.memberId) {
       const timeout = window.setTimeout(async () => {
-        const { data: member, error } = await supabase.from("members").select("*").eq("id", state.memberId).is("deleted_at", null).maybeSingle();
+        const { data: member, error } = await supabase.from("members").select("*").eq("id", state.memberId).is("deleted_at", null).eq("is_active", true).maybeSingle();
         if (error) { setMessage(error.message); return; }
         if (member) {
           setMembers([member as MemberRow]);

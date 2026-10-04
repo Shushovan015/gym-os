@@ -33,6 +33,8 @@ import {
   AdminTableScroll,
   AdminTableShell,
   AdminTextarea,
+  ToggleSwitch,
+  type Tone,
 } from "@src/components/admin/AdminUI";
 import type {
   AdminSettings,
@@ -69,6 +71,7 @@ import {
 } from "./adminUtils";
 
 type DeletedFilter = "active" | "deleted" | "all";
+type ActiveFilter = "all" | "active" | "inactive";
 type MembershipFilter = "all" | MembershipStatus | "expiring";
 type PaymentFilter = "all" | PaymentStatus;
 type SortKey = "updated_desc" | "name_asc" | "end_date_asc" | "created_desc";
@@ -113,6 +116,11 @@ const deletedOptions = [
   { value: "active", label: "Active list" },
   { value: "deleted", label: "Deleted list" },
   { value: "all", label: "All records" },
+];
+const activeOptions = [
+  { value: "all", label: "All Status" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
 ];
 const sortOptions = [
   { value: "updated_desc", label: "Recently updated" },
@@ -278,6 +286,7 @@ export default function AdminMembers() {
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>((searchParams.get("payment") as PaymentFilter | null) ?? "all");
   const [planFilter, setPlanFilter] = useState<string>("all");
   const [deletedFilter, setDeletedFilter] = useState<DeletedFilter>("active");
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("updated_desc");
   const expiringDays = Number.isFinite(initialExpiring) ? initialExpiring : defaultAdminSettings.expiry_warning_days;
   const [absentDays, setAbsentDays] = useState(Number.isFinite(initialAbsent) ? initialAbsent : 0);
@@ -303,14 +312,16 @@ export default function AdminMembers() {
   const [importing, setImporting] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
 
-  const beginRequest = useLatestRequest(JSON.stringify([searchTerm, absentDays, createdSince, deletedFilter, membershipFilter, paymentFilter, planFilter, sortKey, currentPage]));
-  const loadMembers = async () => {
+  const beginRequest = useLatestRequest(JSON.stringify([searchTerm, absentDays, createdSince, deletedFilter, activeFilter, membershipFilter, paymentFilter, planFilter, sortKey, currentPage]));
+const loadMembers = async () => {
     if (searchTerm !== debouncedSearch) return;
     const isCurrent = beginRequest();
     setResultsLoading(true);
     let query = supabase.from("members").select("*", { count: "exact" });
     if (deletedFilter === "active") query = query.is("deleted_at", null);
     if (deletedFilter === "deleted") query = query.not("deleted_at", "is", null);
+    if (activeFilter === "active") query = query.eq("is_active", true);
+    if (activeFilter === "inactive") query = query.eq("is_active", false);
     if (debouncedSearch.trim()) {
       const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
       query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
@@ -324,7 +335,7 @@ export default function AdminMembers() {
     else if (membershipFilter !== "all") query = query.eq("membership_status", membershipFilter);
     if (sortKey === "name_asc") query = query.order("full_name").order("id");
     else if (sortKey === "end_date_asc") query = query.order("end_date", { ascending: true, nullsFirst: false }).order("id");
-    else if (sortKey === "created_desc") query = query.order("created_at", { ascending: false }).order("id", { ascending: false });
+    else if (sortKey === "created_desc") query = query.order("created_at", { ascending: false }).order("id");
     else query = query.order("updated_at", { ascending: false }).order("id", { ascending: false });
     const from = (currentPage - 1) * rowsPerPage;
     const membersRes = await query.range(from, from + rowsPerPage - 1);
@@ -358,7 +369,7 @@ export default function AdminMembers() {
     };
   }, []);
 
-  useEffect(() => { void loadMembers(); }, [absentDays, createdSince, deletedFilter, membershipFilter, paymentFilter, planFilter, searchTerm, debouncedSearch, sortKey, currentPage]);
+  useEffect(() => { void loadMembers(); }, [absentDays, createdSince, deletedFilter, activeFilter, membershipFilter, paymentFilter, planFilter, searchTerm, debouncedSearch, sortKey, currentPage]);
 
   const totalPages = Math.max(1, Math.ceil(memberCount / rowsPerPage));
   const safePage = Math.min(currentPage, totalPages);
@@ -467,7 +478,7 @@ export default function AdminMembers() {
     const payload = toMemberPayload({ ...normalizedForm, photo_url: photoUrl });
     const result = editingId
       ? await supabase.from("members").update(payload).eq("id", editingId)
-      : await supabase.from("members").insert(payload);
+      : await supabase.from("members").insert({ ...payload, is_active: true });
 
     if (result.error) {
       setSaving(false);
@@ -543,7 +554,6 @@ export default function AdminMembers() {
 
   const loadMemberProfile = async (member: MemberRow) => {
     setDetailMember(member);
-    setGeneratedReport(null);
     setLoadingProfile(true);
     setMeasurements([]);
     setTransformations([]);
@@ -606,6 +616,43 @@ export default function AdminMembers() {
     setFeePaymentAmount("");
     setMessage("Membership fee payment recorded.");
     await loadMemberProfile(detailMember);
+  };
+
+  const toggleMemberActive = async (memberId: number, isActive: boolean) => {
+    // Optimistic update
+    setMembers((prev) =>
+      prev.map((member) =>
+        member.id === memberId ? { ...member, is_active: isActive } : member
+      )
+    );
+
+    const { error } = await supabase.rpc("set_member_active_status", {
+      p_member_id: memberId,
+      p_is_active: isActive,
+    });
+
+    if (error) {
+      // Revert optimistic update on error
+      setMembers((prev) =>
+        prev.map((member) =>
+          member.id === memberId ? { ...member, is_active: !isActive } : member
+        )
+      );
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(isActive ? "Member activated" : "Member deactivated");
+
+    if (detailMember && detailMember.id === memberId) {
+      setDetailMember({
+        ...detailMember,
+        is_active: isActive,
+        activated_at: isActive ? new Date().toISOString() : null,
+        deactivated_at: !isActive ? new Date().toISOString() : null,
+      });
+    }
+    // Do NOT call loadMembers() - we updated state optimistically
   };
 
   const parseCsv = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -673,7 +720,7 @@ export default function AdminMembers() {
   const importCsvRows = async () => {
     if (validCsvRows.length === 0 || importing) return;
     setImporting(true);
-    const payload = validCsvRows.map((row) => toMemberPayload(row));
+    const payload = validCsvRows.map((row) => ({ ...toMemberPayload(row), is_active: false }));
     const { error } = await supabase.from("members").upsert(payload, { onConflict: "member_id" });
 
     if (error) {
@@ -771,6 +818,14 @@ export default function AdminMembers() {
             }}
           />
           <AdminSelect
+            options={activeOptions}
+            value={activeFilter}
+            onChange={(event) => {
+              setActiveFilter(event.target.value as ActiveFilter);
+              resetPage();
+            }}
+          />
+          <AdminSelect
             options={sortOptions}
             value={sortKey}
             onChange={(event) => {
@@ -859,6 +914,7 @@ export default function AdminMembers() {
                     <th className="px-4 py-3">Plan</th>
                     <th className="px-4 py-3">Membership</th>
                     <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Dates</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -879,6 +935,13 @@ export default function AdminMembers() {
                       </td>
                       <td className="px-4 py-4">
                         <AdminBadge tone={paymentTone(member.payment_status)}>{statusLabel(member.payment_status)}</AdminBadge>
+                      </td>
+                      <td className="px-4 py-4">
+                        <ToggleSwitch
+                          checked={member.is_active}
+                          onChange={(isActive) => toggleMemberActive(member.id, isActive)}
+                          ariaLabel={member.is_active ? `Deactivate ${member.full_name}` : `Activate ${member.full_name}`}
+                        />
                       </td>
                       <td className="px-4 py-4 text-xs text-slate-400">
                         <div>End: {formatDisplayDate(member.end_date, settings.date_display_preference)}</div>
@@ -913,7 +976,14 @@ export default function AdminMembers() {
             <article key={member.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Select ${member.full_name}`} checked={selectedMemberIds.has(member.id)} onChange={() => toggleMemberSelection(member.id)} className="mt-1 h-4 w-4 accent-amber-300" /><button type="button" onClick={() => loadMemberProfile(member)} className="text-left"><div className="font-semibold text-white">{member.full_name}</div><div className="text-xs text-slate-500">{member.member_id}</div></button></div>
-                <AdminBadge tone={memberStatusTone(member, todayAd)}>{member.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(member, todayAd))}</AdminBadge>
+                <div className="flex items-center gap-2">
+                  <AdminBadge tone={memberStatusTone(member, todayAd)}>{member.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(member, todayAd))}</AdminBadge>
+                  <ToggleSwitch
+                    checked={member.is_active}
+                    onChange={(isActive) => toggleMemberActive(member.id, isActive)}
+                    ariaLabel={member.is_active ? `Deactivate ${member.full_name}` : `Activate ${member.full_name}`}
+                  />
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
                 <div>Phone: {member.phone}</div>
@@ -1070,6 +1140,11 @@ export default function AdminMembers() {
                   Record payment / Create bill
                 </AdminButton>
                 {!detailMember.deleted_at ? <AdminButton type="button" variant="primary" onClick={() => void markPresentToday(detailMember)}><CheckCircle2 className="h-4 w-4"/>Mark Present</AdminButton> : null}
+                <ToggleSwitch
+                  checked={detailMember.is_active}
+                  onChange={(isActive) => toggleMemberActive(detailMember.id, isActive)}
+                  ariaLabel={detailMember.is_active ? `Deactivate ${detailMember.full_name}` : `Activate ${detailMember.full_name}`}
+                />
               </div>
               {detailMember.deleted_at ? (
                 <AdminButton type="button" variant="secondary" onClick={() => restoreMember(detailMember)}>
@@ -1103,6 +1178,7 @@ export default function AdminMembers() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       <AdminBadge tone={memberStatusTone(detailMember, todayAd)}>{detailMember.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(detailMember, todayAd))}</AdminBadge>
                       <AdminBadge tone={paymentTone(detailMember.payment_status)}>{statusLabel(detailMember.payment_status)}</AdminBadge>
+                      <AdminBadge tone={detailMember.is_active ? ("success" as Tone) : ("muted" as Tone)}>{detailMember.is_active ? "Active" : "Inactive"}</AdminBadge>
                     </div>
                   </div>
                 </div>

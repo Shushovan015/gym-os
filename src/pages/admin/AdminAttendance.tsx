@@ -182,7 +182,7 @@ export default function AdminAttendance() {
     let query = supabase.from("members").select("*", { count: "exact" }).is("deleted_at", null);
     const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
     if (term) query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
-    query.order("full_name", { ascending: true }).range((page - 1) * pageSize, page * pageSize - 1).then(async ({ data, count, error }) => {
+    query.eq("is_active", true).order("full_name", { ascending: true }).range((page - 1) * pageSize, page * pageSize - 1).then(async ({ data, count, error }) => {
       if (!alive) return;
       if (error) setMessage(error.message);
       const nextMembers = (data ?? []) as MemberRow[];
@@ -225,6 +225,12 @@ export default function AdminAttendance() {
     const holiday = holidayByDate.get(day.adDate);
     const unavailable = day.isClosingDay || (settings.attendance_holiday_lock && Boolean(holiday));
     if (unavailable) return;
+
+    // Prevent attendance for inactive members
+    if (!member.is_active) {
+      setMessage("Cannot mark attendance for inactive member");
+      return;
+    }
 
     const key = cellKey(member.id, day.adDate);
     const existing = attendanceMap.get(key);
