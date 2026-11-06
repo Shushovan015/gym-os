@@ -116,6 +116,21 @@ export async function runLegacyImport(options: ImportOptions): Promise<Migration
 
     membershipsImported = await importMembershipFees(membershipFeeData, adminUserId, context.legacyToNewMap.register);
 
+    // Imported members are inserted inactive so legacy fee rows can be loaded
+    // first. Activate them now; the activation trigger generates any missing
+    // membership fee periods without duplicating the imported rows.
+    const { error: activateError } = await supabase
+      .from('members')
+      .update({ is_active: true })
+      .eq('legacy_source', 'legacy_mysql')
+      .eq('is_active', false)
+      .is('deleted_at', null)
+      .is('deactivated_at', null);
+
+    if (activateError) {
+      throw new Error(`Failed to activate imported members: ${activateError.message}`);
+    }
+
     const { importedInvoices, importedPayments } = await importInvoicesAndPayments(
       invoiceData,
       paymentData,

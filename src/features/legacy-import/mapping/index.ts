@@ -155,6 +155,9 @@ export function migrateRegisterRow(
     legacy_register_id: row.id,
     legacy_source: 'legacy_mysql',
     additional_info: additionalInfo,
+    // Inserted inactive so legacy fee rows can be imported first.
+    // migrationService activates imported members afterwards, which triggers
+    // initialization of any missing membership fee periods.
     is_active: false,
   };
   
