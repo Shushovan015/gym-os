@@ -674,6 +674,10 @@ export default function AdminAttendance() {
                           </div>
                         )}
                       </>
+                    ) : !profileMember.is_active ? (
+                      <AdminNotice tone="neutral">
+                        This member is inactive. Activate the member to generate and manage membership fees.
+                      </AdminNotice>
                     ) : (
                       <AdminNotice tone="success">
                         No outstanding membership fees. All payments are up to date.

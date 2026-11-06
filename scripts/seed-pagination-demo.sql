@@ -10,7 +10,7 @@ delete from public.shop_items where sku like 'DEMO-P-%';
 insert into public.members (
   member_id, full_name, email, phone, address, membership_type,
   membership_status, start_date, end_date, last_visit_date,
-  payment_status, payment_due_date, notes
+  payment_status, payment_due_date, notes, is_active
 )
 select
   'DEMO-M-' || lpad(g::text, 3, '0'),
@@ -25,7 +25,8 @@ select
   current_date - ((g % 12) * interval '1 day'),
   case when g % 7 = 0 then 'overdue' when g % 4 = 0 then 'unpaid' else 'paid' end,
   case when g % 4 = 0 or g % 7 = 0 then current_date + ((g % 10) * interval '1 day') else null end,
-  'Pagination demo data'
+  'Pagination demo data',
+  true
 from generate_series(1, 50) g
 on conflict (member_id) do update set
   full_name = excluded.full_name,
@@ -40,6 +41,7 @@ on conflict (member_id) do update set
   payment_status = excluded.payment_status,
   payment_due_date = excluded.payment_due_date,
   notes = excluded.notes,
+  is_active = excluded.is_active,
   deleted_at = null;
 
 insert into public.shop_items (

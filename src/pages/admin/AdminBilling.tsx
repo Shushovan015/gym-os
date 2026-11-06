@@ -187,28 +187,32 @@ export default function AdminBilling() {
     let alive = true;
     setMemberFeesLoading(true);
     setFeeCollectionError("");
+    // Use the SECURITY DEFINER RPC instead of selecting membership_fees
+    // directly: the table has RLS enabled, so a direct select can return zero
+    // rows even when the member has outstanding fees.
     supabase
-      .from("membership_fees")
-      .select("*")
-      .eq("member_id", Number(memberId))
-      .in("status", ["unpaid", "overdue", "partial"])
-      .order("billing_month", { ascending: true })
+      .rpc("get_member_membership_fee_status", { p_member_id: Number(memberId) })
       .then(({ data, error }) => {
         if (!alive) return;
         setMemberFeesLoading(false);
         if (error) {
           setFeeCollectionError(error.message);
           setMemberFees([]);
-        } else {
-          setMemberFees((data ?? []) as MembershipFee[]);
-          // Auto-select the first unpaid fee (oldest)
-          if (data && data.length > 0) {
-            setSelectedFeeIds([data[0].id]);
-          }
+          return;
+        }
+        const outstandingFees = (data?.outstanding_fees ?? []) as MembershipFee[];
+        const fees = outstandingFees.map((fee) => ({
+          ...fee,
+          currency_code: fee.currency_code ?? settings.currency_code,
+        }));
+        setMemberFees(fees);
+        // Auto-select the first unpaid fee (oldest)
+        if (fees.length > 0) {
+          setSelectedFeeIds([fees[0].id]);
         }
       });
     return () => { alive = false; };
-  }, [memberId, lineType]);
+  }, [memberId, lineType, settings.currency_code]);
 
   // Auto-set payment amount for membership fee collection
   useEffect(() => {
@@ -707,7 +711,7 @@ export default function AdminBilling() {
           {message}
         </AdminNotice>
       ) : null}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+      <div className="grid grid-rows-2 grid-cols-3 gap-3">
         <AdminMetricCard
           label="Revenue today"
           value={formatMoney(billingSummary.revenue_today, settings.currency_code)}
