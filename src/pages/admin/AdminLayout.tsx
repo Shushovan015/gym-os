@@ -1,6 +1,6 @@
 import { useScrollLock } from "@src/hooks/useScrollLock";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   ChartNoAxesCombined,
@@ -50,7 +50,6 @@ const navSections: AdminNavSection[] = [
       { label: "Reports", to: "/admin/reports", icon: ChartNoAxesCombined },
       { label: "Inventory", to: "/admin/inventory", icon: PackageSearch },
       { label: "Holidays", to: "/admin/holidays", icon: CalendarDays },
-      { label: "Website", to: "/admin/website", icon: Globe2 },
       { label: "Settings", to: "/admin/settings", icon: Settings },
     ],
   },
@@ -230,7 +229,10 @@ export default function AdminLayout() {
                 <div className="hidden text-xs text-slate-500 sm:block">Butwal gym management workspace</div>
               </div>
             </div>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-3">
+              <Link to="/studio" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm font-semibold text-sky-200 hover:bg-slate-800">
+                <Globe2 className="h-4 w-4 shrink-0" /> Website Studio
+              </Link>
               <div className="hidden min-w-0 text-right sm:block">
                 <div className="truncate text-sm font-semibold text-white">{userLabel}</div>
                 <div className="text-xs text-slate-500">Authenticated admin</div>

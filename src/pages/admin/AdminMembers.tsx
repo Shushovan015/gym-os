@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReceiptText,
   CheckCircle2,
+  LockKeyhole,
   Pencil,
   Plus,
   RotateCcw,
@@ -41,10 +42,8 @@ import type {
   AttendanceRow,
   MemberForm,
   MemberMembershipFeeStatus,
-  MemberReportLogRow,
   MemberRow,
   MembershipFee,
-  MembershipFeeStatus,
   MembershipStatus,
   MembershipType,
   PaymentStatus,
@@ -55,9 +54,7 @@ import {
   cx,
   defaultAdminSettings,
   emptyMemberForm,
-  formatDateTime,
   formatDisplayDate,
-  formatBillingPeriod,
   formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
   getMemberLifecycle,
@@ -72,6 +69,12 @@ import {
 
 type DeletedFilter = "active" | "deleted" | "all";
 type ActiveFilter = "all" | "active" | "inactive";
+const masterActions = {
+  activate: { label: "Activate all members", confirmation: "ACTIVATE", result: "activated" },
+  deactivate: { label: "Deactivate all members", confirmation: "DEACTIVATE", result: "deactivated" },
+  delete: { label: "Delete all members", confirmation: "DELETE", result: "moved to the deleted list" },
+} as const;
+type MasterAction = keyof typeof masterActions;
 type MembershipFilter = "all" | MembershipStatus | "expiring";
 type PaymentFilter = "all" | PaymentStatus;
 type SortKey = "updated_desc" | "name_asc" | "end_date_asc" | "created_desc";
@@ -182,6 +185,11 @@ async function notifyN8nMembers(payload: N8nMembersEventPayload) {
   }
 }
 
+function membershipTermLabel(member: MemberRow, todayAd: string) {
+  const term = getMemberLifecycle(member, todayAd);
+  return term === "active" ? "Current" : statusLabel(term);
+}
+
 function memberStatusTone(member: MemberRow, todayAd: string) {
   const lifecycle = getMemberLifecycle(member, todayAd);
   if (member.deleted_at) return "muted" as const;
@@ -196,28 +204,6 @@ function paymentTone(payment: PaymentStatus) {
   if (payment === "paid") return "success" as const;
   if (payment === "overdue") return "danger" as const;
   return "warning" as const;
-}
-
-function MiniLineChart({ values, stroke }: { values: Array<number | null>; stroke: string }) {
-  const clean = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  if (clean.length < 2) return <div className="text-xs text-slate-500">Not enough data for a chart yet.</div>;
-
-  const min = Math.min(...clean);
-  const max = Math.max(...clean);
-  const range = max - min || 1;
-  const points = clean
-    .map((value, index) => {
-      const x = (index / (clean.length - 1 || 1)) * 220;
-      const y = 54 - ((value - min) / range) * 44;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg width="220" height="60" viewBox="0 0 220 60" className="rounded-lg border border-slate-800 bg-slate-950">
-      <polyline fill="none" stroke={stroke} strokeWidth="2.5" points={points} />
-    </svg>
-  );
 }
 
 function BsAdDateField({
@@ -270,7 +256,12 @@ export default function AdminMembers() {
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [memberCount, setMemberCount] = useState(0);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(new Set());
-  const [memberSummary, setMemberSummary] = useState({ active: 0, payment_follow_up: 0, deleted: 0 });
+  const [memberSummary, setMemberSummary] = useState<{ active: number; enabled?: number; payment_follow_up: number; deleted: number }>({ active: 0, payment_follow_up: 0, deleted: 0 });
+  const [masterOpen, setMasterOpen] = useState(false);
+  const [masterAction, setMasterAction] = useState<MasterAction | null>(null);
+  const [masterConfirmation, setMasterConfirmation] = useState("");
+  const [masterBusy, setMasterBusy] = useState(false);
+  const [masterError, setMasterError] = useState("");
   const [settings, setSettings] = useState<AdminSettings>(defaultAdminSettings);
   const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -495,7 +486,7 @@ const loadMembers = async () => {
       return;
     }
 
-    const webhookResult = await notifyN8nMembers({
+    await notifyN8nMembers({
       event_type: editingId ? "member_updated" : "member_created",
       source: "admin_manual",
       member_ids: [payload.member_id],
@@ -506,7 +497,6 @@ const loadMembers = async () => {
     setSaving(false);
     setFormOpen(false);
     await loadMembers();
-    const action = editingId ? "updated" : "created";
     setMessage(`${editingId ? "Member updated" : "Member created"}.`);
   };
 
@@ -552,36 +542,29 @@ const loadMembers = async () => {
     });
   };
 
+  const beginProfileRequest = useLatestRequest("");
+
   const loadMemberProfile = async (member: MemberRow) => {
+    const isCurrent = beginProfileRequest();
     setDetailMember(member);
     setLoadingProfile(true);
-    setMeasurements([]);
-    setTransformations([]);
-    setReportLogs([]);
     setMemberAttendance([]);
     setMemberFeeStatus(null);
 
-    const [measurementsRes, transformationsRes, logsRes, attendanceRes, feeStatusRes] = await Promise.all([
-      supabase.from("member_measurements").select("*").eq("member_ref", member.id).order("recorded_at", { ascending: true }).limit(500),
-      supabase.from("member_transformations").select("*").eq("member_ref", member.id).order("captured_at", { ascending: false }).limit(200),
-      supabase.from("member_report_logs").select("*").eq("member_ref", member.id).order("sent_at", { ascending: false }).limit(20),
+    const [attendanceRes, feeStatusRes] = await Promise.all([
       supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").eq("member_ref", member.id).order("attendance_date", { ascending: false }).limit(60),
       supabase.rpc("get_member_membership_fee_status", { p_member_id: member.id }),
     ]);
 
-    if (measurementsRes.error || transformationsRes.error || logsRes.error || attendanceRes.error || feeStatusRes.error) {
+    if (!isCurrent()) return;
+
+    if (attendanceRes.error || feeStatusRes.error) {
       setMessage(
-        measurementsRes.error?.message ||
-          transformationsRes.error?.message ||
-          logsRes.error?.message ||
-          attendanceRes.error?.message ||
+        attendanceRes.error?.message ||
           feeStatusRes.error?.message ||
           "Profile load failed."
       );
     } else {
-      setMeasurements((measurementsRes.data ?? []) as MeasurementRow[]);
-      setTransformations((transformationsRes.data ?? []) as TransformationRow[]);
-      setReportLogs((logsRes.data ?? []) as MemberReportLogRow[]);
       setMemberAttendance((attendanceRes.data ?? []) as AttendanceRow[]);
       setMemberFeeStatus(feeStatusRes.data as MemberMembershipFeeStatus);
     }
@@ -751,6 +734,41 @@ const loadMembers = async () => {
     );
   };
 
+  const selectedMasterAction = masterAction ? masterActions[masterAction] : null;
+
+  const resetMaster = () => {
+    setMasterOpen(false);
+    setMasterAction(null);
+    setMasterConfirmation("");
+    setMasterError("");
+  };
+
+  const applyMasterAction = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!masterAction || !selectedMasterAction || masterBusy ||
+        masterConfirmation.trim() !== selectedMasterAction.confirmation) return;
+    setMasterBusy(true);
+    setMasterError("");
+    try {
+      const { data, error } = await supabase.rpc("apply_all_member_action", { p_action: masterAction });
+      if (error?.code === "PGRST202") {
+        throw new Error("Master controls require a database update. Apply the pending Supabase migrations and try again.");
+      }
+      if (error) throw new Error(error.message);
+      beginProfileRequest();
+      setDetailMember(null);
+      setSelectedMemberIds(new Set());
+      resetMaster();
+      setMessage(data === 0 ? "No members needed this change." : `${data} ${data === 1 ? "member" : "members"} ${selectedMasterAction.result}.`);
+      if (currentPage === 1) await loadMembers();
+      else resetPage();
+    } catch (error) {
+      setMasterError(error instanceof Error ? error.message : "Could not complete the bulk action.");
+    } finally {
+      setMasterBusy(false);
+    }
+  };
+
   if (loading) return <AdminLoading label="Loading members..." />;
 
   return (
@@ -761,6 +779,9 @@ const loadMembers = async () => {
         description="Search, filter, create, edit, restore and review member records without losing existing history."
         actions={
           <>
+            <AdminButton type="button" variant="secondary" onClick={() => setMasterOpen(true)}>
+              <LockKeyhole className="h-4 w-4" /> Master controls
+            </AdminButton>
             <AdminButton type="button" variant="secondary" onClick={() => setCsvOpen(true)}>
               <Upload className="h-4 w-4" />
               CSV import
@@ -774,6 +795,38 @@ const loadMembers = async () => {
       />
 
       {message ? <AdminNotice tone={message.toLowerCase().includes("failed") || message.toLowerCase().includes("error") ? "danger" : "success"}>{message}</AdminNotice> : null}
+
+      <AdminDialog open={masterOpen} title="Master member controls" onClose={() => { if (!masterBusy) resetMaster(); }} size="md">
+        <form className="space-y-4" onSubmit={applyMasterAction}>
+          <p className="text-sm text-slate-300">These actions apply to every member outside the deleted list, across all pages and filters.</p>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(masterActions) as MasterAction[]).map((action) => (
+              <AdminButton key={action} type="button" variant={action === "delete" ? "danger" : "secondary"}
+                aria-pressed={masterAction === action} disabled={masterBusy} onClick={() => {
+                  setMasterAction(action);
+                  setMasterConfirmation("");
+                  setMasterError("");
+                }}>
+                {masterActions[action].label}
+              </AdminButton>
+            ))}
+          </div>
+          {masterAction === "activate" && <AdminNotice tone="warning">Activation can generate membership fee periods using the existing membership rules.</AdminNotice>}
+          {masterAction === "delete" && <AdminNotice tone="warning">Members can be restored from the Deleted list. Their billing and attendance history is kept.</AdminNotice>}
+          {masterError && <AdminNotice tone="danger">{masterError}</AdminNotice>}
+          {selectedMasterAction && (
+            <>
+              <AdminField label={`Type ${selectedMasterAction.confirmation} to confirm`}>
+                <AdminInput value={masterConfirmation} onChange={(event) => setMasterConfirmation(event.target.value)} disabled={masterBusy} />
+              </AdminField>
+              <AdminButton type="submit" variant={masterAction === "delete" ? "danger" : "primary"}
+                disabled={masterBusy || masterConfirmation.trim() !== selectedMasterAction.confirmation}>
+                {masterBusy ? "Applying…" : `Confirm: ${selectedMasterAction.label.toLowerCase()}`}
+              </AdminButton>
+            </>
+          )}
+        </form>
+      </AdminDialog>
 
       <AdminCard>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_repeat(5,minmax(0,1fr))]">
@@ -840,7 +893,7 @@ const loadMembers = async () => {
             {membershipFilter === "expiring" ? (
               <AdminBadge tone="warning">Expiring within {expiringDays} days</AdminBadge>
             ) : null}
-            {createdSince ? <AdminBadge tone="accent">Created since {formatDisplayDate(createdSince, "bs")}</AdminBadge> : null}
+            {createdSince ? <AdminBadge tone="accent">Created since {formatDisplayDate(createdSince)}</AdminBadge> : null}
             {absentDays > 0 ? <AdminBadge tone="warning">No last visit for {absentDays}+ days</AdminBadge> : null}
             <AdminButton
               type="button"
@@ -864,8 +917,8 @@ const loadMembers = async () => {
           <div className="mt-1 text-2xl font-black text-white">{memberCount}</div>
         </AdminCard>
         <AdminCard className="p-4">
-          <div className="text-xs text-slate-500">Active members</div>
-          <div className="mt-1 text-2xl font-black text-white">{memberSummary.active}</div>
+          <div className="text-xs text-slate-500">{memberSummary.enabled === undefined ? "Current memberships" : "Members enabled"}</div>
+          <div className="mt-1 text-2xl font-black text-white">{memberSummary.enabled ?? memberSummary.active}</div>
         </AdminCard>
         <AdminCard className="p-4">
           <div className="text-xs text-slate-500">Payment follow-up</div>
@@ -912,9 +965,9 @@ const loadMembers = async () => {
                     </th>
                     <th className="px-4 py-3">Member</th>
                     <th className="px-4 py-3">Plan</th>
-                    <th className="px-4 py-3">Membership</th>
+                    <th className="px-4 py-3">Membership term</th>
                     <th className="px-4 py-3">Payment</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Member enabled</th>
                     <th className="px-4 py-3">Dates</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -931,7 +984,7 @@ const loadMembers = async () => {
                       </td>
                       <td className="px-4 py-4 text-slate-300">{statusLabel(member.membership_type)}</td>
                       <td className="px-4 py-4">
-                        <AdminBadge tone={memberStatusTone(member, todayAd)}>{member.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(member, todayAd))}</AdminBadge>
+                        <AdminBadge tone={memberStatusTone(member, todayAd)}>{membershipTermLabel(member, todayAd)}</AdminBadge>
                       </td>
                       <td className="px-4 py-4">
                         <AdminBadge tone={paymentTone(member.payment_status)}>{statusLabel(member.payment_status)}</AdminBadge>
@@ -939,13 +992,14 @@ const loadMembers = async () => {
                       <td className="px-4 py-4">
                         <ToggleSwitch
                           checked={member.is_active}
+                          disabled={Boolean(member.deleted_at)}
                           onChange={(isActive) => toggleMemberActive(member.id, isActive)}
                           ariaLabel={member.is_active ? `Deactivate ${member.full_name}` : `Activate ${member.full_name}`}
                         />
                       </td>
                       <td className="px-4 py-4 text-xs text-slate-400">
-                        <div>End: {formatDisplayDate(member.end_date, settings.date_display_preference)}</div>
-                        <div>Due: {formatDisplayDate(member.payment_due_date, settings.date_display_preference)}</div>
+                        <div>End: {formatDisplayDate(member.end_date)}</div>
+                        <div>Due: {formatDisplayDate(member.payment_due_date)}</div>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
@@ -977,9 +1031,10 @@ const loadMembers = async () => {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Select ${member.full_name}`} checked={selectedMemberIds.has(member.id)} onChange={() => toggleMemberSelection(member.id)} className="mt-1 h-4 w-4 accent-amber-300" /><button type="button" onClick={() => loadMemberProfile(member)} className="text-left"><div className="font-semibold text-white">{member.full_name}</div><div className="text-xs text-slate-500">{member.member_id}</div></button></div>
                 <div className="flex items-center gap-2">
-                  <AdminBadge tone={memberStatusTone(member, todayAd)}>{member.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(member, todayAd))}</AdminBadge>
+                  <AdminBadge tone={memberStatusTone(member, todayAd)}>{membershipTermLabel(member, todayAd)}</AdminBadge>
                   <ToggleSwitch
                     checked={member.is_active}
+                    disabled={Boolean(member.deleted_at)}
                     onChange={(isActive) => toggleMemberActive(member.id, isActive)}
                     ariaLabel={member.is_active ? `Deactivate ${member.full_name}` : `Activate ${member.full_name}`}
                   />
@@ -988,8 +1043,8 @@ const loadMembers = async () => {
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
                 <div>Phone: {member.phone}</div>
                 <div>Plan: {statusLabel(member.membership_type)}</div>
-                <div>End: {formatDisplayDate(member.end_date, settings.date_display_preference)}</div>
-                <div>Due: {formatDisplayDate(member.payment_due_date, settings.date_display_preference)}</div>
+                <div>End: {formatDisplayDate(member.end_date)}</div>
+                <div>Due: {formatDisplayDate(member.payment_due_date)}</div>
               </div>
               <div className="mt-3 flex gap-2">
                 <AdminButton type="button" variant="secondary" className="flex-1" onClick={() => openEditMember(member)}>
@@ -1074,7 +1129,7 @@ const loadMembers = async () => {
                   onChange={(event) => updateForm("membership_type", event.target.value as MembershipType)}
                 />
                 {!membershipPlans.length ? (
-                  <AdminButton type="button" variant="secondary" className="mt-2" onClick={() => navigate("/admin/pricing")}>Manage membership plans</AdminButton>
+                  <AdminButton type="button" variant="secondary" className="mt-2" onClick={() => navigate("/studio/pricing")}>Manage membership plans</AdminButton>
                 ) : null}
               </AdminField>
               <AdminField label="Membership status" error={formErrors.membership_status}>
@@ -1125,7 +1180,7 @@ const loadMembers = async () => {
         open={Boolean(detailMember)}
         title={detailMember?.full_name ?? "Member profile"}
         description={detailMember ? `${detailMember.member_id} | ${detailMember.phone}` : undefined}
-        onClose={() => setDetailMember(null)}
+        onClose={() => { beginProfileRequest(); setDetailMember(null); }}
         size="2xl"
         footer={
           detailMember ? (
@@ -1142,6 +1197,7 @@ const loadMembers = async () => {
                 {!detailMember.deleted_at ? <AdminButton type="button" variant="primary" onClick={() => void markPresentToday(detailMember)}><CheckCircle2 className="h-4 w-4"/>Mark Present</AdminButton> : null}
                 <ToggleSwitch
                   checked={detailMember.is_active}
+                  disabled={Boolean(detailMember.deleted_at)}
                   onChange={(isActive) => toggleMemberActive(detailMember.id, isActive)}
                   ariaLabel={detailMember.is_active ? `Deactivate ${detailMember.full_name}` : `Activate ${detailMember.full_name}`}
                 />
@@ -1176,7 +1232,7 @@ const loadMembers = async () => {
                     <div className="text-sm text-slate-400">{detailMember.email || "No email"} | {detailMember.phone}</div>
                     <div className="mt-1 text-sm text-slate-400">{detailMember.address || "No address added"}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <AdminBadge tone={memberStatusTone(detailMember, todayAd)}>{detailMember.deleted_at ? "Deleted" : statusLabel(getMemberLifecycle(detailMember, todayAd))}</AdminBadge>
+                      <AdminBadge tone={memberStatusTone(detailMember, todayAd)}>{membershipTermLabel(detailMember, todayAd)}</AdminBadge>
                       <AdminBadge tone={paymentTone(detailMember.payment_status)}>{statusLabel(detailMember.payment_status)}</AdminBadge>
                       <AdminBadge tone={detailMember.is_active ? ("success" as Tone) : ("muted" as Tone)}>{detailMember.is_active ? "Active" : "Inactive"}</AdminBadge>
                     </div>
@@ -1185,11 +1241,11 @@ const loadMembers = async () => {
               </AdminCard>
               <AdminCard>
                 <div className="text-xs text-slate-500">Membership end</div>
-                <div className="mt-2 text-sm font-semibold text-white">{formatDisplayDate(detailMember.end_date, settings.date_display_preference)}</div>
+                <div className="mt-2 text-sm font-semibold text-white">{formatDisplayDate(detailMember.end_date)}</div>
               </AdminCard>
               <AdminCard>
                 <div className="text-xs text-slate-500">Payment due</div>
-                <div className="mt-2 text-sm font-semibold text-white">{formatDisplayDate(detailMember.payment_due_date, settings.date_display_preference)}</div>
+                <div className="mt-2 text-sm font-semibold text-white">{formatDisplayDate(detailMember.payment_due_date)}</div>
               </AdminCard>
             </div>
 
@@ -1197,8 +1253,8 @@ const loadMembers = async () => {
               <AdminSectionTitle title="Membership details" />
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Plan: <b>{statusLabel(detailMember.membership_type)}</b></div>
-                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Start: <b>{formatDisplayDate(detailMember.start_date, settings.date_display_preference)}</b></div>
-                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Last visit: <b>{formatDisplayDate(detailMember.last_visit_date, settings.date_display_preference)}</b></div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Start: <b>{formatDisplayDate(detailMember.start_date)}</b></div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">Last visit: <b>{formatDisplayDate(detailMember.last_visit_date)}</b></div>
               </div>
               {detailMember.notes ? <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm text-slate-300">{detailMember.notes}</div> : null}
             </AdminCard>
@@ -1208,7 +1264,7 @@ const loadMembers = async () => {
               <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
                 {memberAttendance.slice(0, 9).map((record) => (
                   <div key={record.id} className={cx("rounded-lg border border-slate-800 bg-slate-900/55 p-3 text-sm", record.deleted_at ? "text-slate-500" : "text-slate-200")}>
-                    <div className="font-semibold">{formatDisplayDate(record.attendance_date, settings.date_display_preference)}</div>
+                    <div className="font-semibold">{formatDisplayDate(record.attendance_date)}</div>
                     <div className="text-xs text-slate-500">{record.deleted_at ? "Deleted" : statusLabel(record.status)}</div>
                   </div>
                 ))}
@@ -1242,7 +1298,7 @@ const loadMembers = async () => {
                                 <div className="flex flex-col gap-1">
                                   <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                   <div className="text-xs text-slate-400">
-                                    Due: {formatDisplayDate(fee.due_date, settings.date_display_preference)} | 
+                                    Due: {formatDisplayDate(fee.due_date)} |
                                     Amount: {formatMembershipFeeAmount(fee.amount_minor, fee.currency_code)} | 
                                     Outstanding: <b>{formatMembershipFeeAmount(fee.amount_minor - fee.paid_amount_minor, fee.currency_code)}</b>
                                   </div>
@@ -1331,7 +1387,7 @@ const loadMembers = async () => {
                               <div className="flex flex-col gap-1">
                                 <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                 <div className="text-xs text-slate-400">
-                                  Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0], settings.date_display_preference) : "Unknown date"}
+                                  Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0]) : "Unknown date"}
                                 </div>
                               </div>
                               <AdminBadge tone="success">Paid</AdminBadge>

@@ -129,7 +129,7 @@ export default function AdminDashboard() {
 
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
-      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("id, member_id, full_name, email, phone, membership_type, membership_status, start_date, end_date, last_visit_date, payment_status, payment_due_date, notes, created_at, updated_at, deleted_at").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("id, member_id, full_name, email, phone, membership_type, membership_status, start_date, end_date, last_visit_date, payment_status, payment_due_date, notes, created_at, updated_at, deleted_at, is_active, activated_at, deactivated_at").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
       fetchAllPages<AttendanceRow>((from, to) => supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").gte("attendance_date", periodStartAd).lte("attendance_date", todayAd).order("attendance_date", { ascending: false }).order("id", { ascending: false }).range(from, to)),
       supabase
         .from("attendance_holidays")
@@ -267,7 +267,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        eyebrow={formatDisplayDate(todayAd, state.settings.date_display_preference)}
+        eyebrow={formatDisplayDate(todayAd)}
         title={`${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}`}
         description="Here’s what is happening at the gym today. Start a common task below."
         actions={
@@ -463,7 +463,7 @@ export default function AdminDashboard() {
                     </div>
                     <AdminBadge tone={daysLeft === 0 ? "danger" : "warning"}>{daysLeft} day{daysLeft === 1 ? "" : "s"}</AdminBadge>
                   </div>
-                  <div className="mt-2 text-xs text-slate-400">{formatDisplayDate(member.end_date, state.settings.date_display_preference)}</div>
+                  <div className="mt-2 text-xs text-slate-400">{formatDisplayDate(member.end_date)}</div>
                 </div>
               ))
             )}
@@ -487,7 +487,7 @@ export default function AdminDashboard() {
                       {statusLabel(member.payment_status)}
                     </AdminBadge>
                   </div>
-                  <div className="mt-2 text-xs text-slate-400">Due: {formatDisplayDate(member.payment_due_date, state.settings.date_display_preference)}</div>
+                  <div className="mt-2 text-xs text-slate-400">Due: {formatDisplayDate(member.payment_due_date)}</div>
                 </div>
               ))
             )}
@@ -502,7 +502,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="font-semibold text-white">{member.full_name}</div>
-                    <div className="text-xs text-slate-500">Updated {formatDisplayDate(member.updated_at.slice(0, 10), state.settings.date_display_preference)}</div>
+                    <div className="text-xs text-slate-500">Updated {formatDisplayDate(member.updated_at.slice(0, 10))}</div>
                   </div>
                   <AdminBadge tone={member.deleted_at ? "muted" : "neutral"}>{member.deleted_at ? "Deleted" : statusLabel(member.membership_status)}</AdminBadge>
                 </div>
@@ -523,7 +523,7 @@ export default function AdminDashboard() {
             dashboard.upcomingHolidays.map((holiday) => (
               <div key={holiday.id} className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
                 <div className="text-sm font-semibold text-white">{holiday.name || "Holiday"}</div>
-                <div className="mt-1 text-xs text-slate-400">{formatDisplayDate(holiday.holiday_date, state.settings.date_display_preference)}</div>
+                <div className="mt-1 text-xs text-slate-400">{formatDisplayDate(holiday.holiday_date)}</div>
               </div>
             ))
           )}

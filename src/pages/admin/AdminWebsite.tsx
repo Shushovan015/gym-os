@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import {
   Dumbbell,
   Home,
+  LayoutTemplate,
   MessageSquare,
   PanelsTopLeft,
   ShoppingBag,
@@ -14,45 +15,46 @@ const pages = [
   {
     label: "Home page",
     description: "Main headline, highlights and homepage sections",
-    to: "/admin/home",
+    to: "/studio/home",
     icon: Home,
   },
   {
     label: "Trainers",
     description: "Coach profiles and personal training plans",
-    to: "/admin/trainers",
+    to: "/studio/trainers",
     icon: Dumbbell,
   },
   {
     label: "Facilities",
     description: "Training areas, equipment and photos",
-    to: "/admin/facilities",
+    to: "/studio/facilities",
     icon: PanelsTopLeft,
   },
   {
     label: "Membership prices",
     description: "Manage membership plans and rates used by Billing and the public website",
-    to: "/admin/pricing",
+    to: "/studio/pricing",
     icon: Tags,
   },
   {
     label: "Pro Shop website",
     description: "Products shown to website visitors",
-    to: "/admin/proshop",
+    to: "/studio/proshop",
     icon: ShoppingBag,
   },
   {
     label: "Testimonials",
     description: "Member stories and reviews",
-    to: "/admin/testimonials",
+    to: "/studio/testimonials",
     icon: Star,
   },
   {
-    label: "Contact and footer",
-    description: "Contact details, FAQs and footer links",
-    to: "/admin/contact",
+    label: "Contact and FAQs",
+    description: "Contact details and frequently asked questions",
+    to: "/studio/contact",
     icon: MessageSquare,
   },
+  { label: "Footer", description: "Shared website links and contact details", to: "/studio/footer", icon: LayoutTemplate },
 ];
 
 export default function AdminWebsite() {
@@ -61,7 +63,7 @@ export default function AdminWebsite() {
       <AdminPageHeader
         eyebrow="Website"
         title="Edit your public website"
-        description="Choose the part of the website you want to update. These pages do not affect daily gym operations."
+        description="Choose the part of the website you want to update. Membership prices and training plans also inform future front-desk charges."
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {pages.map(({ label, description, to, icon: Icon }) => (

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@src/Client/supabase';
 import type {
   ParsedLegacyData,
   MemberMigrationData,
@@ -19,26 +19,21 @@ import {
 } from './mapping';
 import { formatImportPreview, formatCompletenessReport } from './preview';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase configuration. Check VITE_SUPABASE_URL and VITE_SUPABASE_SERVICE_ROLE_KEY');
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
-
 export interface ImportOptions {
   fileName: string;
   sqlContent: string;
-  adminUserId: string;
   dryRun?: boolean;
 }
 
 export async function runLegacyImport(options: ImportOptions): Promise<MigrationResult> {
-  const { fileName, sqlContent, adminUserId, dryRun = false } = options;
+  const { fileName, sqlContent, dryRun = false } = options;
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error('Sign in as an administrator before importing.');
+
+  const { error: accessError } = await supabase.rpc('import_legacy_bill', { p_invoice: null });
+  if (accessError?.code === 'PGRST202') throw new Error('The legacy import database update is missing. Apply the pending Supabase migrations before importing.');
+  if (accessError) throw new Error(accessError.message);
 
   const warnings: MigrationResult['warnings'] = [];
   const errors: string[] = [];
@@ -76,13 +71,14 @@ export async function runLegacyImport(options: ImportOptions): Promise<Migration
       }
     }
 
+    const legacyMemberIds = new Map(memberMigrationData.map((member) => [member.legacy_register_id, member.legacy_register_id]));
     for (const row of parsedData.officeregister) {
-      const migrated = migrateOfficeRegisterRow(row, context, context.legacyToNewMap.register);
+      const migrated = migrateOfficeRegisterRow(row, context, legacyMemberIds);
       membershipFeeData.push(...migrated);
     }
 
     for (const row of parsedData.bill) {
-      const { invoice, payment } = migrateBillRow(row, context, context.legacyToNewMap.register);
+      const { invoice, payment } = migrateBillRow(row, context, legacyMemberIds);
       if (invoice) invoiceData.push(invoice);
       if (payment) paymentData.push(payment);
     }
@@ -106,7 +102,7 @@ export async function runLegacyImport(options: ImportOptions): Promise<Migration
       };
     }
 
-    const memberIdMap = await importMembers(memberMigrationData, adminUserId);
+    const memberIdMap = await importMembers(memberMigrationData);
 
     for (const [legacyId, newId] of memberIdMap.entries()) {
       context.legacyToNewMap.register.set(legacyId, newId);
@@ -114,28 +110,21 @@ export async function runLegacyImport(options: ImportOptions): Promise<Migration
 
     membersImported = memberIdMap.size;
 
-    membershipsImported = await importMembershipFees(membershipFeeData, adminUserId, context.legacyToNewMap.register);
+    membershipsImported = await importMembershipFees(membershipFeeData, memberIdMap);
 
     // Imported members are inserted inactive so legacy fee rows can be loaded
     // first. Activate them now; the activation trigger generates any missing
     // membership fee periods without duplicating the imported rows.
-    const { error: activateError } = await supabase
-      .from('members')
-      .update({ is_active: true })
-      .eq('legacy_source', 'legacy_mysql')
-      .eq('is_active', false)
-      .is('deleted_at', null)
-      .is('deactivated_at', null);
-
-    if (activateError) {
-      throw new Error(`Failed to activate imported members: ${activateError.message}`);
+    for (const memberId of memberIdMap.values()) {
+      const { error } = await supabase.from('members').update({ is_active: true })
+        .eq('id', memberId).eq('is_active', false).is('deleted_at', null).is('deactivated_at', null);
+      if (error) throw new Error('Failed to activate imported member: ' + error.message);
     }
 
     const { importedInvoices, importedPayments } = await importInvoicesAndPayments(
       invoiceData,
       paymentData,
-      adminUserId,
-      context.legacyToNewMap.register
+      memberIdMap
     );
 
     paymentsImported = importedPayments;
@@ -220,15 +209,9 @@ async function fetchExistingMembers(): Promise<Array<{ id: number; member_id: st
 }
 
 async function importMembers(
-  members: MemberMigrationData[],
-  adminUserId: string
+  members: MemberMigrationData[]
 ): Promise<Map<number, number>> {
   const legacyToNewMap = new Map<number, number>();
-
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(adminUserId)) {
-    throw new Error(`Invalid admin user ID format. Must be a valid UUID from Supabase Auth. Got: ${adminUserId}`);
-  }
 
   for (const member of members) {
     const { data: existing } = await supabase
@@ -280,7 +263,6 @@ async function importMembers(
 
 async function importMembershipFees(
   fees: MembershipFeeMigrationData[],
-  _adminUserId: string,
   memberIdMap: Map<number, number>
 ): Promise<number> {
   let imported = 0;
@@ -294,11 +276,13 @@ async function importMembershipFees(
       .select('id')
       .eq('legacy_officeregister_id', fee.legacy_officeregister_id)
       .eq('legacy_source', fee.legacy_source)
+      .eq('member_id', newMemberId)
+      .eq('billing_month', fee.billing_month)
       .maybeSingle();
 
     if (selectError) {
       if (selectError.code === 'PGRST204' || selectError.message?.includes('column') || selectError.message?.includes('legacy_officeregister_id')) {
-        throw new Error(`Database migration not applied: 'legacy_officeregister_id' column missing. Run: supabase db reset or apply migration 202610040001_legacy_import_tables.sql`);
+        throw new Error(`Database migration not applied: 'legacy_officeregister_id' column missing. Apply migration 202610040001_legacy_import_tables.sql`);
       }
       throw new Error(`Failed to check existing fee: ${selectError.message} (code: ${selectError.code})`);
     }
@@ -333,122 +317,42 @@ async function importMembershipFees(
 async function importInvoicesAndPayments(
   invoices: InvoiceMigrationData[],
   payments: InvoicePaymentMigrationData[],
-  adminUserId: string,
   memberIdMap: Map<number, number>
-): Promise<{ importedInvoices: number; importedPayments: number }> {
+) {
   let importedInvoices = 0;
   let importedPayments = 0;
-  const invoiceIdMap = new Map<number, number>();
+  const paymentByBill = new Map(payments.map((payment) => [payment.legacy_bill_id, payment]));
 
   for (const invoice of invoices) {
-    const newMemberId = memberIdMap.get(invoice.member_ref);
-    if (!newMemberId) continue;
+    const memberId = memberIdMap.get(invoice.member_ref);
+    if (!memberId) continue;
 
-    const { data: existing, error: selectError } = await supabase
-      .from('invoices')
-      .select('id')
-      .eq('legacy_bill_id', invoice.legacy_bill_id)
-      .eq('legacy_source', invoice.legacy_source)
-      .maybeSingle();
-
-    if (selectError) {
-      if (selectError.code === 'PGRST204' || selectError.message?.includes('column') || selectError.message?.includes('legacy_bill_id')) {
-        throw new Error(`Database migration not applied: 'legacy_bill_id' column missing. Run: supabase db reset or apply migration 202610040001_legacy_import_tables.sql`);
-      }
-      throw new Error(`Failed to check existing invoice: ${selectError.message} (code: ${selectError.code})`);
-    }
-
-    if (existing) {
-      invoiceIdMap.set(invoice.legacy_bill_id, existing.id);
-      continue;
-    }
-
-    const memberData = await supabase
-      .from('members')
-      .select('full_name, phone, email')
-      .eq('id', newMemberId)
-      .single();
-
-    const { data, error } = await supabase
-      .from('invoices')
-      .insert({
-        member_ref: newMemberId,
-        customer_name: memberData.data?.full_name || invoice.customer_name,
-        customer_phone: memberData.data?.phone || invoice.customer_phone,
-        customer_email: memberData.data?.email || invoice.customer_email,
-        billing_date: invoice.billing_date,
-        due_date: invoice.due_date,
-        invoice_status: invoice.invoice_status,
-        payment_status: invoice.payment_status,
-        currency_code: invoice.currency_code,
-        subtotal_minor: invoice.subtotal_minor,
-        discount_minor: invoice.discount_minor,
-        tax_minor: invoice.tax_minor,
-        total_minor: invoice.total_minor,
-        paid_minor: invoice.paid_minor,
-        balance_minor: invoice.balance_minor,
-        tax_enabled: invoice.tax_enabled,
-        tax_label: invoice.tax_label,
-        tax_rate_basis_points: invoice.tax_rate_basis_points,
-        notes: invoice.notes,
-        legacy_bill_id: invoice.legacy_bill_id,
-        legacy_source: invoice.legacy_source,
-        created_by: invoice.created_by,
-        updated_by: adminUserId,
-      })
-      .select('id')
-      .single();
-
-    if (error) throw new Error(`Failed to import invoice ${invoice.legacy_bill_id}: ${error.message} (code: ${error.code})`);
-
-    invoiceIdMap.set(invoice.legacy_bill_id, data.id);
-    importedInvoices++;
+    const { data, error } = await supabase.rpc('import_legacy_bill', {
+      p_invoice: { ...invoice, member_ref: memberId },
+      p_payment: paymentByBill.get(invoice.legacy_bill_id) ?? null,
+    });
+    if (error) throw new Error('Failed to import legacy bill ' + invoice.legacy_bill_id + ': ' + error.message);
+    if (data?.invoice_added) importedInvoices++;
+    if (data?.payment_added) importedPayments++;
   }
-
-  for (const payment of payments) {
-    const invoiceId = invoiceIdMap.get(payment.legacy_bill_id);
-    if (!invoiceId) continue;
-
-    const { data: existing, error: selectError } = await supabase
-      .from('invoice_payments')
-      .select('id')
-      .eq('legacy_bill_id', payment.legacy_bill_id)
-      .eq('legacy_source', payment.legacy_source)
-      .maybeSingle();
-
-    if (selectError) {
-      if (selectError.code === 'PGRST204' || selectError.message?.includes('column') || selectError.message?.includes('legacy_bill_id')) {
-        throw new Error(`Database migration not applied: 'legacy_bill_id' column missing in invoice_payments. Run: supabase db reset or apply migration 202610040001_legacy_import_tables.sql`);
-      }
-      throw new Error(`Failed to check existing payment: ${selectError.message} (code: ${selectError.code})`);
-    }
-
-    if (existing) continue;
-
-    const { error } = await supabase
-      .from('invoice_payments')
-      .insert({
-        invoice_id: invoiceId,
-        amount_minor: payment.amount_minor,
-        payment_method: payment.payment_method,
-        payment_date: payment.payment_date,
-        reference: payment.reference,
-        notes: payment.notes,
-        is_reversal: payment.is_reversal,
-        legacy_bill_id: payment.legacy_bill_id,
-        legacy_source: payment.legacy_source,
-        received_by: payment.received_by,
-      });
-
-    if (error) throw new Error(`Failed to import payment ${payment.legacy_bill_id}: ${error.message} (code: ${error.code})`);
-    importedPayments++;
-  }
-
   return { importedInvoices, importedPayments };
 }
 
 async function createImportLog(log: ImportLogEntry): Promise<void> {
-  const { error } = await supabase.from('import_logs').insert(log);
+  const { error } = await supabase.from('import_logs').insert({
+    file_name: log.fileName,
+    import_date: log.importDate,
+    members_found: log.membersFound,
+    members_imported: log.membersImported,
+    memberships_imported: log.membershipsImported,
+    bills_imported: log.billsImported,
+    warnings: log.warnings,
+    errors: log.errors,
+    skipped_records: log.skippedRecords,
+    preserved_in_notes: log.preservedInNotes,
+    status: log.status,
+    error_details: log.errorDetails,
+  });
   if (error) console.error('Failed to create import log:', error);
 }
 

@@ -232,7 +232,13 @@ export default function AdminProShop() {
     const ok = window.confirm("Delete this product?");
     if (!ok) return;
     const { error } = await supabase.from("shop_items").delete().eq("id", id);
-    if (!error) await load();
+    if (error) {
+      setMsg(error.code === "23503"
+        ? "This product is linked to inventory or billing. Edit the product and turn off its public visibility instead."
+        : error.message);
+      return;
+    }
+    await load();
   };
 
   const updateSummaryCard = (index: number, key: keyof SummaryCard, value: string) => {
