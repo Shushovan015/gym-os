@@ -47,8 +47,6 @@ export type MembershipFee = {
   updated_at: string;
 };
 
-export type MembershipFeeStatus = "paid" | "unpaid" | "overdue" | "partial";
-
 export type MembershipFeeSummary = {
   total_due: number;
   total_paid: number;

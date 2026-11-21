@@ -81,6 +81,11 @@ administrator.
 
 ## Backup & Restore
 
+Gym staff use `/admin` for daily operations. Select **Website Studio** in the
+header to open the separate content workspace at `/studio`. Both workspaces
+use the same administrator account. Previous website editor URLs under
+`/admin` redirect to their Studio equivalents.
+
 The local backup service runs only on `127.0.0.1:4174`. It independently checks
 the Supabase access token and the trusted `profiles.role` database value for
 every privileged request. Database credentials and privileged keys are never

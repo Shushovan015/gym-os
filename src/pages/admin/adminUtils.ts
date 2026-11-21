@@ -1,7 +1,6 @@
 import NepaliDate from "nepali-date-converter";
 import type {
   AdminSettings,
-  DateDisplayPreference,
   MemberForm,
   MemberRow,
   MembershipFeeStatus,

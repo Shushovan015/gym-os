@@ -26,7 +26,6 @@ import {
   cx,
   defaultAdminSettings,
   formatDisplayDate,
-  formatBillingPeriod,
   formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
   getNepalTodayAdDate,
@@ -341,7 +340,7 @@ export default function AdminAttendance() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <AdminNotice tone={todayHoliday ? "warning" : todayDay?.isClosingDay ? "warning" : "success"} title="Today">
-          {formatDisplayDate(todayAd, settings.date_display_preference)}
+          {formatDisplayDate(todayAd)}
           {todayHoliday ? ` | Holiday: ${todayHoliday.name || "Holiday"}` : todayDay?.isClosingDay ? " | Weekly closing day" : " | Open day"}
         </AdminNotice>
         <AdminNotice tone="neutral" title="Save behavior">
@@ -386,7 +385,7 @@ export default function AdminAttendance() {
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">
             <div className="text-xs text-slate-500">Date range</div>
-            <div className="mt-1 text-sm font-semibold text-white">{formatDisplayDate(selectedMonthStart, "bs")} to {formatDisplayDate(selectedMonthEnd, "bs")}</div>
+            <div className="mt-1 text-sm font-semibold text-white">{formatDisplayDate(selectedMonthStart)} to {formatDisplayDate(selectedMonthEnd)}</div>
           </div>
         </div>
       </AdminCard>
@@ -404,7 +403,7 @@ export default function AdminAttendance() {
                 </AdminBadge>
               </div>
               <p className="mt-1 text-sm text-slate-400">
-                {formatDisplayDate(selectedDayInfo.adDate, settings.date_display_preference)} | {selectedDayInfo.weekday}
+                {formatDisplayDate(selectedDayInfo.adDate)} | {selectedDayInfo.weekday}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -565,7 +564,7 @@ export default function AdminAttendance() {
               return (
                 <div key={record.id} className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/55 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-slate-300">
-                    <b className="text-white">{member?.full_name || "Member"}</b> | {formatDisplayDate(record.attendance_date, settings.date_display_preference)} | {statusLabel(record.status)}
+                    <b className="text-white">{member?.full_name || "Member"}</b> | {formatDisplayDate(record.attendance_date)} | {statusLabel(record.status)}
                   </div>
                   <AdminButton type="button" variant="secondary" onClick={() => restoreAttendance(record)}>
                     <RotateCcw className="h-4 w-4" />
@@ -624,15 +623,15 @@ export default function AdminAttendance() {
               <div className="mt-4 space-y-2 text-sm text-slate-300">
                 <div>Plan: <b>{statusLabel(profileMember.membership_type)}</b></div>
                 <div>Status: <b>{statusLabel(profileMember.membership_status)}</b></div>
-                <div>Start: <b>{formatDisplayDate(profileMember.start_date, settings.date_display_preference)}</b></div>
-                <div>End: <b>{formatDisplayDate(profileMember.end_date, settings.date_display_preference)}</b></div>
+                <div>Start: <b>{formatDisplayDate(profileMember.start_date)}</b></div>
+                <div>End: <b>{formatDisplayDate(profileMember.end_date)}</b></div>
               </div>
             </AdminCard>
             <AdminCard>
               <AdminSectionTitle title="Payment and notes" />
               <div className="mt-4 space-y-2 text-sm text-slate-300">
                 <div>Payment: <b>{statusLabel(profileMember.payment_status)}</b></div>
-                <div>Due: <b>{memberFeeStatus?.summary?.next_due_date ? formatDisplayDate(memberFeeStatus.summary.next_due_date, settings.date_display_preference) : formatDisplayDate(profileMember.payment_due_date, settings.date_display_preference)}</b></div>
+                <div>Due: <b>{memberFeeStatus?.summary?.next_due_date ? formatDisplayDate(memberFeeStatus.summary.next_due_date) : formatDisplayDate(profileMember.payment_due_date)}</b></div>
                 <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-3">{profileMember.notes || "No notes."}</div>
               </div>
             </AdminCard>
@@ -663,7 +662,7 @@ export default function AdminAttendance() {
                                 <div className="flex flex-col gap-1">
                                   <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                   <div className="text-xs text-slate-400">
-                                    Due: {formatDisplayDate(fee.due_date, settings.date_display_preference)} | 
+                                    Due: {formatDisplayDate(fee.due_date)} |
                                     Amount: {formatMembershipFeeAmount(fee.amount_minor, fee.currency_code)} | 
                                     Outstanding: <b>{formatMembershipFeeAmount(fee.amount_minor - fee.paid_amount_minor, fee.currency_code)}</b>
                                   </div>
@@ -695,7 +694,7 @@ export default function AdminAttendance() {
                               <div className="flex flex-col gap-1">
                                 <div className="font-semibold text-white">{formatBillingPeriodFromDueDate(fee.due_date)}</div>
                                 <div className="text-xs text-slate-400">
-                                  Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0], settings.date_display_preference) : "Unknown date"}
+                                  Paid: {formatMembershipFeeAmount(fee.paid_amount_minor, fee.currency_code)} on {fee.paid_at ? formatDisplayDate(fee.paid_at.split("T")[0]) : "Unknown date"}
                                 </div>
                               </div>
                               <AdminBadge tone="success">Paid</AdminBadge>

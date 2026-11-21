@@ -35,13 +35,12 @@ import {
   AdminTableShell,
   AdminTextarea,
 } from "@src/components/admin/AdminUI";
-import type { MemberRow, AdminSettings, MembershipFee, MembershipFeeStatus } from "./adminTypes";
+import type { MemberRow, AdminSettings, MembershipFee } from "./adminTypes";
 import {
   defaultAdminSettings,
   friendlyAdminError,
   formatBsDateFromAd,
   getNepalTodayAdDate,
-  formatBillingPeriod,
   formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
 } from "./adminUtils";
@@ -148,7 +147,7 @@ export default function AdminBilling() {
   const [paymentTouched, setPaymentTouched] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
-  const [lineType, setLineType] = useState<DraftLine["itemType"]>("membership_fee_collection");
+  const [lineType, setLineType] = useState<DraftLine["itemType"] | "membership_fee_collection">("membership_fee_collection");
   const [lineDescription, setLineDescription] = useState("");
   const [linePrice, setLinePrice] = useState("");
   const [lineVariant, setLineVariant] = useState("");
@@ -1100,7 +1099,7 @@ export default function AdminBilling() {
                 </div>
               ) : lineType === "membership_fee_collection" ? (
                 <div className="space-y-4">
-                  <AdminNotice tone="info" title="Collect Membership Fee">
+                  <AdminNotice tone="accent" title="Collect Membership Fee">
                     Select one or more consecutive unpaid months to collect. The total will be calculated automatically.
                     {memberId && memberFees.length === 0 && !memberFeesLoading && (
                       <span className="ml-2 text-amber-300">No unpaid fees found for this member.</span>
@@ -1230,7 +1229,7 @@ export default function AdminBilling() {
                           ? "Rates come from Membership Plans. Update a plan there whenever its price changes."
                           : "No active membership plans are available. Add and activate a plan first."}
                       </span>
-                      <AdminButton type="button" variant="secondary" onClick={() => navigate("/admin/pricing")}>
+                      <AdminButton type="button" variant="secondary" onClick={() => navigate("/studio/pricing")}>
                         Manage membership plans
                       </AdminButton>
                     </div>

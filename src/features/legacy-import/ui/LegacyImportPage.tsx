@@ -4,8 +4,6 @@ import {
   AdminButton,
   AdminCard,
   AdminPageHeader,
-  AdminField,
-  AdminInput,
   AdminNotice,
 } from '@src/components/admin/AdminUI';
 import { cx } from '@src/pages/admin/adminUtils';
@@ -13,9 +11,7 @@ import type { ImportPreview, FieldCompletenessReport } from '../types';
 import { previewLegacyImport } from '../migrationService';
 import { runLegacyImport } from '../migrationService';
 import { formatImportPreview, formatCompletenessReport, formatMigrationResult } from '../preview';
-import { Upload, CheckCircle2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
-
-const isValidUUID = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+import { Upload, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const STEP_UPLOAD = 1;
 const STEP_PREVIEW = 2;
@@ -33,7 +29,6 @@ export function LegacyImportPage() {
   const [result, setResult] = useState<Awaited<ReturnType<typeof runLegacyImport>> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [adminUserId, setAdminUserId] = useState<string>('');
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -81,8 +76,7 @@ export function LegacyImportPage() {
   }, []);
 
   const handleExecute = useCallback(async () => {
-    if (!file || !isValidUUID(adminUserId)) {
-      setError('Missing file or invalid admin user ID');
+    if (!file || loading) {
       return;
     }
     
@@ -94,7 +88,6 @@ export function LegacyImportPage() {
       const migrationResult = await runLegacyImport({
         fileName: file.name,
         sqlContent,
-        adminUserId,
       });
       setResult(migrationResult);
       setStep(STEP_RESULT);
@@ -104,7 +97,7 @@ export function LegacyImportPage() {
     } finally {
       setLoading(false);
     }
-  }, [file, sqlContent, adminUserId]);
+  }, [file, sqlContent, loading]);
 
   const handleRetry = useCallback(() => {
     setStep(STEP_UPLOAD);
@@ -252,23 +245,7 @@ export function LegacyImportPage() {
         </ul>
       </AdminNotice>
       
-      <AdminField label="Admin User ID (for audit trail)">
-        <AdminInput
-          value={adminUserId}
-          onChange={(e) => setAdminUserId(e.target.value)}
-          placeholder="Enter your admin user UUID (from Supabase Auth → Users)"
-          className={adminUserId && !isValidUUID(adminUserId) ? 'border-red-500 bg-red-500/10' : ''}
-        />
-        {!adminUserId ? (
-          <p className="text-red-500 text-sm mt-1">Required</p>
-        ) : !isValidUUID(adminUserId) ? (
-          <p className="text-red-500 text-sm mt-1">Must be a valid UUID (e.g. 123e4567-e89b-12d3-a456-426614174000)</p>
-        ) : (
-          <p className="text-green-500 text-sm mt-1 flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" /> Valid UUID format
-          </p>
-        )}
-      </AdminField>
+      {error && <AdminNotice tone="danger">{error}</AdminNotice>}
       
       <div className="flex gap-4 pt-4">
         <AdminButton variant="secondary" onClick={() => setStep(STEP_COMPLETENESS)}>
@@ -278,7 +255,7 @@ export function LegacyImportPage() {
         <AdminButton
           variant="danger"
           onClick={handleExecute}
-          disabled={!adminUserId || !isValidUUID(adminUserId) || loading}
+          disabled={loading}
           className="flex-1"
         >
           {loading ? (
