@@ -21,10 +21,12 @@
 | Product invoice issue and cancellation | PASS | MariaDB verifies price and quantity snapshots, combined stock deduction and restoration for multiple lines of one variant, concurrent cancellation and issuance, idempotency, and transaction rollback. Scope is PHP-issued product invoices. |
 | Fee generation, general billing and legacy reversals | NOT TESTED | Fee generation, mixed invoices, legacy reversal reconciliation and PDF receipts pending. |
 | Catalog and supplier administration | PASS | HTTP tests cover product and variant creation, editing, deletion, SKU conflicts, filtered pagination, stock valuation, low stock, suppliers and role checks. |
+| React Inventory preview | PASS | The existing workspace uses PHP for variant-level pagination, supplier reads, valuation, product and variant saves, activation, stock adjustments and history. MariaDB tests cover atomic opening stock and purchase cost updates. A React test verifies the purchase flow. |
+| Product image uploads | NOT TESTED | Upload control is disabled in PHP preview pending public product media support. |
 | Reporting, public content and Website Studio | NOT TESTED | PHP API and frontend switch pending. |
 | Existing media, documents, SMTP and notifications | NOT TESTED | Object migration and services pending. |
 | Backup, restore, legacy import and production reconciliation | NOT TESTED | Disposable rehearsal pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Continue with `AdminInventory.tsx`: replace the inventory list and supplier reads, then connect catalog and variant saves, bulk activation, stock purchases and adjustments, history, and product media.
+The checkpoint is for development only. Next, port the dashboard statistics and its queries in `AdminDashboard.tsx` to PHP, retaining its Nepal-local attendance, membership and income windows. Product media, remaining billing charge types, legacy cancellation, and receipt email require separate parity work.

@@ -26,10 +26,12 @@ final class Stock
         $supplier = $input['supplierId'] ?? null;
         $reference = $input['reference'] ?? null;
         $notes = $input['notes'] ?? null;
+        $cost = $input['costPriceMinor'] ?? null;
         if (!is_int($variant) || $variant < 1 || !is_string($delta) ||
             !preg_match('/^-?\d{1,11}(?:\.\d{1,3})?$/D', $delta) ||
             !in_array($type, ['opening','purchase','manual_increase','manual_decrease','damaged','return','correction'], true) ||
             ($supplier !== null && (!is_int($supplier) || $supplier < 1)) ||
+            ($cost !== null && ($type !== 'purchase' || !is_int($cost) || $cost < 0 || $cost > 9007199254740991)) ||
             ($reference !== null && (!is_string($reference) || strlen($reference) > 255)) ||
             ($notes !== null && (!is_string($notes) || strlen($notes) > 2000))) {
             return [422, ['error' => 'Invalid stock movement.']];
@@ -63,8 +65,8 @@ final class Stock
                 }
             }
             $quantity = self::decimal($after);
-            $this->db->prepare('UPDATE inventory_product_variants SET current_quantity = ? WHERE id = ?')
-                ->execute([$quantity, $variant]);
+            $this->db->prepare('UPDATE inventory_product_variants SET current_quantity = ?, cost_price_minor = COALESCE(?, cost_price_minor) WHERE id = ?')
+                ->execute([$quantity, $cost, $variant]);
             $this->db->prepare('INSERT INTO stock_movements
                 (variant_id, movement_type, quantity_delta, previous_quantity, resulting_quantity, supplier_id, reference, notes, created_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')

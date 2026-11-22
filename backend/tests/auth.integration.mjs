@@ -227,6 +227,26 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal(reversed.payments.filter((p) => p.is_reversal).length, 2);
   assert.deepEqual((await request(catalogPath + "&offset=1", 200)).products, []);
   assert.ok((await request("inventory/suppliers", 200)).suppliers.some(({ id }) => id === supplier.id));
+  const setupSku = randomUUID();
+  const stocked = await request("inventory/catalog/save", 201, {
+    entity: "product", openingStock: "2.750", fields: { title: "Stocked fixture", category, sku: setupSku, inventory_enabled: true, low_stock_threshold: "3" },
+  });
+  const inventoryPage = `inventory/variants?category=${category}&search=${setupSku}&active=active&stock=low`;
+  const stockedPage = await request(inventoryPage, 200);
+  assert.equal(stockedPage.total, 1);
+  assert.equal(stockedPage.rows[0].product.id, stocked.id);
+  const stockedVariant = stockedPage.rows[0].variant;
+  assert.equal(stockedVariant.current_quantity, "2.750");
+  const stockAdjust = { type: "purchase", variantId: stockedVariant.id, quantityDelta: "1.125", costPriceMinor: 500 };
+  await request("inventory/stock", 201, stockAdjust);
+  assert.equal((await request(inventoryPage, 200)).total, 0);
+  const inStockPage = await request(inventoryPage.replace("stock=low", "stock=in"), 200);
+  assert.equal(inStockPage.rows[0].variant.cost_price_minor, 500);
+  assert.equal(inStockPage.rows[0].variant.current_quantity, "3.875");
+  assert.equal((await request(`inventory/stock-history?variantId=${stockedVariant.id}`, 200)).movements.length, 2);
+  await request("inventory/catalog/activation", 200, { ids: [stocked.id], active: false });
+  assert.equal((await request(inventoryPage.replace("active=active&stock=low", "active=inactive"), 200)).total, 1);
+  await request("inventory/catalog/activation", 200, { ids: [stocked.id], active: true });
   await request("inventory/catalog/delete", 409, { entity: "product", id: product.id });
   const spare = await saveCatalog("product", { title: "Spare", category });
   const spareVariant = await saveCatalog("variant", { product_id: spare.id, sku: randomUUID() });
@@ -325,6 +345,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(grid, 403);
   await request(invoiceList, 403);
   await request("invoices/payments", 403, balanceBody, true, paymentKey());
+  await request(inventoryPage, 403);
+  await request("inventory/catalog/activation", 403, { ids: [stocked.id], active: false });
   await request("attendance/holiday", 403, holidayBody);
   await request(attendance, 403, { ...mark, date: "2024-02-29" });
   await request("logout", 200, {});

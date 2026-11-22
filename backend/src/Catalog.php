@@ -124,14 +124,97 @@ final class Catalog
         return [200, ['suppliers' => $this->db->query('SELECT * FROM inventory_suppliers ORDER BY name, id')->fetchAll(PDO::FETCH_ASSOC)]];
     }
 
+    public function variantsPage(array $input): array
+    {
+        $search = $input['search'] ?? '';
+        $category = $input['category'] ?? 'all';
+        $active = $input['active'] ?? 'active';
+        $stock = $input['stock'] ?? 'all';
+        $offset = filter_var($input['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        $limit = filter_var($input['limit'] ?? 10, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 100]]);
+        if (!is_string($search) || strlen($search) > 255 || !is_string($category) || strlen($category) > 255 ||
+            !in_array($active, ['all', 'active', 'inactive'], true) || !in_array($stock, ['all', 'low', 'out', 'in'], true) ||
+            $offset === false || $limit === false) {
+            return [422, ['error' => 'Invalid inventory filters.']];
+        }
+        $from = 'FROM inventory_product_variants v JOIN shop_items p ON p.id = v.product_id WHERE p.inventory_enabled = 1';
+        $threshold = 'COALESCE(v.low_stock_threshold, p.low_stock_threshold)';
+        $where = $from;
+        $params = [];
+        if (trim($search) !== '') {
+            $where .= " AND LOCATE(LOWER(?), LOWER(CONCAT_WS(' ', p.title, p.category, p.sku, p.brand, v.name, v.sku))) > 0";
+            $params[] = trim($search);
+        }
+        if ($category !== 'all') {
+            $where .= ' AND p.category = ?';
+            $params[] = $category;
+        }
+        $where .= match ($active) {
+            'active' => ' AND p.is_active = 1 AND v.is_active = 1',
+            'inactive' => ' AND (p.is_active = 0 OR v.is_active = 0)',
+            default => '',
+        };
+        $where .= match ($stock) {
+            'low' => " AND v.current_quantity > 0 AND v.current_quantity <= $threshold",
+            'out' => ' AND v.current_quantity <= 0',
+            'in' => " AND v.current_quantity > $threshold",
+            default => '',
+        };
+        $this->db->beginTransaction();
+        try {
+            $count = $this->db->prepare("SELECT COUNT(*) $where");
+            $count->execute($params);
+            $total = (int) $count->fetchColumn();
+            $page = $this->db->prepare("SELECT v.id $where ORDER BY p.title, v.id LIMIT $limit OFFSET $offset");
+            $page->execute($params);
+            $ids = $page->fetchAll(PDO::FETCH_COLUMN);
+            $rows = [];
+            if ($ids !== []) {
+                $markers = implode(',', array_fill(0, count($ids), '?'));
+                $variantQuery = $this->db->prepare("SELECT * FROM inventory_product_variants WHERE id IN ($markers)");
+                $variantQuery->execute($ids);
+                $variants = array_column($variantQuery->fetchAll(PDO::FETCH_ASSOC), null, 'id');
+                $productIds = array_values(array_unique(array_column($variants, 'product_id')));
+                $markers = implode(',', array_fill(0, count($productIds), '?'));
+                $productQuery = $this->db->prepare("SELECT * FROM shop_items WHERE id IN ($markers)");
+                $productQuery->execute($productIds);
+                $products = array_column($productQuery->fetchAll(PDO::FETCH_ASSOC), null, 'id');
+                foreach ($ids as $id) {
+                    $variant = $variants[$id];
+                    $rows[] = ['product' => $products[$variant['product_id']], 'variant' => $variant];
+                }
+            }
+            $summary = $this->db->query("SELECT COALESCE(SUM(v.current_quantity), 0) AS units,
+                COUNT(CASE WHEN v.current_quantity > 0 AND v.current_quantity <= $threshold THEN 1 END) AS low,
+                COUNT(CASE WHEN v.current_quantity <= 0 THEN 1 END) AS `out`,
+                COALESCE(SUM(v.current_quantity * COALESCE(v.cost_price_minor, p.cost_price_minor)), 0) AS cost,
+                COALESCE(SUM(v.current_quantity * COALESCE(v.selling_price_minor, p.selling_price_minor)), 0) AS retail
+                $from")->fetch(PDO::FETCH_ASSOC);
+            $categories = $this->db->query("SELECT DISTINCT p.category $from ORDER BY p.category")->fetchAll(PDO::FETCH_COLUMN);
+            $this->db->commit();
+            return [200, ['total' => $total, 'rows' => $rows, 'categories' => $categories, 'summary' => $summary]];
+        } catch (Throwable $error) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $error;
+        }
+    }
+
     public function save(array $input, string $actor): array
     {
         $entity = $input['entity'] ?? null;
         $id = $input['id'] ?? null;
         $fields = $input['fields'] ?? null;
+        $opening = $input['openingStock'] ?? null;
         if (!is_string($entity) || !isset(self::ENTITIES[$entity]) ||
             ($id !== null && (!is_int($id) || $id < 1)) || !is_array($fields) || $fields === []) {
             return [422, ['error' => 'Invalid catalog change.']];
+        }
+        if ($opening !== null && ($entity !== 'product' || $id !== null ||
+            !self::valid('quantity', $opening) || !isset($fields['sku']) ||
+            !is_string($fields['sku']) || trim($fields['sku']) === '')) {
+            return [422, ['error' => 'Invalid opening stock or SKU.']];
         }
         [$table, $rules, $required] = self::ENTITIES[$entity];
         foreach ($fields as $field => &$value) {
@@ -162,12 +245,23 @@ final class Catalog
         if ($entity === 'product' && isset($fields['is_active'])) {
             $fields['deactivated_at'] = $fields['is_active'] ? null : gmdate('Y-m-d H:i:s');
         }
-        return $this->mutate(function () use ($id, $entity, $table, $fields, $actor): array {
+        return $this->mutate(function () use ($id, $entity, $table, $fields, $actor, $opening): array {
             if ($id === null) {
                 $names = implode(', ', array_keys($fields));
                 $markers = implode(', ', array_fill(0, count($fields), '?'));
                 $this->db->prepare("INSERT INTO $table ($names) VALUES ($markers)")->execute(array_values($fields));
                 $saved = (int) $this->db->lastInsertId();
+                if ($opening !== null) {
+                    $this->db->prepare('INSERT INTO inventory_product_variants (product_id, sku, current_quantity, is_active) VALUES (?, ?, ?, ?)')
+                        ->execute([$saved, $fields['sku'], $opening, $fields['is_active'] ?? 1]);
+                    $variant = (int) $this->db->lastInsertId();
+                    if (Stock::thousandths($opening) > 0) {
+                        $this->db->prepare("INSERT INTO stock_movements
+                            (variant_id, movement_type, quantity_delta, previous_quantity, resulting_quantity, supplier_id, reference, created_by)
+                            VALUES (?, 'opening', ?, 0, ?, ?, 'Product setup', ?)")
+                            ->execute([$variant, $opening, $opening, $fields['supplier_id'] ?? null, $actor]);
+                    }
+                }
             } else {
                 $exists = $this->db->prepare("SELECT id FROM $table WHERE id = ? FOR UPDATE");
                 $exists->execute([$id]);
@@ -180,6 +274,32 @@ final class Catalog
             }
             audit($this->db, "catalog.$entity.save", $actor);
             return [$id === null ? 201 : 200, ['id' => $saved]];
+        });
+    }
+
+    public function activateProducts(array $input, string $actor): array
+    {
+        $ids = $input['ids'] ?? null;
+        $active = $input['active'] ?? null;
+        if (!is_array($ids) || !array_is_list($ids) || $ids === [] || count($ids) > 100 || !is_bool($active) ||
+            array_filter($ids, static fn (mixed $id): bool => !is_int($id) || $id < 1) !== []) {
+            return [422, ['error' => 'Invalid product selection.']];
+        }
+        $ids = array_values(array_unique($ids));
+        return $this->mutate(function () use ($ids, $active, $actor): array {
+            $markers = implode(',', array_fill(0, count($ids), '?'));
+            $lock = $this->db->prepare("SELECT id FROM inventory_product_variants WHERE product_id IN ($markers) ORDER BY id FOR UPDATE");
+            $lock->execute($ids);
+            $variants = $lock->fetchAll(PDO::FETCH_COLUMN);
+            $this->db->prepare("UPDATE shop_items SET is_active = ?, deactivated_at = IF(? = 1, NULL, CURRENT_TIMESTAMP(6)) WHERE id IN ($markers)")
+                ->execute([(int) $active, (int) $active, ...$ids]);
+            if ($variants !== []) {
+                $variantMarkers = implode(',', array_fill(0, count($variants), '?'));
+                $this->db->prepare("UPDATE inventory_product_variants SET is_active = ? WHERE id IN ($variantMarkers)")
+                    ->execute([(int) $active, ...$variants]);
+            }
+            audit($this->db, 'catalog.product.activation', $actor);
+            return [200, ['ids' => $ids]];
         });
     }
 

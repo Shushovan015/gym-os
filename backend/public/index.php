@@ -57,9 +57,11 @@ $routes = [
     '/api/inventory/stock' => 'POST',
     '/api/inventory/stock-history' => 'GET',
     '/api/inventory/catalog' => 'GET',
+    '/api/inventory/variants' => 'GET',
     '/api/inventory/suppliers' => 'GET',
     '/api/inventory/catalog/save' => 'POST',
     '/api/inventory/catalog/delete' => 'POST',
+    '/api/inventory/catalog/activation' => 'POST',
     '/api/members/save' => 'POST',
     '/api/members/change' => 'POST',
     '/api/members/photo' => 'GET',
@@ -129,9 +131,13 @@ try {
         [$status, $result] = (new Stock($db))->history($_GET['variantId'] ?? null);
         respond($status, $result);
     }
-    if ($path === '/api/inventory/catalog' || $path === '/api/inventory/suppliers') {
+    if (in_array($path, ['/api/inventory/catalog', '/api/inventory/variants', '/api/inventory/suppliers'], true)) {
         $catalog = new Catalog($db);
-        [$status, $result] = $path === '/api/inventory/catalog' ? $catalog->listing($_GET) : $catalog->suppliers();
+        [$status, $result] = match ($path) {
+            '/api/inventory/catalog' => $catalog->listing($_GET),
+            '/api/inventory/variants' => $catalog->variantsPage($_GET),
+            default => $catalog->suppliers(),
+        };
         respond($status, $result);
     }
     if ($path === '/api/membership/payment-history' || $path === '/api/invoices/receipt') {
@@ -198,6 +204,10 @@ try {
             $catalog = new Catalog($db);
             [$status, $result] = $path === '/api/inventory/catalog/save'
                 ? $catalog->save($input, $user['id']) : $catalog->delete($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/inventory/catalog/activation') {
+            [$status, $result] = (new Catalog($db))->activateProducts($input, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/members/save' || $path === '/api/members/change') {

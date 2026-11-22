@@ -1,7 +1,7 @@
 import { inventoryPriceToMinor } from "@src/features/billing/pricing";
 import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
 import { useLatestRequest } from "@src/hooks/useLatestRequest";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Archive,
@@ -14,6 +14,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 import {
   AdminBadge,
   AdminButton,
@@ -177,6 +178,9 @@ export default function AdminInventory() {
   const [supplierPhone, setSupplierPhone] = useState("");
   const [stockMode, setStockMode] = useState<"add" | "change">("add");
   const [stockBuyingPrice, setStockBuyingPrice] = useState("");
+  const [stockSaving, setStockSaving] = useState(false);
+  const stockInFlight = useRef(false);
+  const historyRequest = useRef(0);
   const [stockSupplierId, setStockSupplierId] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set());
@@ -186,6 +190,33 @@ export default function AdminInventory() {
     if (search !== debouncedSearch) return;
     const isCurrent = beginRequest();
     setResultsLoading(true);
+    if (usePhpApi) {
+      const query = new URLSearchParams({ search: debouncedSearch.trim(), category, stock: stockFilter, active: activeFilter,
+        offset: String((page - 1) * pageSize), limit: String(pageSize) });
+      try {
+        const [data, available] = await Promise.all([
+          phpGet<{ total: number; rows: { product: InventoryProduct; variant: InventoryVariant }[];
+            categories: string[]; summary: typeof inventorySummary }>(`/inventory/variants?${query}`),
+          phpGet<{ suppliers: Supplier[] }>("/inventory/suppliers"),
+        ]);
+        if (!isCurrent()) return;
+        setProducts(data.rows.map(({ product }) => ({ ...product, is_active: Boolean(product.is_active),
+          low_stock_threshold: Number(product.low_stock_threshold) })));
+        setVariants(data.rows.map(({ variant }) => ({ ...variant, is_active: Boolean(variant.is_active),
+          current_quantity: Number(variant.current_quantity),
+          low_stock_threshold: variant.low_stock_threshold === null ? null : Number(variant.low_stock_threshold) })));
+        setInventoryCount(data.total);
+        setInventoryCategories(data.categories);
+        setInventorySummary({ units: Number(data.summary.units), low: Number(data.summary.low), out: Number(data.summary.out),
+          cost: Number(data.summary.cost), retail: Number(data.summary.retail) });
+        setSuppliers(available.suppliers);
+      } catch (error) {
+        if (isCurrent()) setMessage(error instanceof Error ? error.message : "Could not load inventory.");
+      } finally {
+        if (isCurrent()) { setLoading(false); setResultsLoading(false); }
+      }
+      return;
+    }
     const [paged, s] = await Promise.all([
       supabase.rpc("admin_inventory_page", { p_search: debouncedSearch.trim(), p_category: category, p_stock: stockFilter, p_active: activeFilter, p_offset: (page - 1) * pageSize, p_limit: pageSize }),
       supabase.from("inventory_suppliers").select("*").order("name"),
@@ -208,6 +239,17 @@ export default function AdminInventory() {
     if (!ids.length) return;
     const verb = active ? "restore" : "delete";
     if (!window.confirm(`${verb.charAt(0).toUpperCase() + verb.slice(1)} ${ids.length} selected inventory product${ids.length === 1 ? "" : "s"}? Existing bill history will be kept.`)) return;
+    if (usePhpApi) {
+      try {
+        await phpPost("/inventory/catalog/activation", { ids, active });
+        setSelectedProductIds(new Set());
+        setMessage(active ? "Inventory products restored." : "Inventory products deactivated.");
+        await load();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not update the selected products.");
+      }
+      return;
+    }
     const productResult = await supabase.from("shop_items").update({ is_active: active, deactivated_at: active ? null : new Date().toISOString() }).in("id", ids);
     if (productResult.error) { setMessage(productResult.error.message); return; }
     const variantResult = await supabase.from("inventory_product_variants").update({ is_active: active }).in("product_id", ids);
@@ -333,6 +375,19 @@ export default function AdminInventory() {
       sort_order: 0,
       is_featured: false,
     };
+    if (usePhpApi) {
+      const { deactivated_at: _deactivatedAt, ...fields } = payload;
+      try {
+        await phpPost("/inventory/catalog/save", { entity: "product", id: editing?.id,
+          fields: { ...fields, low_stock_threshold: String(threshold) }, openingStock: editing ? undefined : String(startingStock) });
+        setProductOpen(false);
+        setMessage(editing ? "Product updated." : "Product added.");
+        await load();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not save the product.");
+      }
+      return;
+    }
     const result = editing
       ? await supabase
           .from("shop_items")
@@ -433,6 +488,22 @@ export default function AdminInventory() {
       low_stock_threshold: threshold,
       is_active: true,
     };
+    if (usePhpApi) {
+      const { product_id, ...fields } = payload;
+      try {
+        await phpPost("/inventory/catalog/save", { entity: "variant", id: editingVariant?.id,
+          fields: { ...fields, ...(editingVariant ? {} : { product_id }),
+            low_stock_threshold: threshold === null ? null : String(threshold) } });
+        setVariantProduct(null);
+        setEditingVariant(null);
+        setVariantForm(emptyVariant);
+        setMessage(editingVariant ? "Variant updated." : "Variant created.");
+        await load();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not save the variant.");
+      }
+      return;
+    }
     const { error } = editingVariant
       ? await supabase
           .from("inventory_product_variants")
@@ -452,7 +523,7 @@ export default function AdminInventory() {
     await load();
   };
   const recordStock = async () => {
-    if (!stockVariant) return;
+    if (!stockVariant || stockInFlight.current) return;
     if (stockMode === "add" && stockBuyingPrice && inventoryPriceToMinor(stockBuyingPrice) === null) { setMessage("Enter a valid non-negative cost price with at most two decimal places."); return; }
     const raw = Number(movementQuantity);
     if (!Number.isFinite(raw) || raw <= 0) {
@@ -462,6 +533,31 @@ export default function AdminInventory() {
     const negative =
       movementType === "manual_decrease" || movementType === "damaged";
     const delta = negative ? -raw : raw;
+    if (usePhpApi) {
+      stockInFlight.current = true;
+      setStockSaving(true);
+      try {
+        const result = await phpPost<{ current_quantity: string }>("/inventory/stock", {
+          variantId: stockVariant.id, type: stockMode === "add" ? "purchase" : movementType,
+          quantityDelta: String(stockMode === "add" ? raw : delta), notes: movementNotes.trim() || null,
+          supplierId: stockSupplierId ? Number(stockSupplierId) : null,
+          costPriceMinor: stockMode === "add" && stockBuyingPrice ? inventoryPriceToMinor(stockBuyingPrice) : null,
+        });
+        setStockVariant(null);
+        setMovementQuantity("");
+        setMovementNotes("");
+        setStockBuyingPrice("");
+        setStockSupplierId("");
+        setMessage(`Stock recorded. New stock: ${Number(result.current_quantity)}.`);
+        await load();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not update stock.");
+      } finally {
+        stockInFlight.current = false;
+        setStockSaving(false);
+      }
+      return;
+    }
     const { error } = await supabase.rpc("record_stock_movement", {
       p_variant_id: stockVariant.id,
       p_movement_type: stockMode === "add" ? "purchase" : movementType,
@@ -499,6 +595,7 @@ export default function AdminInventory() {
     await load();
   };
   const uploadProductPhoto = async (file: File) => {
+    if (usePhpApi) return;
     if (!file.type.startsWith("image/")) {
       setMessage("Choose an image file such as JPG, PNG or WebP.");
       return;
@@ -519,8 +616,20 @@ export default function AdminInventory() {
     setUploadingPhoto(false);
   };
   const showHistory = async (variant: InventoryVariant) => {
+    const current = ++historyRequest.current;
     setHistoryVariant(variant);
     setMovements([]);
+    if (usePhpApi) {
+      try {
+        const result = await phpGet<{ movements: StockMovement[] }>(`/inventory/stock-history?variantId=${variant.id}`);
+        if (current !== historyRequest.current) return;
+        setMovements(result.movements.map((row) => ({ ...row, quantity_delta: Number(row.quantity_delta),
+          previous_quantity: Number(row.previous_quantity), resulting_quantity: Number(row.resulting_quantity) })));
+      } catch (error) {
+        if (current === historyRequest.current) setMessage(error instanceof Error ? error.message : "Could not load stock history.");
+      }
+      return;
+    }
     const { data, error } = await supabase
       .from("stock_movements")
       .select("*")
@@ -532,6 +641,20 @@ export default function AdminInventory() {
   };
   const saveSupplier = async () => {
     if (!supplierName.trim()) return;
+    if (usePhpApi) {
+      try {
+        await phpPost("/inventory/catalog/save", { entity: "supplier",
+          fields: { name: supplierName.trim(), phone: supplierPhone.trim() || null } });
+        setSupplierOpen(false);
+        setSupplierName("");
+        setSupplierPhone("");
+        setMessage("Supplier created.");
+        await load();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not save the supplier.");
+      }
+      return;
+    }
     const { error } = await supabase.from("inventory_suppliers").insert({
       name: supplierName.trim(),
       phone: supplierPhone.trim() || null,
@@ -1207,7 +1330,7 @@ export default function AdminInventory() {
                   <AdminInput
                     type="file"
                     accept="image/*"
-                    disabled={uploadingPhoto}
+                    disabled={uploadingPhoto || usePhpApi}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) void uploadProductPhoto(file);
@@ -1424,7 +1547,7 @@ export default function AdminInventory() {
         }
         onClose={() => setStockVariant(null)}
         footer={
-          <AdminButton variant="primary" onClick={() => void recordStock()}>
+          <AdminButton variant="primary" disabled={stockSaving} onClick={() => void recordStock()}>
             {stockMode === "add"
               ? `Add ${movementQuantity || "Stock"}`
               : "Save Stock Change"}
@@ -1497,7 +1620,7 @@ export default function AdminInventory() {
         open={Boolean(historyVariant)}
         title="Stock history"
         description={historyVariant?.sku}
-        onClose={() => setHistoryVariant(null)}
+        onClose={() => { historyRequest.current += 1; setHistoryVariant(null); }}
       >
         {movements.length === 0 ? (
           <AdminEmptyState title="No stock movements" />
