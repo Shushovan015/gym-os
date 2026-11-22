@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   addMonthsPreservingDay,
+  buildBsMonthDays,
   getNextMonthFirstDay,
   formatBillingPeriod,
   formatMembershipFeeAmount,
@@ -13,6 +14,19 @@ import {
 } from "./adminUtils";
 
 describe("Membership fee utilities", () => {
+  it("labels dates outside the conversion range as AD, including membership fee periods", () => {
+    expect(adToBsString("1900-01-01")).toBe("");
+    expect(formatDisplayDate("1900-01-01")).toBe("1900-01-01 AD");
+    expect(formatDisplayDate("0001-01-01")).toBe("0001-01-01 AD");
+    expect(formatDisplayDate("2026-02-30")).toBe("2026-02-30");
+    expect(formatBillingPeriod("1900-01-01")).toBe("1900-01-01 AD Membership Fee");
+  });
+
+  it("builds the last supported calendar month without probing beyond the date range", () => {
+    expect(buildBsMonthDays(2090, 11, -1).length).toBeGreaterThan(0);
+    expect(buildBsMonthDays(2091, 0, -1)).toEqual([]);
+    expect(buildBsMonthDays(2000, -1, -1)).toEqual([]);
+  });
   describe("addMonthsPreservingDay", () => {
     it("adds months normally", () => {
       expect(addMonthsPreservingDay("2026-01-15", 1)).toBe("2026-02-15");
