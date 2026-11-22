@@ -12,7 +12,7 @@ php backend/bin/migrate.php apply
 php backend/bin/migrate.php verify
 ```
 
-Use a separate migration user with DDL privileges. The online PHP user needs only the DML permissions used by the application. The verify command checks migration versions and checksums, InnoDB engines, and member foreign keys.
+Use a separate migration user with DDL privileges. The online PHP user needs only the DML permissions used by the application. The verify command checks migration versions and checksums, InnoDB engines, and the expected foreign keys.
 
 Provision accounts with `php backend/bin/account.php create UUID EMAIL admin`. Reuse existing administrator UUIDs only after verifying the account and its role with a trusted operator. The command reads a password of 15–72 bytes from standard input. On Windows, pass it via a secret prompt and a pipe, keeping it out of shell history and the argument list. Use `php backend/bin/account.php reset UUID` with the same input method to reset a password and revoke existing sessions. Account provisioning and resets are restricted to the CLI.
 
@@ -30,6 +30,7 @@ Keep backend source, SQL, tests and credentials outside the document root. A pro
 | --- | --- |
 | `GET /api/members` | `offset`, `limit`, `search`, `deleted`, `enabled`, `sort`, `membership_type`, `membership_status`, `payment_status` |
 | `GET /api/members/details?id=123` | Member and recent activation history |
+| `GET /api/members/fees?id=123` | Read-only fee ledger, outstanding balances and recent paid fees |
 | `POST /api/members/save` | Profile fields, with numeric `id` for edits |
 | `POST /api/members/change` | `action` and `ids`, or explicit `all: true` for bulk activation, deactivation or deletion |
 | `POST /api/members/upload-photo` | Multipart `memberId` and `photo` |

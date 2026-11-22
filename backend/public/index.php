@@ -6,6 +6,7 @@ require __DIR__ . '/../src/Auth.php';
 require __DIR__ . '/../src/Attendance.php';
 require __DIR__ . '/../src/Members.php';
 require __DIR__ . '/../src/MemberPhotos.php';
+require __DIR__ . '/../src/MembershipFees.php';
 
 function respond(int $status, array $body): never
 {
@@ -34,6 +35,7 @@ $routes = [
     '/api/attendance/change' => 'POST',
     '/api/members' => 'GET',
     '/api/members/details' => 'GET',
+    '/api/members/fees' => 'GET',
     '/api/members/save' => 'POST',
     '/api/members/change' => 'POST',
     '/api/members/photo' => 'GET',
@@ -75,6 +77,10 @@ try {
     if ($path === '/api/members/photo') {
         (new MemberPhotos($db))->download($_GET['key'] ?? null);
         respond(404, ['error' => 'Photo was not found.']);
+    }
+    if ($path === '/api/members/fees') {
+        [$status, $result] = (new MembershipFees($db))->status($_GET['id'] ?? null);
+        respond($status, $result);
     }
     if ($path === '/api/members/upload-photo') {
         [$status, $result] = (new MemberPhotos($db))->upload($_POST['memberId'] ?? null, $_FILES['photo'] ?? null, $user['id']);

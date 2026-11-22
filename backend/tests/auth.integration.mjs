@@ -118,6 +118,15 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   };
   const { member } = await request("members/save", 201, profile);
   const details = `members/details?id=${member.id}`;
+  const ledger = `members/fees?id=${member.id}`;
+  assert.equal((await request(ledger, 200)).has_outstanding, false);
+  php("backend/tests/fee-fixture.php", [String(member.id)]);
+  const feeStatus = await request(ledger, 200);
+  assert.equal(feeStatus.summary.total_due, 80000);
+  assert.equal(feeStatus.summary.total_paid, 70000);
+  assert.equal(feeStatus.summary.next_due_date, "2024-02-29");
+  assert.deepEqual(feeStatus.outstanding_fees.map(({ status }) => status), ["partial", "unpaid"]);
+  assert.equal(feeStatus.paid_fees.length, 1);
   await request("members/save", 409, profile);
   await request("members/save", 422, { id: member.id, payment_status: "paid" });
   await request("members/save", 422, { id: member.id, end_date: "2024-02-28" });
@@ -167,6 +176,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal((await request("login", 200, { email: viewer, password, role: "admin" })).user.role, "viewer");
   await request("admin", 403);
   await request(details, 403);
+  await request(ledger, 403);
   await request("members/save", 403, profile);
   await request(photoPath, 403);
   await request(history, 403);

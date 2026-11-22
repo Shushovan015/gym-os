@@ -57,7 +57,7 @@ foreach (glob(__DIR__ . '/../database/migrations/*.sql') as $path) {
 $tables = [
     'schema_migrations', 'admin_accounts', 'login_limits', 'audit_events',
     'members', 'member_status_history', 'attendance_holidays', 'attendance_holiday_templates',
-    'attendance_records', 'admin_settings', 'member_write_lock',
+    'attendance_records', 'admin_settings', 'member_write_lock', 'invoices', 'invoice_payments', 'membership_fees',
 ];
 $engine = $db->prepare('SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?');
 foreach ($tables as $table) {
@@ -66,11 +66,21 @@ foreach ($tables as $table) {
         throw new RuntimeException("InnoDB table missing or invalid: $table");
     }
 }
-$foreignKeys = $db->query("SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
-    WHERE CONSTRAINT_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = 'members' AND REFERENCED_COLUMN_NAME = 'id'")
+$foreignKeys = $db->query("SELECT CONCAT(TABLE_NAME, '.', COLUMN_NAME), CONCAT(REFERENCED_TABLE_NAME, '.', REFERENCED_COLUMN_NAME)
+    FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL")
     ->fetchAll(PDO::FETCH_KEY_PAIR);
-if (($foreignKeys['attendance_records'] ?? null) !== 'member_ref' ||
-    ($foreignKeys['member_status_history'] ?? null) !== 'member_id') {
-    throw new RuntimeException('Member foreign keys are missing.');
+$requiredKeys = [
+    'attendance_records.member_ref' => 'members.id',
+    'member_status_history.member_id' => 'members.id',
+    'invoices.member_ref' => 'members.id',
+    'invoice_payments.invoice_id' => 'invoices.id',
+    'invoice_payments.reverses_payment_id' => 'invoice_payments.id',
+    'membership_fees.member_id' => 'members.id',
+    'membership_fees.invoice_id' => 'invoices.id',
+];
+foreach ($requiredKeys as $source => $target) {
+    if (($foreignKeys[$source] ?? null) !== $target) {
+        throw new RuntimeException("Foreign key is missing: $source to $target");
+    }
 }
-echo "Migration records, InnoDB tables and member foreign keys verified.\n";
+echo "Migration records, InnoDB tables and foreign keys verified.\n";
