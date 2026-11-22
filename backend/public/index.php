@@ -36,6 +36,8 @@ $routes = [
     '/api/auth/logout' => 'POST',
     '/api/auth/admin' => 'GET',
     '/api/attendance/history' => 'GET',
+    '/api/attendance/grid' => 'GET',
+    '/api/attendance/holiday' => 'POST',
     '/api/attendance/change' => 'POST',
     '/api/members' => 'GET',
     '/api/members/details' => 'GET',
@@ -85,6 +87,10 @@ try {
     }
     if ($path === '/api/attendance/history') {
         [$status, $result] = (new Attendance($db))->history($_GET['memberId'] ?? null);
+        respond($status, $result);
+    }
+    if ($path === '/api/attendance/grid') {
+        [$status, $result] = (new Attendance($db))->grid($_GET);
         respond($status, $result);
     }
     if ($path === '/api/members' || $path === '/api/members/details') {
@@ -151,6 +157,10 @@ try {
         }
         if ($path === '/api/attendance/change') {
             [$status, $result] = (new Attendance($db))->change($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/attendance/holiday') {
+            [$status, $result] = (new Attendance($db))->holiday($input, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/membership/payments') {

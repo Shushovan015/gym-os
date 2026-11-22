@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 import NepaliDate from "nepali-date-converter";
 import { CalendarDays, Check, Info, RotateCcw, Search, UserRound, X } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 import {
   AdminBadge,
   AdminButton,
@@ -77,6 +78,8 @@ export default function AdminAttendance() {
   const [memberFeeStatus, setMemberFeeStatus] = useState<MemberMembershipFeeStatus | null>(null);
   const [page, setPage] = useState(1);
   const [memberCount, setMemberCount] = useState(0);
+  const [enabled, setEnabled] = useState("active");
+  const [refresh, setRefresh] = useState(0);
   const pageSize = 10;
 
   const bsDays = useMemo(
@@ -168,6 +171,12 @@ export default function AdminAttendance() {
 
   useEffect(() => {
     let alive = true;
+    if (usePhpApi) {
+      phpGet<{ settings: AdminSettings }>("/admin/settings").then(({ settings }) => {
+        if (alive) setSettings({ ...defaultAdminSettings, ...settings });
+      }).catch((error: Error) => { if (alive) setMessage(error.message); });
+      return () => { alive = false; };
+    }
     supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle().then(({ data, error }) => {
       if (!alive) return;
       if (error) setMessage(error.message);
@@ -179,11 +188,38 @@ export default function AdminAttendance() {
     };
   }, []);
 
-  const beginSearch = useLatestRequest(JSON.stringify([searchTerm, page, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]));
+  const beginSearch = useLatestRequest(JSON.stringify([searchTerm, page, selectedBsMonth, selectedBsYear, settings.weekly_closing_day, enabled, refresh]));
   useEffect(() => {
     if (searchTerm !== debouncedSearch) return;
     const isCurrent = beginSearch();
     setResultsLoading(true);
+    if (usePhpApi) {
+      const query = new URLSearchParams({
+        start: selectedMonthStart, end: selectedMonthEnd, search: debouncedSearch,
+        enabled, limit: String(pageSize), offset: String((page - 1) * pageSize),
+      });
+      phpGet<{
+        members: MemberRow[]; count: number; records: AttendanceRow[]; deletedRecords: AttendanceRow[]; holidays: HolidayRow[];
+      }>(`/attendance/grid?${query}`).then((result) => {
+        if (!isCurrent()) return;
+        setMembers(result.members);
+        setMemberCount(result.count);
+        setRecords(result.records);
+        setDeletedRecords(result.deletedRecords);
+        setHolidays(result.holidays);
+      }).catch((error: Error) => {
+        if (!isCurrent()) return;
+        setMembers([]);
+        setMemberCount(0);
+        setRecords([]);
+        setDeletedRecords([]);
+        setHolidays([]);
+        setMessage(error.message);
+      }).finally(() => {
+        if (isCurrent()) { setLoading(false); setResultsLoading(false); }
+      });
+      return;
+    }
     let query = supabase.from("members").select("*", { count: "exact" }).is("deleted_at", null);
     const term = normalizeNameSearch(debouncedSearch);
     if (term) query = query.filter("full_name", "imatch", namePrefixPattern(term));
@@ -198,7 +234,7 @@ export default function AdminAttendance() {
     });
     // settings changes only after its initial database load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchTerm, debouncedSearch, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]);
+  }, [page, searchTerm, debouncedSearch, selectedBsMonth, selectedBsYear, settings.weekly_closing_day, enabled, refresh]);
 
   // Load membership fee status when profile member changes
   useEffect(() => {
@@ -207,6 +243,13 @@ export default function AdminAttendance() {
       return;
     }
     let alive = true;
+    if (usePhpApi) {
+      setMemberFeeStatus(null);
+      phpGet<MemberMembershipFeeStatus>(`/members/fees?id=${profileMember.id}`).then((result) => {
+        if (alive) setMemberFeeStatus(result);
+      }).catch((error: Error) => { if (alive) setMessage(error.message); });
+      return () => { alive = false; };
+    }
     supabase.rpc("get_member_membership_fee_status", { p_member_id: profileMember.id }).then(({ data, error }) => {
       if (!alive) return;
       if (error) {
@@ -222,6 +265,7 @@ export default function AdminAttendance() {
     setMessage("");
     setSelectedBsYear(year);
     setSelectedBsMonth(month);
+    setFocusDay((day) => Math.min(day, buildBsMonthDays(year, month, settings.weekly_closing_day).length || 1));
     setPage(1);
   };
 
@@ -240,6 +284,20 @@ export default function AdminAttendance() {
     const existing = attendanceMap.get(key);
     setActiveCell(key);
     setMessage("");
+
+    if (usePhpApi) {
+      try {
+        await phpPost("/attendance/change", { memberId: member.id, date: day.adDate, action: present ? "mark" : "remove" });
+        setResultsLoading(true);
+        setRefresh((value) => value + 1);
+        setMessage(present ? `${member.full_name} marked present.` : `${member.full_name}'s attendance was removed. You can restore it below.`);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Attendance update failed.");
+      } finally {
+        setActiveCell("");
+      }
+      return;
+    }
 
     if (present) {
       const { error } = await supabase.from("attendance_records").upsert(
@@ -271,6 +329,20 @@ export default function AdminAttendance() {
   };
 
   const restoreAttendance = async (record: AttendanceRow) => {
+    if (usePhpApi) {
+      setActiveCell(cellKey(record.member_ref, record.attendance_date));
+      try {
+        await phpPost("/attendance/change", { memberId: record.member_ref, date: record.attendance_date, action: "restore" });
+        setResultsLoading(true);
+        setRefresh((value) => value + 1);
+        setMessage("Attendance restored.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Restore failed.");
+      } finally {
+        setActiveCell("");
+      }
+      return;
+    }
     const { error } = await supabase.from("attendance_records").update({ deleted_at: null }).eq("id", record.id);
     if (error) {
       setMessage(error.message);
@@ -280,6 +352,19 @@ export default function AdminAttendance() {
     await loadAttendanceData(selectedBsYear, selectedBsMonth, members.map((item) => item.id));
   };
 
+  const writePhpHoliday = async (date: string, action: "save" | "remove", name?: string) => {
+    try {
+      await phpPost("/attendance/holiday", { date, action, name });
+      setResultsLoading(true);
+      setRefresh((value) => value + 1);
+      setMessage(action === "save" ? "Holiday saved." : "Holiday removed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Holiday update failed.");
+    } finally {
+      setActiveHolidayDate("");
+    }
+  };
+
   const setHoliday = async (day: DayCell) => {
     if (day.isClosingDay) return;
     const existing = holidayByDate.get(day.adDate);
@@ -287,6 +372,7 @@ export default function AdminAttendance() {
     if (next === null) return;
     const name = next.trim() || "Holiday";
     setActiveHolidayDate(day.adDate);
+    if (usePhpApi) return writePhpHoliday(day.adDate, "save", name);
     const request = existing
       ? supabase.from("attendance_holidays").update({ name }).eq("id", existing.id)
       : supabase.from("attendance_holidays").insert({ holiday_date: day.adDate, name });
@@ -303,6 +389,7 @@ export default function AdminAttendance() {
     const existing = holidayByDate.get(day.adDate);
     if (!existing) return;
     setActiveHolidayDate(day.adDate);
+    if (usePhpApi) return writePhpHoliday(day.adDate, "remove");
     const { error } = await supabase.from("attendance_holidays").delete().eq("id", existing.id);
     if (error) setMessage(error.message);
     else {
@@ -365,8 +452,14 @@ export default function AdminAttendance() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <AdminInput value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }} placeholder="Search members by name" className="pl-9" />
           </div>
-          <AdminSelect<number> options={yearOptions} value={selectedBsYear} onChange={(event) => changeMonth(Number(event.target.value), selectedBsMonth)} />
-          <AdminSelect<number> options={monthOptions} value={selectedBsMonth} onChange={(event) => changeMonth(selectedBsYear, Number(event.target.value))} />
+          <AdminSelect<number> aria-label="Attendance year" options={yearOptions} value={selectedBsYear} onChange={(event) => changeMonth(Number(event.target.value), selectedBsMonth)} />
+          <AdminSelect<number> aria-label="Attendance month" options={monthOptions} value={selectedBsMonth} onChange={(event) => changeMonth(selectedBsYear, Number(event.target.value))} />
+          {usePhpApi && <AdminSelect
+            aria-label="Member activation filter"
+            options={[{ value: "active", label: "Active members" }, { value: "inactive", label: "Inactive members" }, { value: "all", label: "All members" }]}
+            value={enabled}
+            onChange={(event) => { setEnabled(event.target.value); setPage(1); }}
+          />}
             <AdminSelect<number>
             options={bsDays.map((day) => ({ value: day.bsDay, label: `Day ${formatNepaliNumber(day.bsDay)}` }))}
             value={focusDay}
@@ -483,7 +576,7 @@ export default function AdminAttendance() {
                             <td key={key} className={cx("rounded-lg p-1 text-center", unavailable ? "bg-slate-900/45" : "bg-slate-900")}>
                               <button
                                 type="button"
-                                disabled={busy || unavailable}
+                                disabled={busy || unavailable || (usePhpApi && !member.is_active)}
                                 onClick={() => setAttendance(member, day, !checked)}
                                 className={cx(
                                   "inline-flex h-9 w-9 items-center justify-center rounded-lg border text-xs font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-50",
@@ -528,7 +621,7 @@ export default function AdminAttendance() {
                       <button
                         key={day.adDate}
                         type="button"
-                        disabled={unavailable}
+                        disabled={unavailable || (usePhpApi && (!member.is_active || activeCell === cellKey(member.id, day.adDate)))}
                         onClick={() => setAttendance(member, day, !checked)}
                         className={cx(
                           "rounded-lg border p-3 text-left text-sm",
@@ -574,7 +667,7 @@ export default function AdminAttendance() {
                   <div className="text-sm text-slate-300">
                     <b className="text-white">{member?.full_name || "Member"}</b> | {formatDisplayDate(record.attendance_date)} | {statusLabel(record.status)}
                   </div>
-                  <AdminButton type="button" variant="secondary" onClick={() => restoreAttendance(record)}>
+                  <AdminButton type="button" variant="secondary" disabled={usePhpApi && (resultsLoading || activeCell === cellKey(record.member_ref, record.attendance_date))} onClick={() => restoreAttendance(record)}>
                     <RotateCcw className="h-4 w-4" />
                     Restore
                   </AdminButton>

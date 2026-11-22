@@ -243,6 +243,35 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.deepEqual(records.map((record) => record.attendance_date), ["2024-02-29", "2024-02-28"]);
   assert.match(records[0].deleted_at, /Z$/);
   assert.equal((await request(attendance, 200, { ...mark, date: "2024-02-29", action: "restore" })).lastVisitDate, "2024-02-29");
+  const grid = "attendance/grid?start=2024-02-28&end=2024-03-02&search=Test%20member&limit=50";
+  assert.ok((await request(grid, 200)).holidays.some(({ holiday_date }) => holiday_date === "2024-03-01"));
+  for (const action of ["mark", "mark", "remove", "remove", "restore", "restore"]) {
+    await request(attendance, 200, { ...mark, action, date: "2024-02-29" });
+    const next = await request(grid, 200);
+    const active = next.records.filter((row) => row.member_ref === memberId && row.attendance_date === "2024-02-29");
+    const deleted = next.deletedRecords.filter((row) => row.member_ref === memberId && row.attendance_date === "2024-02-29");
+    assert.equal(active.length, action === "remove" ? 0 : 1);
+    assert.equal(deleted.length, action === "remove" ? 1 : 0);
+  }
+  for (const range of ["start=2023-02-29&end=2024-03-01", "start=2024-03-02&end=2024-03-01", "start=2024-01-01&end=2024-04-01"]) {
+    await request(`attendance/grid?${range}`, 422);
+  }
+  await request(`${grid}&offset=-1`, 422);
+  await request(`${grid}&enabled=invalid`, 422);
+  const yearGrid = "attendance/grid?start=2024-12-31&end=2025-01-01&search=Test%20member&limit=50";
+  for (const date of ["2024-12-31", "2025-01-01"]) await request(attendance, 200, { ...mark, date });
+  assert.deepEqual((await request(yearGrid, 200)).records.filter((row) => row.member_ref === memberId)
+    .map((row) => row.attendance_date), ["2025-01-01", "2024-12-31"]);
+  const holidayBody = { action: "save", name: "Test closure", date: "2025-01-01" };
+  await request("attendance/holiday", 403, holidayBody, false);
+  await request("attendance/holiday", 200, holidayBody);
+  assert.equal((await request(yearGrid, 200)).holidays[0].name, "Test closure");
+  await request(attendance, 409, { ...mark, date: holidayBody.date });
+  await request("attendance/holiday", 200, { ...holidayBody, action: "remove" });
+  await request("members/change", 200, { action: "deactivate", ids: [memberId] });
+  assert.ok(!(await request(yearGrid, 200)).members.some(({ id }) => id === memberId));
+  assert.ok((await request(yearGrid + "&enabled=inactive", 200)).records.some((row) => row.member_ref === memberId));
+  await request(attendance, 409, { ...mark, date: "2025-01-02" });
   php("backend/bin/account.php", ["reset", id], randomBytes(24).toString("hex"));
   await request("admin", 401);
   await request("session", 200);
@@ -262,6 +291,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("members/save", 403, profile);
   await request(photoPath, 403);
   await request(history, 403);
+  await request(grid, 403);
+  await request("attendance/holiday", 403, holidayBody);
   await request(attendance, 403, { ...mark, date: "2024-02-29" });
   await request("logout", 200, {});
   await request("admin", 401);

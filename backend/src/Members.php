@@ -12,7 +12,7 @@ final class Members
     {
     }
 
-    public function list(array $input): array
+    public function list(array $input, bool $includeSummary = true): array
     {
         $offset = filter_var($input['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
         $limit = filter_var($input['limit'] ?? 50, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 200]]);
@@ -88,24 +88,34 @@ final class Members
                 : "(^[[:space:]]*$literal|[[:space:]]+$literal" . '[^[:space:]]*[[:space:]]*$)';
         }
         $where = implode(' AND ', $filters);
-        $this->db->beginTransaction();
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) {
+            $this->db->beginTransaction();
+        }
         try {
             $count = $this->db->prepare("SELECT COUNT(*) FROM members WHERE $where");
             $count->execute($parameters);
             $rows = $this->db->prepare("SELECT * FROM members WHERE $where ORDER BY {$orders[$sort]} LIMIT $limit OFFSET $offset");
             $rows->execute($parameters);
-            $summary = $this->db->prepare("SELECT
+            $result = ['members' => array_map(self::present(...), $rows->fetchAll(PDO::FETCH_ASSOC)),
+                'count' => (int) $count->fetchColumn()];
+            if ($includeSummary) {
+                $summary = $this->db->prepare("SELECT
                 COUNT(CASE WHEN deleted_at IS NULL AND membership_status = 'active' AND (end_date IS NULL OR end_date >= ?) THEN 1 END) AS active,
                 COUNT(CASE WHEN deleted_at IS NULL AND is_active = 1 THEN 1 END) AS enabled,
                 COUNT(CASE WHEN deleted_at IS NULL AND payment_status <> 'paid' THEN 1 END) AS payment_follow_up,
                 COUNT(CASE WHEN deleted_at IS NOT NULL THEN 1 END) AS deleted FROM members");
-            $summary->execute([$today->format('Y-m-d')]);
-            $result = ['members' => array_map(self::present(...), $rows->fetchAll(PDO::FETCH_ASSOC)),
-                'count' => (int) $count->fetchColumn(), 'summary' => $summary->fetch(PDO::FETCH_ASSOC)];
-            $this->db->commit();
+                $summary->execute([$today->format('Y-m-d')]);
+                $result['summary'] = $summary->fetch(PDO::FETCH_ASSOC);
+            }
+            if ($ownsTransaction) {
+                $this->db->commit();
+            }
             return [200, $result];
         } catch (Throwable $error) {
-            $this->db->rollBack();
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $error;
         }
     }
