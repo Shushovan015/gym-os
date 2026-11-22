@@ -10,7 +10,7 @@ import type {
 } from "react";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
-import { adToBsString, buildBsMonthDays, bsStringToAdDate, cx, getNepalTodayAdDate } from "@src/pages/admin/adminUtils";
+import { adToBsString, buildBsMonthDays, bsStringToAdDate, cx, formatDisplayDate, getNepalTodayAdDate, MAX_BS_YEAR, MIN_BS_YEAR } from "@src/pages/admin/adminUtils";
 import type { SelectOption } from "@src/pages/admin/adminTypes";
 
 export type Tone = "neutral" | "success" | "warning" | "danger" | "accent" | "muted";
@@ -228,18 +228,20 @@ export function AdminInput({ className = "", ...props }: InputHTMLAttributes<HTM
 }
 
 const BS_MONTH_LABELS = ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
-const BS_YEARS = Array.from({ length: 41 }, (_, index) => 2070 + index);
+const BS_YEARS = Array.from({ length: MAX_BS_YEAR - MIN_BS_YEAR + 1 }, (_, index) => MIN_BS_YEAR + index);
 
 export function AdminBsDateInput({ value, onChange, className = "", required = false }: { value: string | null | undefined; onChange: (adDate: string) => void; className?: string; required?: boolean }) {
   const currentBs = adToBsString(getNepalTodayAdDate());
   const selectedBs = adToBsString(value);
-  const initial = (selectedBs || currentBs).split("-").map(Number);
+  const initial = (selectedBs || currentBs || `${MIN_BS_YEAR}-01-01`).split("-").map(Number);
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState(initial[0]);
   const [viewMonth, setViewMonth] = useState(initial[1] - 1);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const calendarRef = useAdminModal(open, () => setOpen(false));
-  const days = buildBsMonthDays(viewYear, viewMonth, -1);
+  const days = open ? buildBsMonthDays(viewYear, viewMonth, -1) : [];
+  const firstMonth = viewYear === MIN_BS_YEAR && viewMonth === 0;
+  const lastMonth = viewYear === MAX_BS_YEAR && viewMonth === 11;
   const firstOffset = days[0]?.weekdayIndex ?? 0;
 
   useEffect(() => {
@@ -257,20 +259,19 @@ export function AdminBsDateInput({ value, onChange, className = "", required = f
   };
   const toggleCalendar = () => {
     if (!open) {
-      const shown = (selectedBs || currentBs).split("-").map(Number);
-      setViewYear(shown[0]);
-      setViewMonth(shown[1] - 1);
+      setViewYear(initial[0]);
+      setViewMonth(initial[1] - 1);
     }
     setOpen((shown) => !shown);
   };
 
   return <div ref={rootRef} className={cx("relative", className)}>
     <button type="button" aria-haspopup="dialog" aria-expanded={open} onClick={toggleCalendar} className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm outline-none transition hover:border-slate-600 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20">
-      <span className={selectedBs ? "text-white" : "text-slate-500"}>{selectedBs ? `${selectedBs} BS` : "Choose Nepali date"}</span><CalendarDays className="h-4 w-4 shrink-0 text-amber-300" />
+      <span className={value ? "text-white" : "text-slate-500"}>{value ? formatDisplayDate(value) : "Choose Nepali date"}</span><CalendarDays className="h-4 w-4 shrink-0 text-amber-300" />
     </button>
     {required ? <input tabIndex={-1} aria-hidden="true" required value={value ?? ""} onChange={() => undefined} className="pointer-events-none absolute inset-0 -z-10 opacity-0" /> : null}
     {open ? createPortal(<div className="fixed inset-0 z-[180] flex h-[100dvh] items-center justify-center p-4" onClick={() => setOpen(false)}><section ref={calendarRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Nepali calendar" onClick={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain relative w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-700 bg-slate-950 p-4 shadow-2xl">
-      <div className="flex items-center justify-between gap-2"><button type="button" onClick={() => moveMonth(-1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" aria-label="Previous Nepali month"><ChevronLeft className="h-4 w-4"/></button><div className="text-center"><div className="font-black text-white">{BS_MONTH_LABELS[viewMonth]}</div><div className="text-xs text-amber-300">{viewYear} BS</div></div><button type="button" onClick={() => moveMonth(1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" aria-label="Next Nepali month"><ChevronRight className="h-4 w-4"/></button></div>
+      <div className="flex items-center justify-between gap-2"><button type="button" disabled={firstMonth} onClick={() => moveMonth(-1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800 disabled:opacity-40" aria-label="Previous Nepali month"><ChevronLeft className="h-4 w-4"/></button><div className="text-center"><div className="font-black text-white">{BS_MONTH_LABELS[viewMonth]}</div><div className="text-xs text-amber-300">{viewYear} BS</div></div><button type="button" disabled={lastMonth} onClick={() => moveMonth(1)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800 disabled:opacity-40" aria-label="Next Nepali month"><ChevronRight className="h-4 w-4"/></button></div>
       <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase text-slate-500">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => <span key={day}>{day}</span>)}</div>
       <div className="mt-2 grid grid-cols-7 gap-1">{Array.from({ length: firstOffset }, (_, index) => <span key={`empty-${index}`} />)}{days.map((item) => { const itemBs = `${viewYear}-${String(viewMonth + 1).padStart(2,"0")}-${String(item.bsDay).padStart(2,"0")}`; const selected = itemBs === selectedBs; const today = itemBs === currentBs; return <button key={item.bsDay} type="button" onClick={() => { onChange(item.adDate); setOpen(false); }} className={cx("aspect-square rounded-lg text-sm font-semibold transition", selected ? "bg-amber-400 text-slate-950" : today ? "border border-amber-400 text-amber-200" : "text-slate-300 hover:bg-slate-800")}>{item.bsDay}</button>; })}</div>
       <div className="mt-4 flex justify-between border-t border-slate-800 pt-3"><button type="button" onClick={() => { onChange(getNepalTodayAdDate()); setOpen(false); }} className="text-xs font-semibold text-amber-300">Today</button>{value ? <button type="button" onClick={() => { onChange(""); setOpen(false); }} className="text-xs font-semibold text-rose-300">Clear date</button> : null}</div>

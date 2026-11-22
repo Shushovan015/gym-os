@@ -90,7 +90,7 @@ export function pad2(value: number) {
 }
 
 export function formatAdDate(date: Date) {
-  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
 }
 
 export function getNepalTodayAdDate() {
@@ -108,12 +108,9 @@ export function getNepalTodayAdDate() {
 }
 
 export function parseAdDate(adDate: string | null | undefined) {
-  if (!adDate) return null;
-  // Parse as UTC to avoid timezone shifts
-  const [year, month, day] = adDate.split("-").map(Number);
-  if (!year || !month || !day) return null;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (!adDate || !/^\d{4}-\d{2}-\d{2}$/.test(adDate)) return null;
+  const date = new Date(`${adDate}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && formatAdDate(date) === adDate ? date : null;
 }
 
 export function addDays(adDate: string, days: number) {
@@ -132,7 +129,6 @@ export function diffInDays(fromAdDate: string, toAdDate: string) {
 
 export function isValidAdDate(value: string | null | undefined) {
   if (!value) return true;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   return parseAdDate(value) !== null;
 }
 
@@ -140,23 +136,27 @@ export function formatDateTime(value: string | null | undefined) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return `${formatBsDateFromAd(value.slice(0, 10))} BS · ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return `${formatDisplayDate(value.slice(0, 10))} · ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-export function formatBsDateFromAd(adDate: string | null | undefined) {
-  if (!adDate) return "-";
+function nepaliDateFromAd(adDate: string | null | undefined) {
+  // The converter can return a plausible but incorrect BS date for pre-epoch AD values.
+  if (!adDate || adDate < "1943-04-14" || adDate > "2034-04-13") return null;
+  const date = parseAdDate(adDate);
+  if (!date) return null;
   try {
-    const date = parseAdDate(adDate);
-    if (!date) return adDate;
-    return new NepaliDate(date).format("YYYY-MM-DD");
+    return new NepaliDate(date);
   } catch {
-    return adDate;
+    return null;
   }
 }
 
+export function formatBsDateFromAd(adDate: string | null | undefined) {
+  return adToBsString(adDate) || adDate || "-";
+}
+
 export function adToBsString(adDate: string | null | undefined) {
-  const bs = formatBsDateFromAd(adDate);
-  return bs === "-" ? "" : bs;
+  return nepaliDateFromAd(adDate)?.format("YYYY-MM-DD") ?? "";
 }
 
 export function bsStringToAdDate(bsDate: string) {
@@ -178,8 +178,8 @@ export function bsStringToAdDate(bsDate: string) {
 
 export function formatDisplayDate(adDate: string | null | undefined) {
   if (!adDate) return "-";
-  const bs = formatBsDateFromAd(adDate);
-  return `${bs} BS`;
+  const bs = adToBsString(adDate);
+  return bs ? `${bs} BS` : isValidAdDate(adDate) ? `${adDate} AD` : adDate;
 }
 
 export function normalizeNullable(value: string | null | undefined) {
@@ -268,6 +268,9 @@ export function statusLabel(value: string) {
     .join(" ");
 }
 
+export const MIN_BS_YEAR = 2000;
+export const MAX_BS_YEAR = 2090;
+
 export function buildBsMonthDays(bsYear: number, bsMonthIndex: number, closingDay: number) {
   const result: Array<{
     bsDay: number;
@@ -277,8 +280,17 @@ export function buildBsMonthDays(bsYear: number, bsMonthIndex: number, closingDa
     isClosingDay: boolean;
   }> = [];
 
+  if (!Number.isInteger(bsYear) || bsYear < MIN_BS_YEAR || bsYear > MAX_BS_YEAR
+      || !Number.isInteger(bsMonthIndex) || bsMonthIndex < 0 || bsMonthIndex > 11) return result;
+
   for (let day = 1; day <= 32; day += 1) {
-    const bsDate = new NepaliDate(bsYear, bsMonthIndex, day);
+    let bsDate: NepaliDate;
+    try {
+      bsDate = new NepaliDate(bsYear, bsMonthIndex, day);
+    } catch {
+      // Probing the end of the final supported month can cross the converter's range.
+      break;
+    }
     if (bsDate.getYear() !== bsYear || bsDate.getMonth() !== bsMonthIndex) break;
     const weekdayIndex = bsDate.getDay();
     // Convert BS date to AD using toJsDate(), then extract LOCAL components
@@ -333,24 +345,15 @@ export function formatMembershipFeeAmount(minor: number, currencyCode: string = 
 }
 
 export function getMonthNameFromBillingMonth(billingMonth: string): string {
-  // billing_month is stored as 'YYYY-MM-01' in AD
-  // Convert to BS to get Nepali month name
-  const adDate = new Date(`${billingMonth}T00:00:00`);
-  const bs = new NepaliDate(adDate);
-  const bsMonthIndex = bs.getMonth(); // 0-11
-  const bsYear = bs.getYear();
-  return `${BS_MONTHS[bsMonthIndex]} ${bsYear}`;
+  return getMonthNameFromDueDate(billingMonth);
 }
 
 export function getMonthNameFromDueDate(dueDate: string): string {
   // due_date is stored as AD date (e.g., '2026-08-24') but represents a Nepali calendar date
   // Convert to BS to get the correct Nepali month name
   if (!dueDate) return "";
-  const adDate = new Date(`${dueDate}T00:00:00`);
-  const bs = new NepaliDate(adDate);
-  const bsMonthIndex = bs.getMonth(); // 0-11
-  const bsYear = bs.getYear();
-  return `${BS_MONTHS[bsMonthIndex]} ${bsYear}`;
+  const bs = nepaliDateFromAd(dueDate);
+  return bs ? `${BS_MONTHS[bs.getMonth()]} ${bs.getYear()}` : formatDisplayDate(dueDate);
 }
 
 export function formatBillingPeriod(billingMonth: string): string {

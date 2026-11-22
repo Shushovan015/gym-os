@@ -95,4 +95,15 @@ describe("shared popups", () => {
     expect(document.querySelector('[aria-label="Nepali calendar"]')).toBeNull();
     expect(document.body.style.overflow).toBe("");
   });
+
+  it("shows an out-of-range record date in AD and opens a usable Nepali calendar", async () => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<AdminBsDateInput value="1900-01-01" onChange={onChange} />));
+    const trigger = host.querySelector("button")!;
+    expect(trigger).toHaveTextContent("1900-01-01 AD");
+    await act(async () => trigger.click());
+    const calendar = document.querySelector('[aria-label="Nepali calendar"]')!;
+    expect(calendar.querySelectorAll("button").length).toBeGreaterThan(25);
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

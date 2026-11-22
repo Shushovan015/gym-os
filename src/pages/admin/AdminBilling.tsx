@@ -40,7 +40,7 @@ import type { MemberRow, AdminSettings, MembershipFee } from "./adminTypes";
 import {
   defaultAdminSettings,
   friendlyAdminError,
-  formatBsDateFromAd,
+  formatDisplayDate,
   getNepalTodayAdDate,
   formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
@@ -799,7 +799,7 @@ export default function AdminBilling() {
                       {invoice.customer_name}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatBsDateFromAd(invoice.billing_date)} BS
+                      {formatDisplayDate(invoice.billing_date)}
                     </p>
                   </div>
                   <AdminBadge tone={statusTone(invoice.payment_status)}>
@@ -848,7 +848,7 @@ export default function AdminBilling() {
                         {invoice.invoice_number ?? `Draft #${invoice.id}`}
                       </td>
                       <td className="px-4 py-4 text-slate-300">
-                        {formatBsDateFromAd(invoice.billing_date)} BS
+                        {formatDisplayDate(invoice.billing_date)}
                       </td>
                       <td className="px-4 py-4 text-slate-300">
                         {invoice.customer_name}
@@ -1136,7 +1136,7 @@ export default function AdminBilling() {
                           <AdminInput value={customerName} disabled />
                         </AdminField>
                         <AdminField label="Current Due Date">
-                          <AdminInput value={memberFees[0]?.due_date ? formatBsDateFromAd(memberFees[0].due_date) : "-"} disabled />
+                          <AdminInput value={memberFees[0]?.due_date ? formatDisplayDate(memberFees[0].due_date) : "-"} disabled />
                         </AdminField>
                         <AdminField label="Total Outstanding">
                           <AdminInput
@@ -1182,7 +1182,7 @@ export default function AdminBilling() {
                                     {fee.status === "partial" && <AdminBadge tone="warning" className="text-xs">Partial</AdminBadge>}
                                   </div>
                                   <div className="text-xs text-slate-400">
-                                    Due: {formatBsDateFromAd(fee.due_date)} | Outstanding: <b>{formatMembershipFeeAmount(outstanding, fee.currency_code)}</b>
+                                    Due: {formatDisplayDate(fee.due_date)} | Outstanding: <b>{formatMembershipFeeAmount(outstanding, fee.currency_code)}</b>
                                   </div>
                                 </div>
                               </label>
@@ -1507,7 +1507,7 @@ export default function AdminBilling() {
               <div className="text-right">
                 <h3 className="text-xl font-black">INVOICE</h3>
                 <p>{detail.invoice_number}</p>
-                <p className="text-sm">{formatBsDateFromAd(detail.billing_date)} BS</p>
+                <p className="text-sm">{formatDisplayDate(detail.billing_date)}</p>
               </div>
             </div>
             <div className="my-5 flex justify-between">
@@ -1596,7 +1596,7 @@ export default function AdminBilling() {
                     className="mt-2 flex justify-between border-b py-2 text-sm"
                   >
                     <span>
-                      {formatBsDateFromAd(payment.payment_date)} BS ·{" "}
+                      {formatDisplayDate(payment.payment_date)} ·{" "}
                       {payment.payment_method.replaceAll("_", " ")}
                     </span>
                     <b>
