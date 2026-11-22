@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { restoreBackup, validateBackup } from "./backup-engine.mjs";
+import { restoreBackup, validateBackup, withBackupLock } from "./backup-engine.mjs";
 import { dockerCommand, isDockerReady, projectRoot, runNpm, waitFor } from "./windows-common.mjs";
 
-function fail(message) { console.error(`\n${message}\nYour current database was not intentionally replaced.\nPlease contact the administrator.`); process.exit(1); }
+function fail(message) { console.error(`\n${message}\nCheck the backup operation log before retrying.`); process.exit(1); }
 const source = process.argv[2]; if (!source || !existsSync(source)) fail("The selected backup file was not found.");
 if (spawnSync(dockerCommand, ["--version"], { stdio: "ignore" }).status !== 0) fail("Docker Desktop is not installed.");
 if (!isDockerReady()) {
@@ -22,9 +22,8 @@ const prompt = createInterface({ input: stdin, output: stdout }); const confirma
 if (confirmation !== "RESTORE") { console.log("Restore cancelled. No data was changed."); process.exit(0); }
 try {
   console.log("Creating mandatory pre-restore safety backup, then restoring...");
-  const result = await restoreBackup(source, { confirmed: true }); console.log(`Safety backup: ${result.safetyBackup}`);
+  const result = await withBackupLock(() => restoreBackup(source, { confirmed: true })); console.log(`Safety backup: ${result.safetyBackup}`);
   if (runNpm(["run", "supabase:verify"]).status !== 0) fail("Restore finished, but verification failed. The safety backup was preserved.");
 } catch (error) {
-  if (/backup/i.test(error.message)) fail("Safety backup failed.\nRestore has been cancelled.\nYour current database was not replaced.");
   fail(`Restore failed: ${error.message}`);
 }

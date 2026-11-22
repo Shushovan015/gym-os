@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import {
   dockerCommand,
+  frontendIsHealthy,
+  launchUrl,
   isDockerReady,
   projectRoot,
   runNpm,
@@ -181,66 +183,36 @@ if (edgeFunctionExited) {
 console.log("send-bill Edge Function is running.");
 
 // ------------------------------------------------------------
-// Vite
+// Local production frontend and backup service
 // ------------------------------------------------------------
 
-console.log("Starting development server...");
+if (!existsSync(join(projectRoot, "dist", "index.html"))) {
+  console.log("Building the local frontend...");
+  if (runNpm(["run", "build"]).status !== 0) fail("The frontend build failed.");
+}
 
-const dev = spawn(
-  "npm",
-  ["run", "dev"],
-  {
-    cwd: projectRoot,
-    stdio: "inherit",
-    shell: true,
-    windowsHide: false,
-  }
-);
+let frontend;
+let frontendFailure;
+if (!(await frontendIsHealthy())) {
+  frontend = spawn(process.execPath, ["scripts/serve-local.mjs"], {
+    cwd: projectRoot, stdio: "inherit", windowsHide: true,
+  });
+  frontend.on("error", (error) => { frontendFailure = error.message; });
+  frontend.on("exit", (code) => { frontendFailure = `exit code ${code}`; });
+  const ready = await waitFor(async () => frontendFailure || await frontendIsHealthy(), 30, 500);
+  if (frontendFailure || !ready) fail(`The local frontend did not start. ${frontendFailure ?? "Health check timed out."}`);
+  frontend.on("exit", (code) => { edgeFunction.kill(); process.exit(code ?? 0); });
+}
 
-dev.on("error", (error) => {
-  console.error(`\nDevelopment server failed to start: ${error.message}`);
-});
+spawn("cmd.exe", ["/c", "start", "", launchUrl], {
+  detached: true,
+  stdio: "ignore",
+  windowsHide: true,
+}).unref();
 
-dev.on("exit", (code, signal) => {
-  if (signal) {
-    process.exit(1);
-  }
+console.log(`Gym Management System is ready at ${launchUrl}`);
+console.log("Press Ctrl+C to stop the launcher.");
 
-  process.exit(code ?? 0);
-});
-
-// ------------------------------------------------------------
-// Browser
-// ------------------------------------------------------------
-
-await new Promise((resolve) => setTimeout(resolve, 2000));
-
-console.log("Opening browser...");
-
-spawn(
-  "cmd.exe",
-  ["/c", "start", "", "http://localhost:5173/admin"],
-  {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  }
-).unref();
-
-console.log(`
-Gym Management System is ready.
-
-Application:
-http://localhost:5173/admin
-
-Supabase:
-http://127.0.0.1:54321
-
-Send Bill:
-Local Edge Function is running
-
-Press Ctrl+C to stop.
-`);
 
 // ------------------------------------------------------------
 // Graceful shutdown
@@ -253,9 +225,7 @@ function shutdown() {
     edgeFunction.kill();
   }
 
-  if (dev && !dev.killed) {
-    dev.kill();
-  }
+  if (frontend && !frontend.killed) frontend.kill();
 
   process.exit(0);
 }

@@ -1,5 +1,6 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { Database, LockKeyhole, Save, ShieldCheck, UploadCloud } from "lucide-react";
+import { LockKeyhole, Save, ShieldCheck, UploadCloud } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
 import {
   AdminBadge,
@@ -176,6 +177,8 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
       {message ? <AdminNotice tone={message === "Settings saved." ? "success" : "danger"}>{message}</AdminNotice> : null}
       {isDirty ? <AdminNotice tone="warning">You have unsaved settings changes.</AdminNotice> : null}
 
+      <BackupRestorePanel />
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-6">
           <AdminCard>
@@ -313,21 +316,17 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
           </AdminCard>
 
           <AdminCard>
-            <AdminSectionTitle title="Import and backup" />
+            <AdminSectionTitle title="Data import" />
             <div className="mt-5 space-y-3 text-sm text-slate-400">
               <div className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 <UploadCloud className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
                 CSV member import remains available from the Members page and uses the existing template.
               </div>
-              <div className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                <Database className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-                Database backups should be handled from Supabase. This app does not expose private backup credentials.
-              </div>
+              <Link to="/admin/legacy-import" className="inline-block font-semibold text-amber-300 underline">Open Legacy SQL Import</Link>
             </div>
           </AdminCard>
         </div>
       </div>
-      <BackupRestorePanel />
     </div>
   );
 }

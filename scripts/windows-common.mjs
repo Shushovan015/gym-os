@@ -4,13 +4,15 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const runtimeDir = join(projectRoot, ".runtime");
+export const runtimeDir = resolve(process.env.GYM_BACKUP_RUNTIME_DIR || join(projectRoot, ".runtime"));
 export const pidFile = join(runtimeDir, "frontend.pid");
 export const adminPidFile = join(runtimeDir, "admin-service.pid");
-export const appUrl = "http://127.0.0.1:4173";
+export const frontendPort = Number(process.env.GYM_FRONTEND_PORT || 4173);
+export const appUrl = `http://127.0.0.1:${frontendPort}`;
 export const launchUrl = `${appUrl}/admin`;
 export const healthUrl = `${appUrl}/__gym_health`;
-export const adminHealthUrl = "http://127.0.0.1:4174/health";
+export const adminServicePort = Number(process.env.GYM_BACKUP_PORT || 4174);
+export const adminHealthUrl = `http://127.0.0.1:${adminServicePort}/health`;
 export const edgeFunctionUrl = "http://127.0.0.1:54321/functions/v1/send-progress-report";
 export const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 export const dockerCommand = process.platform === "win32" ? "docker.exe" : "docker";
