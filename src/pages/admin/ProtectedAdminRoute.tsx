@@ -1,12 +1,25 @@
 import { useEffect, useState } from "react";
-import { Navigate, Outlet } from "react-router-dom";
+import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
 import { supabase } from "@src/Client/supabase";
+import { phpSession, usePhpApi } from "@src/Client/phpApi";
 
 export default function ProtectedAdminRoute() {
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
+  const { pathname } = useLocation();
 
   useEffect(() => {
+    if (usePhpApi) {
+      let alive = true;
+      phpSession().then(({ user }) => {
+        if (alive) setAllowed(user?.role === "admin");
+      }).catch(() => {
+        if (alive) setAllowed(false);
+      }).finally(() => {
+        if (alive) setLoading(false);
+      });
+      return () => { alive = false; };
+    }
     const check = async () => {
       const {
         data: { session },
@@ -33,5 +46,13 @@ export default function ProtectedAdminRoute() {
 
   if (loading) return <div className="p-6 text-white">Checking admin access...</div>;
   if (!allowed) return <Navigate to="/admin/login" replace />;
+  if (usePhpApi && pathname !== "/admin/members" && pathname !== "/admin/members/") {
+    return (
+      <div className="min-h-screen bg-slate-950 p-6 text-slate-100">
+        <p>This workspace is still being migrated.</p>
+        <Link className="mt-3 inline-block text-sky-300 underline" to="/admin/members">Open Members</Link>
+      </div>
+    );
+  }
   return <Outlet />;
 }

@@ -7,8 +7,8 @@
 | Member plans, renewals, measurements, import/export and all-member actions | NOT TESTED | Full workflow and migration coverage pending. |
 | Attendance | PASS | PHP API tests cover mark, removal, restore, history, last visit, locked holidays, weekly closures and invalid leap day. |
 | Private portrait storage | PASS | Multipart upload and byte-for-byte download, invalid image, invalid key, CSRF, viewer and anonymous denial. |
-| Existing React build and Vitest suite | PASS | Existing Supabase-connected frontend. |
-| PHP frontend integration and standalone runtime | FAIL | React still calls Supabase. |
+| React authentication and Members preview | PASS | React flow test covers PHP login, CSRF, the protected route and the existing Members screen's PHP reads. Backend HTTP tests cover member edits, settings, plan loading and portraits. PHP mode is opt-in. |
+| Complete PHP frontend integration and standalone runtime | FAIL | Supabase remains in the frontend. Attendance workspace, Billing, Inventory and the other admin screens still require migration. |
 | Membership fee ledger reads | PASS | MariaDB fixture verifies persisted statuses, partial balance, totals, due date, empty ledger and viewer denial. |
 | Membership payments and receipts | PASS | MariaDB 10.11 and HTTP tests cover full, partial and multi-month allocations, oversize and already-paid rejection, same-key replay and payload conflicts, concurrent invoice numbers, integer tax, financial reconciliation, receipt and history endpoints, and rollback after a database-injected audit failure. |
 | Membership due-date updates | PASS | Outstanding dates, overdue state and January 31 clamping in leap and non-leap years. |
@@ -23,4 +23,4 @@
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Continue by connecting the existing React login, route guard and sign-out to PHP sessions, then migrate Members and Attendance before switching Billing and Inventory. Preserve the legacy runtime while those routes are being ported.
+The checkpoint is for development only. Continue with the existing Attendance workspace. Add a PHP date-range endpoint for attendance rows, holiday dates and eligible members, then replace the Supabase loaders and mutations in `AdminAttendance.tsx`. Verify navigation and mark, remove and restore from the React grid before enabling that route in the PHP preview. Then connect Billing and Inventory.

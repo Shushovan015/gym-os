@@ -20,6 +20,8 @@ final class Members
         $deleted = $input['deleted'] ?? 'active';
         $enabled = $input['enabled'] ?? 'all';
         $sort = $input['sort'] ?? 'updated_desc';
+        $created = $input['createdSince'] ?? '';
+        $absent = filter_var($input['absentDays'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 3650]]);
         $orders = [
             'updated_desc' => 'updated_at DESC, id DESC',
             'created_desc' => 'created_at DESC, id',
@@ -28,7 +30,10 @@ final class Members
         ];
         if ($offset === false || $limit === false || !is_string($search) || strlen($search) > 255 ||
             !in_array($deleted, ['active', 'deleted', 'all'], true) ||
-            !in_array($enabled, ['active', 'inactive', 'all'], true) || !is_string($sort) || !isset($orders[$sort])) {
+            !in_array($enabled, ['active', 'inactive', 'all'], true) || !is_string($sort) || !isset($orders[$sort]) ||
+            $absent === false || !is_string($created) || ($created !== '' &&
+                (!preg_match('/^([1-9][0-9]{3})-([0-9]{2})-([0-9]{2})$/D', $created, $parts) ||
+                    !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])))) {
             return [422, ['error' => 'Invalid member filters.']];
         }
         $filters = ['1 = 1'];
@@ -39,6 +44,28 @@ final class Members
         if ($enabled !== 'all') {
             $filters[] = 'is_active = ?';
             $parameters[] = (int) ($enabled === 'active');
+        }
+        $today = new DateTimeImmutable('today', new DateTimeZone('Asia/Kathmandu'));
+        if ($created !== '') {
+            $filters[] = 'created_at >= ?';
+            $parameters[] = $created . ' 00:00:00';
+        }
+        if ($absent > 0) {
+            $filters[] = "membership_status = 'active' AND (last_visit_date IS NULL OR last_visit_date < ?)";
+            $parameters[] = $today->modify("-$absent days")->format('Y-m-d');
+        }
+        $membership = $input['membership_status'] ?? null;
+        if ($membership === 'expired' || $membership === 'expiring') {
+            if ($membership === 'expired') {
+                $filters[] = "(membership_status = 'expired' OR end_date < ?)";
+                $parameters[] = $today->format('Y-m-d');
+            } else {
+                $warning = (int) $this->db->query('SELECT expiry_warning_days FROM admin_settings WHERE id = 1')->fetchColumn();
+                $filters[] = 'end_date BETWEEN ? AND ?';
+                $parameters[] = $today->format('Y-m-d');
+                $parameters[] = $today->modify("+$warning days")->format('Y-m-d');
+            }
+            unset($input['membership_status']);
         }
         foreach (['membership_type', 'membership_status', 'payment_status'] as $field) {
             if (isset($input[$field]) && $input[$field] !== 'all') {
@@ -67,7 +94,14 @@ final class Members
             $count->execute($parameters);
             $rows = $this->db->prepare("SELECT * FROM members WHERE $where ORDER BY {$orders[$sort]} LIMIT $limit OFFSET $offset");
             $rows->execute($parameters);
-            $result = ['members' => array_map(self::present(...), $rows->fetchAll(PDO::FETCH_ASSOC)), 'count' => (int) $count->fetchColumn()];
+            $summary = $this->db->prepare("SELECT
+                COUNT(CASE WHEN deleted_at IS NULL AND membership_status = 'active' AND (end_date IS NULL OR end_date >= ?) THEN 1 END) AS active,
+                COUNT(CASE WHEN deleted_at IS NULL AND is_active = 1 THEN 1 END) AS enabled,
+                COUNT(CASE WHEN deleted_at IS NULL AND payment_status <> 'paid' THEN 1 END) AS payment_follow_up,
+                COUNT(CASE WHEN deleted_at IS NOT NULL THEN 1 END) AS deleted FROM members");
+            $summary->execute([$today->format('Y-m-d')]);
+            $result = ['members' => array_map(self::present(...), $rows->fetchAll(PDO::FETCH_ASSOC)),
+                'count' => (int) $count->fetchColumn(), 'summary' => $summary->fetch(PDO::FETCH_ASSOC)];
             $this->db->commit();
             return [200, $result];
         } catch (Throwable $error) {

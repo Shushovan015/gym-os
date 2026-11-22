@@ -20,8 +20,8 @@ import {
   Database,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
 import { supabase } from "@src/Client/supabase";
+import { phpSession, phpSignOut, usePhpApi } from "@src/Client/phpApi";
 import { AdminButton } from "@src/components/admin/AdminUI";
 import { cx } from "./adminUtils";
 import DeveloperCredit from "@src/components/branding/DeveloperCredit";
@@ -113,14 +113,20 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("aa-admin-nav-collapsed") === "true");
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<{ email?: string } | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem("aa-admin-nav-collapsed", String(collapsed));
   }, [collapsed]);
 
   useEffect(() => {
+    if (usePhpApi) {
+      let alive = true;
+      phpSession().then(({ user }) => { if (alive) setUser(user); }).catch(() => {});
+      return () => { alive = false; };
+    }
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
@@ -139,16 +145,26 @@ export default function AdminLayout() {
   const userLabel = useMemo(() => user?.email ?? "Admin user", [user?.email]);
 
   const finishLogout = useCallback(async () => {
-    await supabase.auth.signOut();
-    navigate("/admin/login", { replace: true });
+    try {
+      if (usePhpApi) await phpSignOut();
+      else {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+      }
+      navigate("/admin/login", { replace: true });
+    } catch {
+      setLoggingOut(false);
+      setLogoutError(true);
+    }
   }, [navigate]);
 
-  const logout = () => setLoggingOut(true);
+  const logout = () => { setLogoutError(false); setLoggingOut(true); };
 
   if (loggingOut) return <LoginIntro statusText="Logging out..." onComplete={finishLogout} />;
 
   return (
     <div className="min-h-screen bg-[#070a0f] text-slate-100 lg:flex lg:items-start">
+      {logoutError && <p role="alert" className="fixed right-4 top-4 z-[100] rounded bg-slate-950 p-3 text-amber-200">Could not sign out. Please try again.</p>}
       <aside
         className={cx(
           "sticky top-0 z-[90] hidden h-screen shrink-0 self-start overflow-hidden border-r border-slate-800 bg-slate-950/98 transition-[width] duration-200 lg:block",

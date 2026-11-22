@@ -14,9 +14,12 @@ const backupProxy: ProxyOptions = {
   },
 };
 const backupRoutes = { "/api/backup": backupProxy, "/api/maintenance": backupProxy };
+const phpRoutes: Record<string, ProxyOptions> = process.env.GYM_PHP_DEV_URL
+  ? { "/api": { target: process.env.GYM_PHP_DEV_URL } }
+  : {};
 
 export default defineConfig({
-  preview: { proxy: backupRoutes },
+  preview: { proxy: { ...backupRoutes, ...phpRoutes } },
   plugins: [react()],
   optimizeDeps: {
     include: ["react-dom", "react-dom/client"],
@@ -24,6 +27,7 @@ export default defineConfig({
   server: {
     proxy: {
       ...backupRoutes,
+      ...phpRoutes,
       "/n8n": {
         target: "http://localhost:5678",
         changeOrigin: true,

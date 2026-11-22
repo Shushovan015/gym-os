@@ -16,6 +16,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 import {
   AdminBadge,
   AdminBsDateInput,
@@ -309,6 +310,27 @@ const loadMembers = async () => {
     if (searchTerm !== debouncedSearch) return;
     const isCurrent = beginRequest();
     setResultsLoading(true);
+    if (usePhpApi) {
+      const query = new URLSearchParams({
+        search: debouncedSearch, deleted: deletedFilter, enabled: activeFilter,
+        membership_type: planFilter, payment_status: paymentFilter, membership_status: membershipFilter,
+        createdSince, absentDays: String(absentDays), sort: sortKey,
+        offset: String((currentPage - 1) * rowsPerPage), limit: String(rowsPerPage),
+      });
+      try {
+        const result = await phpGet<{ members: MemberRow[]; count: number; summary: typeof memberSummary }>(`/members?${query}`);
+        if (isCurrent()) {
+          setMembers(result.members);
+          setMemberCount(result.count);
+          setMemberSummary(result.summary);
+        }
+      } catch (error) {
+        if (isCurrent()) setMessage(error instanceof Error ? error.message : "Could not load members.");
+      } finally {
+        if (isCurrent()) { setLoading(false); setResultsLoading(false); }
+      }
+      return;
+    }
     let query = supabase.from("members").select("*", { count: "exact" });
     if (deletedFilter === "active") query = query.is("deleted_at", null);
     if (deletedFilter === "deleted") query = query.not("deleted_at", "is", null);
@@ -348,6 +370,20 @@ const loadMembers = async () => {
 
   useEffect(() => {
     let alive = true;
+    if (usePhpApi) {
+      Promise.all([
+        phpGet<{ settings: AdminSettings }>("/admin/settings"),
+        phpGet<{ plans: MembershipPlan[] }>("/members/plans"),
+      ]).then(([{ settings }, { plans }]) => {
+        if (alive) {
+          setSettings({ ...defaultAdminSettings, ...settings });
+          setMembershipPlans(plans);
+        }
+      }).catch((error) => {
+        if (alive) setMessage(error instanceof Error ? error.message : "Could not load gym settings.");
+      });
+      return () => { alive = false; };
+    }
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("pricing_items").select("id,title,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
@@ -433,6 +469,41 @@ const loadMembers = async () => {
 
     setSaving(true);
     const changedIdentity = changedMemberIdentity(normalizedForm, editingMember);
+    if (usePhpApi) {
+      const payload = toMemberPayload(normalizedForm);
+      try {
+        const { member } = await phpPost<{ member: MemberRow }>("/members/save", {
+          id: editingId || undefined,
+          ...(changedIdentity.member_id ? { member_id: payload.member_id } : {}),
+          ...(changedIdentity.phone ? { phone: payload.phone } : {}),
+          ...(changedIdentity.email ? { email: payload.email } : {}),
+          full_name: payload.full_name, address: payload.address, notes: payload.notes,
+          membership_type: payload.membership_type, membership_status: payload.membership_status,
+          start_date: payload.start_date, end_date: payload.end_date, last_visit_date: payload.last_visit_date,
+        });
+        if (memberPhotoFile) {
+          const photo = new FormData();
+          photo.set("memberId", String(member.id));
+          photo.set("photo", memberPhotoFile);
+          try {
+            await phpPost("/members/upload-photo", photo);
+          } catch (error) {
+            setMessage(`Member saved. Photo upload failed: ${error instanceof Error ? error.message : "Try editing the portrait again."}`);
+            setFormOpen(false);
+            await loadMembers();
+            return;
+          }
+        }
+        setFormOpen(false);
+        await loadMembers();
+        setMessage(editingId ? "Member updated." : "Member created.");
+      } catch (error) {
+        setFormMessage({ type: "error", text: error instanceof Error ? error.message : "Could not save the member." });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     const normalizedEmail = normalizedForm.email?.trim() ?? "";
     const conflictFilters = [
       ...(changedIdentity.member_id ? [`member_id.eq.${normalizedForm.member_id.trim().replace(/[,()]/g, "")}`] : []),
@@ -512,9 +583,16 @@ const loadMembers = async () => {
     setMessage(`${editingId ? "Member updated" : "Member created"}.`);
   };
 
+  const changePhpMembers = (action: "delete" | "restore" | "activate" | "deactivate", ids: number[]) =>
+    phpPost("/members/change", { action, ids }).then(
+      () => ({ error: null }),
+      (error: Error) => ({ error }),
+    );
+
   const softDeleteMember = async (member: MemberRow) => {
     if (!window.confirm(`Move ${member.full_name} to deleted members?`)) return;
-    const { error } = await supabase.from("members").update({ deleted_at: new Date().toISOString() }).eq("id", member.id);
+    const { error } = usePhpApi ? await changePhpMembers("delete", [member.id])
+      : await supabase.from("members").update({ deleted_at: new Date().toISOString() }).eq("id", member.id);
     if (error) {
       setMessage(error.message);
       return;
@@ -525,7 +603,8 @@ const loadMembers = async () => {
   };
 
   const restoreMember = async (member: MemberRow) => {
-    const { error } = await supabase.from("members").update({ deleted_at: null }).eq("id", member.id);
+    const { error } = usePhpApi ? await changePhpMembers("restore", [member.id])
+      : await supabase.from("members").update({ deleted_at: null }).eq("id", member.id);
     if (error) {
       setMessage(error.message);
       return;
@@ -540,7 +619,8 @@ const loadMembers = async () => {
     if (!ids.length) return;
     const action = deleted ? "move to the deleted list" : "restore";
     if (!window.confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${ids.length} selected members?`)) return;
-    const { error } = await supabase.from("members").update({ deleted_at: deleted ? new Date().toISOString() : null }).in("id", ids);
+    const { error } = usePhpApi ? await changePhpMembers(deleted ? "delete" : "restore", ids)
+      : await supabase.from("members").update({ deleted_at: deleted ? new Date().toISOString() : null }).in("id", ids);
     if (error) { setMessage(error.message); return; }
     setSelectedMemberIds(new Set());
     setMessage(`${ids.length} members ${deleted ? "moved to the deleted list" : "restored"}.`);
@@ -563,6 +643,23 @@ const loadMembers = async () => {
     setLoadingProfile(true);
     setMemberAttendance([]);
     setMemberFeeStatus(null);
+    if (usePhpApi) {
+      try {
+        const [{ records }, fees] = await Promise.all([
+          phpGet<{ records: AttendanceRow[] }>(`/attendance/history?memberId=${member.id}`),
+          phpGet<MemberMembershipFeeStatus>(`/members/fees?id=${member.id}`),
+        ]);
+        if (isCurrent()) {
+          setMemberAttendance(records);
+          setMemberFeeStatus(fees);
+        }
+      } catch (error) {
+        if (isCurrent()) setMessage(error instanceof Error ? error.message : "Profile load failed.");
+      } finally {
+        if (isCurrent()) setLoadingProfile(false);
+      }
+      return;
+    }
 
     const [attendanceRes, feeStatusRes] = await Promise.all([
       supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").eq("member_ref", member.id).order("attendance_date", { ascending: false }).limit(60),
@@ -587,6 +684,18 @@ const loadMembers = async () => {
     const attendanceDate = getNepalTodayAdDate();
     if (!member.is_active || member.deleted_at) {
       setMessage("Only active members can be marked present.");
+      return;
+    }
+    if (usePhpApi) {
+      try {
+        const { lastVisitDate } = await phpPost<{ lastVisitDate: string | null }>("/attendance/change", {
+          memberId: member.id, date: attendanceDate, action: "mark",
+        });
+        await loadMemberProfile({ ...member, last_visit_date: lastVisitDate });
+        setMessage(`${member.full_name} marked present for today.`);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not mark attendance.");
+      }
       return;
     }
     if (new Date(`${attendanceDate}T00:00:00Z`).getUTCDay() === settings.weekly_closing_day) {
@@ -614,7 +723,8 @@ const loadMembers = async () => {
       )
     );
 
-    const { error } = await supabase.rpc("set_member_active_status", {
+    const { error } = usePhpApi ? await changePhpMembers(isActive ? "activate" : "deactivate", [memberId])
+      : await supabase.rpc("set_member_active_status", {
       p_member_id: memberId,
       p_is_active: isActive,
     });
@@ -707,6 +817,10 @@ const loadMembers = async () => {
 
   const importCsvRows = async () => {
     if (validCsvRows.length === 0 || importing) return;
+    if (usePhpApi) {
+      setMessage("CSV import is unavailable in the PHP migration preview.");
+      return;
+    }
     setImporting(true);
     // The database defaults newly imported members to inactive. Omit activation
     // and fields outside the CSV template so updates preserve existing values.
@@ -760,7 +874,9 @@ const loadMembers = async () => {
     setMasterBusy(true);
     setMasterError("");
     try {
-      const { data, error } = await supabase.rpc("apply_all_member_action", { p_action: masterAction });
+      const { data, error } = usePhpApi
+        ? { data: (await phpPost<{ affected: number }>("/members/change", { action: masterAction, all: true })).affected, error: null }
+        : await supabase.rpc("apply_all_member_action", { p_action: masterAction });
       if (error?.code === "PGRST202") {
         throw new Error("Master controls require a database update. Apply the pending Supabase migrations and try again.");
       }

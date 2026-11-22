@@ -51,3 +51,7 @@ All endpoints require an administrator session. Writes require the CSRF header. 
 ### Inventory adjustments
 
 `POST /api/inventory/stock` records a manual movement for an existing variant. Send `variantId`, `type` and a signed decimal string in `quantityDelta` with up to three decimal places. Optional fields are `supplierId`, `reference` and `notes`. The API locks the variant when updating its balance and recording the movement. `GET /api/inventory/stock-history?variantId=123` returns recent movements. Both routes require administrator access, and the adjustment requires CSRF. Treat adjustments as individual submissions and reconcile the history after a timeout before submitting again.
+
+### React migration preview
+
+Set `VITE_GYM_BACKEND=php` and `GYM_PHP_DEV_URL=http://127.0.0.1:8082` in the Vite process environment. Use a disposable database and the test router on loopback. Set `GYM_AUTH_TEST=1` and `GYM_AUTH_TEST_ADDRESS=127.0.0.1` in the PHP process, then run `php -S 127.0.0.1:8082 -t backend/public backend/tests/router.php`. Start Vite and open the login on `localhost`. Use a local Supabase configuration for the remaining public routes. The preview uses PHP for login, session checks, sign-out and the Members view. Other private screens are blocked in this mode while their APIs are being connected. CSV import, fee generation, and pricing administration remain outside the preview.

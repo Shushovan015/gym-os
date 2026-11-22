@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { supabase } from "@src/Client/supabase";
+import { phpSignOut, usePhpApi } from "@src/Client/phpApi";
 import { AdminButton } from "@src/components/admin/AdminUI";
 
 const editors = [
@@ -24,8 +25,11 @@ export default function StudioLayout() {
     setSigningOut(true);
     setError("");
     try {
-      const { error: signOutError } = await supabase.auth.signOut();
-      if (signOutError) throw signOutError;
+      if (usePhpApi) await phpSignOut();
+      else {
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) throw signOutError;
+      }
       navigate("/admin/login", { replace: true });
     } catch {
       setError("Could not sign out. Please try again.");

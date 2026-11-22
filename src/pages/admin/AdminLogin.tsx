@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { PhpApiError, phpSignIn, usePhpApi } from "@src/Client/phpApi";
 import { AdminButton, AdminCard, AdminField, AdminInput, AdminNotice } from "@src/components/admin/AdminUI";
 import LoginIntro from "@src/components/branding/LoginIntro";
 import gymLogo from "@src/assets/logo.jpg";
@@ -14,7 +15,7 @@ export default function AdminLogin() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loginSucceeded, setLoginSucceeded] = useState(false);
-  const finishLogin = useCallback(() => navigate("/admin", { replace: true }), [navigate]);
+  const finishLogin = useCallback(() => navigate(usePhpApi ? "/admin/members" : "/admin", { replace: true }), [navigate]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -23,14 +24,22 @@ export default function AdminLogin() {
     setError("");
     setSubmitting(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (authError) {
-        setError(authError.message === "Invalid login credentials" ? "Incorrect email or password." : authError.message);
-        return;
+      if (usePhpApi) {
+        await phpSignIn(email.trim(), password);
+      } else {
+        const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (authError) {
+          setError(authError.message === "Invalid login credentials" ? "Incorrect email or password." : authError.message);
+          return;
+        }
       }
       setLoginSucceeded(true);
-    } catch {
-      setError("The local Gym database is not running. Close this browser tab, double-click OPEN GYM APP, and try again.");
+    } catch (failure) {
+      if (usePhpApi) {
+        setError(failure instanceof PhpApiError ? failure.message : "Could not reach the gym API. Please try again.");
+      } else {
+        setError("The local Gym database is not running. Close this browser tab, double-click OPEN GYM APP, and try again.");
+      }
     } finally {
       setSubmitting(false);
     }

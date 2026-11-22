@@ -39,6 +39,8 @@ $routes = [
     '/api/attendance/change' => 'POST',
     '/api/members' => 'GET',
     '/api/members/details' => 'GET',
+    '/api/admin/settings' => 'GET',
+    '/api/members/plans' => 'GET',
     '/api/members/fees' => 'GET',
     '/api/membership/payments' => 'POST',
     '/api/membership/payment-history' => 'GET',
@@ -89,6 +91,21 @@ try {
         $members = new Members($db);
         [$status, $result] = $path === '/api/members' ? $members->list($_GET) : $members->details($_GET['id'] ?? null);
         respond($status, $result);
+    }
+    if ($path === '/api/admin/settings') {
+        $settings = $db->query('SELECT * FROM admin_settings WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
+        if (!$settings) {
+            respond(404, ['error' => 'Gym settings were not found.']);
+        }
+        foreach (['attendance_holiday_lock', 'tax_enabled', 'allow_negative_stock'] as $field) {
+            $settings[$field] = (bool) $settings[$field];
+        }
+        respond(200, ['settings' => $settings]);
+    }
+    if ($path === '/api/members/plans') {
+        $plans = $db->query("SELECT id, title FROM pricing_items WHERE kind = 'plan' AND is_active = 1 ORDER BY sort_order, id")
+            ->fetchAll(PDO::FETCH_ASSOC);
+        respond(200, ['plans' => array_map(static fn (array $plan): array => $plan + ['is_active' => true], $plans)]);
     }
     if ($path === '/api/members/photo') {
         (new MemberPhotos($db))->download($_GET['key'] ?? null);

@@ -14,6 +14,10 @@ $mode = $argv[1] ?? '';
 $actor = '00000000-0000-0000-0000-000000000001';
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 switch ($mode) {
+    case 'plan-fixture':
+        $db->prepare("INSERT INTO pricing_items (kind, title) VALUES ('plan', ?)")->execute([$input]);
+        echo $db->lastInsertId();
+        break;
     case 'stock-fixture':
         $db->exec("INSERT INTO shop_items (title, category, inventory_enabled, selling_price_minor, wholesale_price_minor)
             VALUES ('Fixture', 'Fixture', 1, 1200, 800)");

@@ -106,6 +106,10 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin", 401);
   cookie = authenticatedCookie;
   await request("admin", 200);
+  const planTitle = `Plan ${randomUUID()}`;
+  const planId = Number(php("backend/tests/billing-worker.php", ["plan-fixture"], JSON.stringify(planTitle)));
+  assert.ok((await request("members/plans", 200)).plans.some(({ id, title }) => id === planId && title === planTitle));
+  assert.equal((await request("admin/settings", 200)).settings.attendance_holiday_lock, true);
   const profile = {
     member_id: randomUUID(),
     full_name: "Mina Sharma",
