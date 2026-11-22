@@ -6,7 +6,7 @@ import type { InvoiceRow } from "./types";
 
 type Delivery = { invoice_id: number; status: "sending" | "sent" | "failed" | "uncertain"; error_message?: string | null };
 
-export function useBillEmail(invoices: InvoiceRow[], sender: string | null, onSuccess: (message: string) => void) {
+export function useBillEmail(invoices: InvoiceRow[], sender: string | null, onSuccess: (message: string) => void, enabled = true) {
   const [deliveries, setDeliveries] = useState<Record<number, Delivery>>({});
   const [target, setTarget] = useState<InvoiceRow | null>(null);
   const [recipient, setRecipient] = useState("");
@@ -18,7 +18,7 @@ export function useBillEmail(invoices: InvoiceRow[], sender: string | null, onSu
   const ids = Array.from(new Set(invoices.map((invoice) => invoice.id))).sort((a, b) => a - b).join(",");
 
   useEffect(() => {
-    if (!ids) return;
+    if (!enabled || !ids) return;
     let alive = true;
     void supabase.from("invoice_email_deliveries").select("invoice_id,status,error_message")
       .in("invoice_id", ids.split(",").map(Number)).then(({ data, error: loadError }) => {
@@ -32,7 +32,7 @@ export function useBillEmail(invoices: InvoiceRow[], sender: string | null, onSu
         });
       });
     return () => { alive = false; };
-  }, [ids]);
+  }, [enabled, ids]);
   useEffect(() => () => { requestId.current += 1; }, []);
 
   const close = () => {
@@ -86,6 +86,7 @@ export function useBillEmail(invoices: InvoiceRow[], sender: string | null, onSu
   const targetStatus = target ? deliveries[target.id]?.status : undefined;
   const blocked = targetStatus === "sent" || targetStatus === "uncertain";
   const button = (invoice: InvoiceRow) => {
+    if (!enabled) return null;
     const status = deliveries[invoice.id]?.status;
     return <AdminButton variant="secondary" disabled={sending || status === "sent" || invoice.invoice_status !== "issued" || !invoice.member_ref} title={!invoice.member_ref ? "Link this bill to a member with a saved email" : undefined} onClick={() => void prepare(invoice)}>
       <Mail className="h-4 w-4" />{status === "sent" ? "Bill sent" : status === "uncertain" || status === "sending" ? "Check email status" : "Send Bill"}

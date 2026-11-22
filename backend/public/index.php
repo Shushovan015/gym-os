@@ -12,6 +12,7 @@ require __DIR__ . '/../src/Stock.php';
 require __DIR__ . '/../src/Catalog.php';
 require __DIR__ . '/../src/ProductBilling.php';
 require __DIR__ . '/../src/BillingOverview.php';
+require __DIR__ . '/../src/InvoiceBalancePayments.php';
 
 function respond(int $status, array $body): never
 {
@@ -49,6 +50,7 @@ $routes = [
     '/api/membership/payment-history' => 'GET',
     '/api/invoices/receipt' => 'GET',
     '/api/invoices' => 'GET',
+    '/api/invoices/payments' => 'POST',
     '/api/invoices/products/issue' => 'POST',
     '/api/invoices/products/cancel' => 'POST',
     '/api/membership/cancel-invoice' => 'POST',
@@ -171,6 +173,10 @@ try {
         }
         if ($path === '/api/membership/payments') {
             [$status, $result] = (new MembershipBilling($db))->pay($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/invoices/payments') {
+            [$status, $result] = (new InvoiceBalancePayments($db))->record($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/membership/cancel-invoice') {

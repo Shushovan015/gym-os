@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@src/Client/supabase";
+import { PhpApiError, phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 import {
   AdminBadge,
   AdminBsDateInput,
@@ -58,7 +59,7 @@ import type {
   InvoiceRow,
   PaymentMethod,
 } from "@src/features/billing/types";
-import { calculateInvoiceTotals } from "@src/features/billing/calculations";
+import { calculateInvoiceTotals, calculateLineSubtotal } from "@src/features/billing/calculations";
 import {
   formatMoney,
   majorToMinor,
@@ -77,6 +78,8 @@ type BillingSettings = AdminSettings & {
 };
 type LocationState = { memberId?: number; feeId?: number };
 type BillablePlan = { id: number; title: string; price: string; is_active: boolean };
+type PhpReceipt = { invoice: InvoiceRow; items: InvoiceItemRow[]; payments: InvoicePaymentRow[] };
+type BillingAttempt = { key: string; path: string; payload: object };
 const paymentMethods: Array<{ value: PaymentMethod; label: string }> = [
   { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
@@ -136,7 +139,21 @@ export default function AdminBilling() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
-  const billNumber = useNextBillNumber(createOpen);
+  const billNumber = useNextBillNumber(createOpen && !usePhpApi);
+  const [pendingAttempt, setPendingAttempt] = useState<BillingAttempt | null>(null);
+  const [balanceAttempt, setBalanceAttempt] = useState<BillingAttempt | null>(null);
+  const [balanceError, setBalanceError] = useState("");
+  const paymentInFlight = useRef(false);
+  const receiptRequest = useRef(0);
+  useEffect(() => {
+    if (!pendingAttempt && !balanceAttempt) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [pendingAttempt, balanceAttempt]);
   const [productCustomerType, setProductCustomerType] = useState<CustomerType>("general");
   const [memberId, setMemberId] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -159,6 +176,7 @@ export default function AdminBilling() {
   const [detail, setDetail] = useState<InvoiceRow | null>(null);
   const [detailItems, setDetailItems] = useState<InvoiceItemRow[]>([]);
   const [detailPayments, setDetailPayments] = useState<InvoicePaymentRow[]>([]);
+  const [detailFeeBalance, setDetailFeeBalance] = useState<number | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [newPayment, setNewPayment] = useState("");
   const [newPaymentMethod, setNewPaymentMethod] =
@@ -201,8 +219,11 @@ export default function AdminBilling() {
     // Use the SECURITY DEFINER RPC instead of selecting membership_fees
     // directly: the table has RLS enabled, so a direct select can return zero
     // rows even when the member has outstanding fees.
-    supabase
-      .rpc("get_member_membership_fee_status", { p_member_id: Number(memberId) })
+    const feeRequest = usePhpApi
+      ? phpGet<{ outstanding_fees: MembershipFee[] | null }>(`/members/fees?id=${memberId}`)
+        .then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error }))
+      : supabase.rpc("get_member_membership_fee_status", { p_member_id: Number(memberId) });
+    void feeRequest
       .then(({ data, error }) => {
         if (!alive) return;
         setMemberFeesLoading(false);
@@ -229,12 +250,32 @@ export default function AdminBilling() {
     return () => { alive = false; };
   }, [createOpen, memberId, lineType, requestedFeeId, settings.currency_code]);
 
-  const billEmail = useBillEmail([...invoices, ...(detail ? [detail] : [])], settings.bill_sender_email, setMessage);
+  const billEmail = useBillEmail([...invoices, ...(detail ? [detail] : [])], settings.bill_sender_email, setMessage, !usePhpApi);
   const beginRequest = useLatestRequest(JSON.stringify([search, dateFrom, dateTo, page, paymentFilter, statusFilter]));
   const load = async () => {
     if (search !== debouncedSearch) return;
     const isCurrent = beginRequest();
     setResultsLoading(true);
+    if (usePhpApi) {
+      const query = new URLSearchParams({ search: debouncedSearch, from: dateFrom, to: dateTo, paymentStatus: paymentFilter,
+        invoiceStatus: statusFilter, offset: String((page - 1) * 10), limit: "10" });
+      try {
+        const [result, config] = await Promise.all([
+          phpGet<{ invoices: InvoiceRow[]; count: number; summary: typeof billingSummary }>(`/invoices?${query}`),
+          phpGet<{ settings: BillingSettings }>("/admin/settings"),
+        ]);
+        if (!isCurrent()) return;
+        setInvoices(result.invoices);
+        setInvoiceCount(result.count);
+        setBillingSummary(result.summary);
+        setSettings((current) => ({ ...current, ...config.settings }));
+      } catch (error) {
+        if (isCurrent()) setMessage(error instanceof Error ? error.message : "Could not load billing.");
+      } finally {
+        if (isCurrent()) { setLoading(false); setResultsLoading(false); }
+      }
+      return;
+    }
     let invoiceQuery = supabase.from("invoices").select("*, invoice_email_deliveries(status)", { count: "exact" });
     if (debouncedSearch.trim()) {
       const term = normalizeNameSearch(debouncedSearch);
@@ -272,8 +313,12 @@ export default function AdminBilling() {
     const term = normalizeNameSearch(debouncedMemberSearch);
     if (!createOpen || customerMode !== "member" || memberId || !term || memberSearch !== debouncedMemberSearch) return;
     const isCurrent = beginMemberSearch();
-    void supabase.from("members").select("*").is("deleted_at", null).eq("is_active", true)
-      .filter("full_name", "imatch", namePrefixPattern(term)).order("full_name").order("id").limit(8)
+    const request = usePhpApi
+      ? phpGet<{ members: MemberRow[] }>(`/members?${new URLSearchParams({ search: term, enabled: "active", sort: "name_asc", limit: "8" })}`)
+        .then(({ members }) => ({ data: members, error: null }), (error: Error) => ({ data: null, error }))
+      : supabase.from("members").select("*").is("deleted_at", null).eq("is_active", true)
+        .filter("full_name", "imatch", namePrefixPattern(term)).order("full_name").order("id").limit(8);
+    void request
       .then(({ data, error }) => {
         if (!isCurrent()) return;
         setMembers((data ?? []) as MemberRow[]);
@@ -285,6 +330,22 @@ export default function AdminBilling() {
     if (!createOpen || lineType !== "product") return;
     let alive = true;
     const timeout = window.setTimeout(async () => {
+      if (usePhpApi) {
+        try {
+          const query = new URLSearchParams({ search: productSearch.trim(), active: "active", tracked: "yes", limit: "10" });
+          const { products } = await phpGet<{ products: (InventoryProduct & { variants: InventoryVariant[] })[] }>(`/inventory/catalog?${query}`);
+          if (!alive) return;
+          setProducts(products);
+          setVariants(products.flatMap((product) => product.variants.filter((variant) => variant.is_active).map((variant) => ({
+            ...variant, current_quantity: Number(variant.current_quantity),
+          }))));
+        } catch (error) {
+          if (alive) { setProducts([]); setVariants([]); setCreateError(error instanceof Error ? error.message : "Could not load products."); }
+        } finally {
+          if (alive) setProductResultsFor(productSearch);
+        }
+        return;
+      }
       const { data, error } = await supabase.rpc("admin_inventory_page", {
         p_search: productSearch.trim(), p_category: "all", p_stock: "all", p_active: "active", p_offset: 0, p_limit: 10,
       });
@@ -313,8 +374,13 @@ export default function AdminBilling() {
     description: formatBillingPeriodFromDueDate(fee.due_date), quantity: 1,
     unitPriceMinor: fee.amount_minor - fee.paid_amount_minor, discountMinor: 0,
   }));
-  const effectiveTotals = lineType === "membership_fee_collection"
-    ? calculateInvoiceTotals(selectedFeeLines, 0, settings.tax_enabled, settings.tax_rate_basis_points)
+  const phpPartialFee = usePhpApi && lineType === "membership_fee_collection" && paymentTouched;
+  const feePrincipal = phpPartialFee ? majorToMinor(paymentAmount, settings.currency_minor_unit) : null;
+  const fullFeeTotals = calculateInvoiceTotals(selectedFeeLines, 0, settings.tax_enabled, settings.tax_rate_basis_points);
+  const effectiveTotals = phpPartialFee && feePrincipal !== null
+    ? calculateInvoiceTotals([{ quantity: 1, unitPriceMinor: feePrincipal, discountMinor: 0 } as DraftLine], 0, settings.tax_enabled, settings.tax_rate_basis_points)
+    : lineType === "membership_fee_collection"
+    ? fullFeeTotals
     : totals;
   const collectingMembershipFees = lineType === "membership_fee_collection";
   const receivedMinor = collectingMembershipFees || !paymentTouched
@@ -360,8 +426,12 @@ export default function AdminBilling() {
   useEffect(() => {
     if (loading || !redirectedMemberId) return;
     let active = true;
-    void supabase.from("members").select("*").eq("id", redirectedMemberId)
-      .is("deleted_at", null).eq("is_active", true).maybeSingle()
+    const request = usePhpApi
+      ? phpGet<{ member: MemberRow }>(`/members/details?id=${redirectedMemberId}`)
+        .then(({ member }) => ({ data: member.is_active && !member.deleted_at ? member : null, error: null }), (error: Error) => ({ data: null, error }))
+      : supabase.from("members").select("*").eq("id", redirectedMemberId)
+        .is("deleted_at", null).eq("is_active", true).maybeSingle();
+    void request
       .then(({ data, error }) => {
         if (!active) return;
         if (data) openCreate(data as MemberRow, redirectedFeeId);
@@ -430,8 +500,9 @@ export default function AdminBilling() {
     }
   };
   const createInvoice = async () => {
-    if (saving) return;
-    if (!billNumber.ready) { setCreateError(billNumber.error || "Bill number is not ready. Please wait and try again."); return; }
+    if (saving || paymentInFlight.current) return;
+    if (usePhpApi && pendingAttempt) return completePhpAttempt(pendingAttempt);
+    if (!usePhpApi && !billNumber.ready) { setCreateError(billNumber.error || "Bill number is not ready. Please wait and try again."); return; }
     setCreateError("");
     if (customerMode === "member" && !memberId) {
       setCreateError("Select a gym member from the search results before creating the bill.");
@@ -455,6 +526,42 @@ export default function AdminBilling() {
     }
     if ((lineType !== "membership_fee_collection" && billLines.length === 0) || effectiveTotals.totalMinor <= 0) {
       setCreateError("Enter an amount greater than zero.");
+      return;
+    }
+    if (usePhpApi) {
+      let path: string;
+      let payload: object;
+      if (collectingMembershipFees) {
+        if (!memberId || !selectedFeeIds.length || memberFeesLoading ||
+          (phpPartialFee && (feePrincipal === null || feePrincipal <= 0 || feePrincipal > fullFeeTotals.subtotalMinor))) {
+          setCreateError("Choose payable periods and enter a fee amount within the outstanding balance.");
+          return;
+        }
+        path = "/membership/payments";
+        payload = { memberId: Number(memberId), feeIds: selectedFeeIds, paymentMethod,
+          amountMinor: feePrincipal, paymentDate: today, expectedTotalMinor: effectiveTotals.totalMinor, notes: notes.trim() || null };
+      } else if (lineType === "product") {
+        const initial = paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) : totals.totalMinor;
+        if (initial === null || initial < 0 || initial > totals.totalMinor || (initial < totals.totalMinor && !dueDate)) {
+          setCreateError("Enter a valid payment amount and select a due date for any remaining balance.");
+          return;
+        }
+        let discountRemaining = totals.discountMinor - lines.reduce((sum, line) => sum + line.discountMinor, 0);
+        const items = lines.map((line) => {
+          const extra = Math.min(discountRemaining, Math.max(0, calculateLineSubtotal(line) - line.discountMinor));
+          discountRemaining -= extra;
+          return { variantId: line.variantId, quantity: String(line.quantity), customerType: line.customerType,
+            discountMinor: line.discountMinor + extra, expectedUnitPriceMinor: line.unitPriceMinor };
+        });
+        path = "/invoices/products/issue";
+        payload = { memberId: memberId ? Number(memberId) : null, customerName, customerPhone, customerEmail,
+          notes: notes.trim() || null, paymentMinor: initial, paymentMethod, dueDate: dueDate || null,
+          expectedTotalMinor: totals.totalMinor, lines: items };
+      } else {
+        setCreateError("This charge type is unavailable in the PHP billing preview.");
+        return;
+      }
+      await completePhpAttempt({ key: crypto.randomUUID(), path, payload });
       return;
     }
 
@@ -603,7 +710,60 @@ export default function AdminBilling() {
       setSaving(false);
     }
   };
+  const readPhpReceipt = async (id: number, source?: InvoiceRow) => {
+    const request = ++receiptRequest.current;
+    setDetailItems([]);
+    setDetailPayments([]);
+    setDetailFeeBalance(null);
+    const result = await phpGet<PhpReceipt>(`/invoices/receipt?id=${id}`);
+    if (request !== receiptRequest.current) return;
+    setDetail({ ...source, ...result.invoice });
+    setDetailItems(result.items);
+    setDetailPayments(result.payments);
+    if (result.invoice.php_membership && result.invoice.member_ref) {
+      try {
+        const { summary } = await phpGet<{ summary: { total_due: number } }>(`/members/fees?id=${result.invoice.member_ref}`);
+        if (request === receiptRequest.current) setDetailFeeBalance(summary.total_due);
+      } catch {
+        if (request === receiptRequest.current) setMessage("The receipt is available. Could not refresh the membership fee balance.");
+      }
+    }
+  };
+  const completePhpAttempt = async (attempt: BillingAttempt) => {
+    if (paymentInFlight.current) return;
+    paymentInFlight.current = true;
+    setPendingAttempt(attempt);
+    setSaving(true);
+    setCreateError("");
+    let issued: { invoice_id: number; invoice_number: string };
+    try {
+      issued = await phpPost(attempt.path, attempt.payload, attempt.key);
+    } catch (error) {
+      const definitive = error instanceof PhpApiError && [409, 422].includes(error.status);
+      if (definitive) setPendingAttempt(null);
+      setCreateError(definitive ? error.message : "Payment confirmation was interrupted. Retry the original request to check its result.");
+      return;
+    } finally {
+      paymentInFlight.current = false;
+      setSaving(false);
+    }
+    setCreateOpen(false);
+    setPendingAttempt(null);
+    setMemberFees([]);
+    setSelectedFeeIds([]);
+    setMessage(`Invoice ${issued.invoice_number} was issued.`);
+    try {
+      await Promise.all([load(), readPhpReceipt(issued.invoice_id)]);
+    } catch {
+      setMessage(`Invoice ${issued.invoice_number} was issued. Open it from the list to view the receipt.`);
+    }
+  };
   const showDetail = async (invoice: InvoiceRow) => {
+    if (usePhpApi) {
+      try { await readPhpReceipt(invoice.id, invoice); }
+      catch (error) { setMessage(error instanceof Error ? error.message : "Invoice detail failed."); }
+      return;
+    }
     setDetail(invoice);
     const [items, payments] = await Promise.all([
       supabase
@@ -627,12 +787,40 @@ export default function AdminBilling() {
     setDetailPayments((payments.data ?? []) as InvoicePaymentRow[]);
   };
   const recordPayment = async () => {
-    if (!detail) return;
+    if (!detail || paymentInFlight.current) return;
     const amount = majorToMinor(newPayment, settings.currency_minor_unit);
-    if (amount === null || amount <= 0 || amount > detail.balance_minor) {
-      setMessage("Payment must be positive and cannot exceed the balance.");
+    if (!balanceAttempt && (amount === null || amount <= 0 || amount > detail.balance_minor)) {
+      if (usePhpApi) setBalanceError("Payment must be positive and cannot exceed the balance.");
+      else setMessage("Payment must be positive and cannot exceed the balance.");
       return;
     }
+    if (usePhpApi) {
+      const attempt = balanceAttempt ?? { key: crypto.randomUUID(), path: "/invoices/payments",
+        payload: { invoiceId: detail.id, amountMinor: amount, paymentMethod: newPaymentMethod } };
+      paymentInFlight.current = true;
+      setBalanceAttempt(attempt);
+      setBalanceError("");
+      setSaving(true);
+      try {
+        await phpPost(attempt.path, attempt.payload, attempt.key);
+      } catch (error) {
+        const definitive = error instanceof PhpApiError && [409, 422].includes(error.status);
+        if (definitive) setBalanceAttempt(null);
+        setBalanceError(definitive ? error.message : "Payment confirmation was interrupted. Retry the original payment.");
+        return;
+      } finally {
+        paymentInFlight.current = false;
+        setSaving(false);
+      }
+      setBalanceAttempt(null);
+      setPaymentOpen(false);
+      setNewPayment("");
+      setMessage("Payment recorded.");
+      try { await Promise.all([load(), readPhpReceipt(detail.id, detail)]); }
+      catch { setMessage("Payment recorded. Reopen the receipt to see the updated balance."); }
+      return;
+    }
+    if (amount === null) return;
     const { error } = await supabase.rpc("record_invoice_payment", {
       p_invoice_id: detail.id,
       p_amount_minor: amount,
@@ -658,6 +846,24 @@ export default function AdminBilling() {
   };
   const cancelInvoice = async () => {
     if (!detail || !cancellationReason.trim()) return;
+    if (usePhpApi) {
+      if (paymentInFlight.current || !detail.php_product && !detail.php_membership) return;
+      paymentInFlight.current = true;
+      try {
+        await phpPost(detail.php_product ? "/invoices/products/cancel" : "/membership/cancel-invoice", {
+          invoiceId: detail.id, reason: cancellationReason.trim(),
+        });
+        setCancelOpen(false);
+        setCancellationReason("");
+        setMessage(`Bill ${detail.invoice_number ?? ""} cancelled.`);
+        await Promise.all([load(), readPhpReceipt(detail.id, detail)]);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not cancel the invoice.");
+      } finally {
+        paymentInFlight.current = false;
+      }
+      return;
+    }
     const { error } = await supabase.rpc("cancel_invoice", {
       p_invoice_id: detail.id,
       p_reason: cancellationReason.trim(),
@@ -910,7 +1116,7 @@ export default function AdminBilling() {
         size="2xl"
         title="New Bill"
         description="Choose the customer, what they are paying for, and how they paid."
-        onClose={() => setCreateOpen(false)}
+        onClose={() => { if (!saving && !pendingAttempt) setCreateOpen(false); }}
         footer={
           <div className="space-y-3">
             {createError ? (
@@ -921,16 +1127,21 @@ export default function AdminBilling() {
                 Total: {formatMoney(effectiveTotals.totalMinor, settings.currency_code)}
               </b>
               <div className="flex gap-2">
-                <AdminButton variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</AdminButton>
-                <AdminButton variant="primary" disabled={saving || memberFeesLoading || !billNumber.ready || (lineType === "membership_fee_collection" && selectedFeeIds.length === 0)} onClick={() => void createInvoice()}>
-                  {saving ? "Completing..." : "Create Bill"}
+                <AdminButton variant="secondary" disabled={saving} onClick={() => {
+                  if (pendingAttempt && !window.confirm("The original payment may already be recorded. Abandon the retry and review the invoice list?")) return;
+                  setPendingAttempt(null);
+                  setCreateOpen(false);
+                  if (pendingAttempt) void load();
+                }}>{pendingAttempt ? "Abandon retry" : "Cancel"}</AdminButton>
+                <AdminButton variant="primary" disabled={saving || (!pendingAttempt && (memberFeesLoading || (!usePhpApi && !billNumber.ready) || (lineType === "membership_fee_collection" && selectedFeeIds.length === 0)))} onClick={() => void createInvoice()}>
+                  {saving ? "Completing..." : pendingAttempt ? "Retry payment" : "Create Bill"}
                 </AdminButton>
               </div>
             </div>
           </div>
         }
       >
-        <div className="space-y-6">
+        <fieldset className="min-w-0 space-y-6" disabled={usePhpApi && (saving || Boolean(pendingAttempt))}>
           <AdminField label="Bill Number" error={billNumber.error} hint="Auto-generated from settings. This is the next bill number to be used.">
             <AdminInput
               className="min-w-0 flex-1"
@@ -938,7 +1149,7 @@ export default function AdminBilling() {
               maxLength={16}
               disabled
               value={billNumber.value}
-              placeholder={billNumber.loading ? "Loading next number..." : "Bill number"}
+              placeholder={usePhpApi ? "Assigned when issued" : billNumber.loading ? "Loading next number..." : "Bill number"}
             />
           </AdminField>
           <section>
@@ -1039,6 +1250,7 @@ export default function AdminBilling() {
                 <button
                   key={choice.value}
                   type="button"
+                  disabled={usePhpApi && (choice.value === "personal_training" || choice.value === "miscellaneous")}
                   onClick={() => {
                     setLineType(choice.value);
                     setLineVariant("");
@@ -1348,13 +1560,14 @@ export default function AdminBilling() {
                 </AdminField>
               </div>
             </details> : null}
-            <AdminField label="Amount received">
+            <AdminField label={usePhpApi && collectingMembershipFees ? "Fee amount before tax" : "Amount received"}>
               <AdminInput
                 type="number"
                 min="0"
                 step="0.01"
-                value={!collectingMembershipFees && paymentTouched ? paymentAmount : minorToInput(receivedMinor, settings.currency_minor_unit)}
-                readOnly={collectingMembershipFees}
+                value={(!collectingMembershipFees || usePhpApi) && paymentTouched ? paymentAmount : minorToInput(
+                  usePhpApi && collectingMembershipFees ? fullFeeTotals.subtotalMinor : receivedMinor, settings.currency_minor_unit)}
+                readOnly={collectingMembershipFees && !usePhpApi}
                 onChange={(e) => { setPaymentTouched(true); setPaymentAmount(e.target.value); }}
               />
             </AdminField>
@@ -1401,7 +1614,7 @@ export default function AdminBilling() {
             <div className="flex justify-between"><span>Received</span><b>{formatMoney(receivedMinor, settings.currency_code)}</b></div>
             <div className="flex justify-between"><span>Balance</span><b>{formatMoney(Math.max(0, effectiveTotals.totalMinor - receivedMinor), settings.currency_code)}</b></div>
           </div>
-        </div>
+        </fieldset>
       </AdminDialog>
       <AdminDialog
         open={Boolean(successInvoice)}
@@ -1416,7 +1629,7 @@ export default function AdminBilling() {
         open={Boolean(detail)}
         size="2xl"
         title={detail?.invoice_number ?? "Invoice detail"}
-        onClose={() => setDetail(null)}
+        onClose={() => { receiptRequest.current += 1; setDetail(null); }}
         footer={
           detail ? (
             <div className="flex flex-wrap justify-end gap-2">
@@ -1429,12 +1642,12 @@ export default function AdminBilling() {
                 detail.balance_minor > 0 ? (
                 <AdminButton
                   variant="primary"
-                  onClick={() => setPaymentOpen(true)}
+                  onClick={() => { setBalanceError(""); setPaymentOpen(true); }}
                 >
                   Record payment
                 </AdminButton>
               ) : null}
-              {detail.invoice_status === "issued" ? (
+              {detail.invoice_status === "issued" && (!usePhpApi || detail.php_product || detail.php_membership) ? (
                 <AdminButton
                   variant="danger"
                   onClick={() => setCancelOpen(true)}
@@ -1566,7 +1779,7 @@ export default function AdminBilling() {
                   >
                     <span>
                       {formatDisplayDate(payment.payment_date)} ·{" "}
-                      {payment.payment_method.replaceAll("_", " ")}
+                      {payment.is_reversal ? "Reversal · " : ""}{payment.payment_method.replaceAll("_", " ")}
                     </span>
                     <b>
                       {formatMoney(payment.amount_minor, detail.currency_code)}
@@ -1578,6 +1791,9 @@ export default function AdminBilling() {
             {detail.notes ? (
               <p className="mt-5 text-sm">Notes: {detail.notes}</p>
             ) : null}
+            {detailFeeBalance !== null && <p className="mt-3 text-sm">
+              Outstanding membership fees: <b>{formatMembershipFeeAmount(detailFeeBalance, detail.currency_code)}</b>
+            </p>}
             {detail.invoice_status === "cancelled" ? (
               <p className="mt-5 rounded bg-red-50 p-3 text-sm text-red-800">
                 Cancelled: {detail.cancellation_reason}
@@ -1598,14 +1814,24 @@ export default function AdminBilling() {
             ? `Outstanding: ${formatMoney(detail.balance_minor, detail.currency_code)}`
             : undefined
         }
-        onClose={() => setPaymentOpen(false)}
+        onClose={() => { if (!saving && !balanceAttempt) setPaymentOpen(false); }}
         footer={
-          <AdminButton variant="primary" onClick={() => void recordPayment()}>
-            Save payment
-          </AdminButton>
+          <div className="flex gap-2">
+            {balanceAttempt && !saving && <AdminButton onClick={() => {
+              if (!window.confirm("The payment may already be recorded. Abandon the retry and reload the receipt?")) return;
+              setBalanceAttempt(null);
+              setPaymentOpen(false);
+              if (detail) void showDetail(detail);
+              void load();
+            }}>Abandon retry</AdminButton>}
+            <AdminButton variant="primary" disabled={usePhpApi && saving} onClick={() => void recordPayment()}>
+              {balanceAttempt && !saving ? "Retry payment" : "Save payment"}
+            </AdminButton>
+          </div>
         }
       >
-        <div className="space-y-4">
+        {balanceError && <AdminNotice tone="danger">{balanceError}</AdminNotice>}
+        <fieldset className="space-y-4" disabled={usePhpApi && (saving || Boolean(balanceAttempt))}>
           <AdminField label="Amount">
             <AdminInput
               type="number"
@@ -1624,7 +1850,7 @@ export default function AdminBilling() {
               options={paymentMethods}
             />
           </AdminField>
-        </div>
+        </fieldset>
       </AdminDialog>
       <AdminDialog
         open={cancelOpen}

@@ -60,6 +60,7 @@ $tables = [
     'attendance_records', 'admin_settings', 'member_write_lock', 'invoices', 'invoice_payments', 'membership_fees',
     'invoice_items', 'invoice_number_sequences', 'membership_payment_allocations', 'membership_payment_requests', 'payment_audit_events',
     'inventory_suppliers', 'shop_items', 'inventory_product_variants', 'stock_movements', 'product_invoice_requests', 'pricing_items',
+    'invoice_balance_payment_requests',
 ];
 $engine = $db->prepare('SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?');
 foreach ($tables as $table) {
@@ -94,6 +95,7 @@ $requiredKeys = [
     'stock_movements.invoice_id' => 'invoices.id',
     'stock_movements.supplier_id' => 'inventory_suppliers.id',
     'product_invoice_requests.invoice_id' => 'invoices.id',
+    'invoice_balance_payment_requests.payment_id' => 'invoice_payments.id',
 ];
 foreach ($requiredKeys as $source => $target) {
     if (($foreignKeys[$source] ?? null) !== $target) {

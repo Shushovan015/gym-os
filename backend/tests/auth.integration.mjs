@@ -204,6 +204,27 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("invoices?from=2025-02-29", 422);
   await request("invoices/products/cancel", 200, { invoiceId: sale.invoice_id, reason: "Returned" });
   assert.ok(!(await request(invoiceList, 200)).invoices.some(({ id }) => id === sale.invoice_id));
+  const partiallyPaid = await request("invoices/products/issue", 201, {
+    ...productInvoice, paymentMinor: 50, dueDate: "2030-01-01", expectedTotalMinor: 188,
+    customerPhone: "9800000000", notes: "Fixture invoice",
+  }, true, paymentKey());
+  const balanceBody = { invoiceId: partiallyPaid.invoice_id, amountMinor: 100, paymentMethod: "cash" };
+  const balanceKey = paymentKey();
+  await request("invoices/payments", 403, balanceBody, false, balanceKey);
+  await request("invoices/payments", 409, { ...balanceBody, amountMinor: 139 }, true, paymentKey());
+  const recorded = await request("invoices/payments", 201, balanceBody, true, balanceKey);
+  assert.deepEqual(await request("invoices/payments", 200, balanceBody, true, balanceKey), recorded);
+  await request("invoices/payments", 409, { ...balanceBody, amountMinor: 1 }, true, balanceKey);
+  const partReceipt = await request(`invoices/receipt?id=${partiallyPaid.invoice_id}`, 200);
+  assert.equal(partReceipt.invoice.balance_minor, 38);
+  assert.equal(partReceipt.invoice.customer_phone, "9800000000");
+  assert.equal(partReceipt.invoice.notes, "Fixture invoice");
+  assert.equal(partReceipt.payments.length, 2);
+  const cancelPartial = { invoiceId: partiallyPaid.invoice_id, reason: "Returned" };
+  await request("invoices/products/cancel", 200, cancelPartial);
+  await request("invoices/products/cancel", 200, cancelPartial);
+  const reversed = await request(`invoices/receipt?id=${partiallyPaid.invoice_id}`, 200);
+  assert.equal(reversed.payments.filter((p) => p.is_reversal).length, 2);
   assert.deepEqual((await request(catalogPath + "&offset=1", 200)).products, []);
   assert.ok((await request("inventory/suppliers", 200)).suppliers.some(({ id }) => id === supplier.id));
   await request("inventory/catalog/delete", 409, { entity: "product", id: product.id });
@@ -303,6 +324,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);
+  await request("invoices/payments", 403, balanceBody, true, paymentKey());
   await request("attendance/holiday", 403, holidayBody);
   await request(attendance, 403, { ...mark, date: "2024-02-29" });
   await request("logout", 200, {});

@@ -4,6 +4,7 @@ export type PaymentMethod = "cash" | "card" | "bank_transfer" | "digital_wallet"
 export type InvoiceItemType = "membership" | "personal_training" | "product" | "miscellaneous";
 
 export type InvoiceRow = {
+  php_product?: boolean; php_membership?: boolean;
   invoice_email_deliveries?: { status: string } | null;
   id: number; invoice_number: string | null; member_ref: number | null; customer_name: string;
   customer_phone: string | null; customer_email: string | null; billing_date: string; due_date: string | null;
@@ -24,6 +25,7 @@ export type InvoiceItemRow = {
 };
 
 export type InvoicePaymentRow = {
+  is_reversal?: boolean; reverses_payment_id?: number | null;
   id: number; invoice_id: number; amount_minor: number; payment_method: PaymentMethod;
   payment_date: string; reference: string | null; notes: string | null; created_at: string;
 };

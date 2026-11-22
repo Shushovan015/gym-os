@@ -52,6 +52,8 @@ All endpoints require an administrator session. Writes require the CSRF header. 
 
 `POST /api/membership/cancel-invoice` accepts `invoiceId` and `reason` for invoices issued by the PHP membership payment endpoint. It requires administrator access and CSRF. It restores the allocated fee balances and records a linked reversal in the same transaction. Retrying returns the original reversal.
 
+`POST /api/invoices/payments` records a subsequent payment on an issued invoice. It takes `invoiceId`, `amountMinor`, `paymentMethod` and an `Idempotency-Key`. It locks the invoice and rejects overpayments. The PHP Billing preview retains an unchanged request for retries while the screen is mounted and warns before browser unload. If leaving after an uncertain result, review the invoice and its payment history before entering the payment again.
+
 ### Inventory adjustments
 
 `POST /api/inventory/stock` records a manual movement for an existing variant. Send `variantId`, `type` and a signed decimal string in `quantityDelta` with up to three decimal places. Optional fields are `supplierId`, `reference` and `notes`. The API locks the variant when updating its balance and recording the movement. `GET /api/inventory/stock-history?variantId=123` returns recent movements. Both routes require administrator access, and the adjustment requires CSRF. Treat adjustments as individual submissions and reconcile the history after a timeout before submitting again.

@@ -30,9 +30,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const phpGet = <T>(path: string) => request<T>(path);
 export const phpSession = () => phpGet<Session>("/auth/session");
 
-export async function phpPost<T>(path: string, body?: object): Promise<T> {
+export async function phpPost<T>(path: string, body?: object, idempotencyKey?: string): Promise<T> {
   const { csrfToken } = await phpSession();
   const headers = new Headers({ "X-CSRF-Token": csrfToken });
+  if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
   if (!(body instanceof FormData) && body !== undefined) headers.set("Content-Type", "application/json");
   return request<T>(path, {
     method: "POST",

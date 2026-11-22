@@ -37,7 +37,10 @@ final class MembershipBilling
         }
         $this->db->beginTransaction();
         try {
-            $query = $this->db->prepare("SELECT * FROM invoices WHERE id = ? AND invoice_status <> 'draft'");
+            $query = $this->db->prepare("SELECT *,
+                EXISTS (SELECT 1 FROM product_invoice_requests p WHERE p.invoice_id = invoices.id) AS php_product,
+                EXISTS (SELECT 1 FROM invoice_payments p JOIN membership_payment_requests m ON m.payment_id = p.id
+                    WHERE p.invoice_id = invoices.id) AS php_membership FROM invoices WHERE id = ?");
             $query->execute([$id]);
             $header = $query->fetch(PDO::FETCH_ASSOC);
             if (!$header) {
@@ -48,6 +51,9 @@ final class MembershipBilling
             $items->execute([$id]);
             $payments = $this->db->prepare('SELECT * FROM invoice_payments WHERE invoice_id = ? ORDER BY id');
             $payments->execute([$id]);
+            foreach (['php_product', 'php_membership', 'tax_enabled'] as $field) {
+                $header[$field] = (bool) $header[$field];
+            }
             $result = ['invoice' => $header, 'items' => $items->fetchAll(PDO::FETCH_ASSOC), 'payments' => $payments->fetchAll(PDO::FETCH_ASSOC)];
             $this->db->commit();
             return [200, $result];
@@ -167,9 +173,11 @@ final class MembershipBilling
         $date = $input['paymentDate'] ?? null;
         $reference = $input['reference'] ?? null;
         $notes = $input['notes'] ?? null;
+        $expectedTotal = $input['expectedTotalMinor'] ?? null;
         if (!is_string($key) || !preg_match('/^[A-Za-z0-9_-]{16,128}$/D', $key) ||
             !is_int($member) || $member < 1 || !is_array($ids) || !array_is_list($ids) || count($ids) < 1 || count($ids) > 120 ||
             ($amount !== null && (!is_int($amount) || $amount < 1 || $amount > self::MAX_AMOUNT)) ||
+            ($expectedTotal !== null && (!is_int($expectedTotal) || $expectedTotal < 1 || $expectedTotal > self::MAX_AMOUNT)) ||
             !in_array($method, ['cash','card','bank_transfer','digital_wallet','other'], true) ||
             ($date !== null && (!is_string($date) || !preg_match('/^([1-9][0-9]{3})-([0-9]{2})-([0-9]{2})$/D', $date, $parts) ||
                 !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1]))) ||
@@ -186,7 +194,11 @@ final class MembershipBilling
             return [422, ['error' => 'Fee period IDs must be unique.']];
         }
         sort($ids, SORT_REGULAR);
-        $fingerprint = hash('sha256', json_encode([$actor, $member, $ids, $amount, $method, $date, $reference, $notes], JSON_THROW_ON_ERROR));
+        $terms = [$actor, $member, $ids, $amount, $method, $date, $reference, $notes];
+        if ($expectedTotal !== null) {
+            $terms[] = $expectedTotal;
+        }
+        $fingerprint = hash('sha256', json_encode($terms, JSON_THROW_ON_ERROR));
         $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kathmandu')))->format('Y-m-d');
 
         $this->db->beginTransaction();
@@ -204,7 +216,7 @@ final class MembershipBilling
                 $this->db->commit();
                 return [200, $result];
             }
-            $result = $this->record($member, $ids, $amount, $method, $date ?? $today, $today, $reference, $notes, $actor);
+            $result = $this->record($member, $ids, $amount, $method, $date ?? $today, $today, $reference, $notes, $actor, $expectedTotal);
             $this->db->prepare('UPDATE membership_payment_requests SET response_json = ?, payment_id = ? WHERE request_key = ?')
                 ->execute([json_encode($result, JSON_THROW_ON_ERROR), $result['payment_id'], $key]);
             $this->db->commit();
@@ -222,7 +234,7 @@ final class MembershipBilling
 
     private function record(
         int $member, array $ids, ?int $amount, string $method, string $date, string $today,
-        ?string $reference, ?string $notes, string $actor
+        ?string $reference, ?string $notes, string $actor, ?int $expectedTotal
     ): array {
         // Lock order is request key, member, fee rows, settings, then invoice sequence.
         $lookup = $this->db->prepare('SELECT full_name, phone, email, deleted_at, is_active FROM members WHERE id = ? FOR UPDATE');
@@ -259,6 +271,9 @@ final class MembershipBilling
         $rate = $settings['tax_enabled'] ? (int) $settings['tax_rate_basis_points'] : 0;
         $tax = intdiv($subtotal, 10000) * $rate + intdiv(($subtotal % 10000) * $rate + 5000, 10000);
         $total = self::add($subtotal, $tax);
+        if ($expectedTotal !== null && $total !== $expectedTotal) {
+            throw new DomainException('The fee balance or tax changed. Close the bill and reload the fee periods before collecting payment.');
+        }
         $number = InvoiceNumbers::allocate($this->db, (int) $settings['invoice_start_number']);
         $this->db->prepare("INSERT INTO invoices (
             invoice_number, member_ref, customer_name, customer_phone, customer_email, billing_date, due_date,

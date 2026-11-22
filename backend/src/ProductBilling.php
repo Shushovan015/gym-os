@@ -21,12 +21,20 @@ final class ProductBilling
         $payment = $input['paymentMinor'] ?? null;
         $method = $input['paymentMethod'] ?? 'cash';
         $due = $input['dueDate'] ?? null;
+        $phone = $input['customerPhone'] ?? null;
+        $email = $input['customerEmail'] ?? null;
+        $notes = $input['notes'] ?? null;
+        $expectedTotal = $input['expectedTotalMinor'] ?? null;
         if (!is_string($key) || !preg_match('/^[A-Za-z0-9_-]{16,128}$/D', $key) ||
             !is_array($lines) || !array_is_list($lines) || count($lines) < 1 || count($lines) > 100 ||
             ($member !== null && (!is_int($member) || $member < 1)) ||
             ($name !== null && (!is_string($name) || strlen($name) > 255)) ||
             ($member === null && (!is_string($name) || trim($name) === '')) ||
             ($payment !== null && !self::money($payment)) ||
+            ($expectedTotal !== null && !self::money($expectedTotal)) ||
+            ($phone !== null && (!is_string($phone) || strlen($phone) > 255)) ||
+            ($email !== null && (!is_string($email) || strlen($email) > 255)) ||
+            ($notes !== null && (!is_string($notes) || strlen($notes) > 2000)) ||
             !in_array($method, ['cash','card','bank_transfer','digital_wallet','other'], true) ||
             ($due !== null && (!is_string($due) || !preg_match('/^([1-9][0-9]{3})-([0-9]{2})-([0-9]{2})$/D', $due, $parts) ||
                 !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])))) {
@@ -39,21 +47,27 @@ final class ProductBilling
             $type = $line['customerType'] ?? 'general';
             $quantity = $line['quantity'] ?? null;
             $discount = $line['discountMinor'] ?? 0;
+            $expected = $line['expectedUnitPriceMinor'] ?? null;
             if (!is_int($id) || $id < 1 || !in_array($type, ['general','wholesale'], true) ||
                 !is_string($quantity) || !preg_match('/^\d{1,11}(?:\.\d{1,3})?$/D', $quantity) ||
-                !self::money($discount) || ($units = Stock::thousandths($quantity)) <= 0) {
+                !self::money($discount) || ($expected !== null && !self::money($expected)) || ($units = Stock::thousandths($quantity)) <= 0) {
                 return [422, ['error' => 'Invalid product invoice line.']];
             }
             $quantities[$id] = ($quantities[$id] ?? 0) + $units;
             if ($quantities[$id] > self::MAX_QUANTITY) {
                 return [422, ['error' => 'Combined quantity exceeds the supported range.']];
             }
-            $items[] = [$id, $type, $units, $discount];
+            $items[] = [$id, $type, $units, $discount, $expected];
         }
         ksort($quantities, SORT_NUMERIC);
-        $name = $name === null ? null : trim($name);
-        $fingerprint = hash('sha256', json_encode([$actor, $name, $member, $payment, $method, $due, $items], JSON_THROW_ON_ERROR));
-        return $this->transact(function () use ($key, $fingerprint, $name, $member, $payment, $method, $due, $items, $quantities, $actor): array {
+        $customer = ['full_name' => $name === null ? null : trim($name), 'phone' => $phone ?: null, 'email' => $email ?: null];
+        $terms = [$actor, $customer['full_name'], $member, $payment, $method, $due,
+            array_map(static fn (array $item): array => $item[4] === null ? array_slice($item, 0, 4) : $item, $items)];
+        if ($customer['phone'] !== null || $customer['email'] !== null || $notes !== null || $expectedTotal !== null) {
+            $terms[] = [$customer['phone'], $customer['email'], $notes, $expectedTotal];
+        }
+        $fingerprint = hash('sha256', json_encode($terms, JSON_THROW_ON_ERROR));
+        return $this->transact(function () use ($key, $fingerprint, $customer, $member, $payment, $method, $due, $items, $quantities, $actor, $notes, $expectedTotal): array {
             $this->db->prepare('INSERT INTO product_invoice_requests (request_key, fingerprint) VALUES (?, ?)
                 ON DUPLICATE KEY UPDATE request_key = request_key')->execute([$key, $fingerprint]);
             $query = $this->db->prepare('SELECT fingerprint, response_json FROM product_invoice_requests WHERE request_key = ? FOR UPDATE');
@@ -65,16 +79,15 @@ final class ProductBilling
             if ($request['response_json'] !== null) {
                 return [200, json_decode($request['response_json'], true, flags: JSON_THROW_ON_ERROR)];
             }
-            $result = $this->record($name, $member, $payment, $method, $due, $items, $quantities, $actor);
+            $result = $this->record($customer, $member, $payment, $method, $due, $items, $quantities, $actor, $notes, $expectedTotal);
             $this->db->prepare('UPDATE product_invoice_requests SET invoice_id = ?, response_json = ? WHERE request_key = ?')
                 ->execute([$result['invoice_id'], json_encode($result, JSON_THROW_ON_ERROR), $key]);
             return [201, $result];
         });
     }
 
-    private function record(?string $name, ?int $member, ?int $payment, string $method, ?string $due, array $items, array $quantities, string $actor): array
+    private function record(array $customer, ?int $member, ?int $payment, string $method, ?string $due, array $items, array $quantities, string $actor, ?string $notes, ?int $expectedTotal): array
     {
-        $customer = ['full_name' => $name, 'phone' => null, 'email' => null];
         if ($member !== null) {
             $query = $this->db->prepare('SELECT full_name, phone, email FROM members WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
             $query->execute([$member]);
@@ -113,10 +126,13 @@ final class ProductBilling
         $subtotal = 0;
         $discountTotal = 0;
         $snapshots = [];
-        foreach ($items as [$id, $type, $units, $discount]) {
+        foreach ($items as [$id, $type, $units, $discount, $expected]) {
             [$variant, $product] = $variants[$id];
             $field = $type === 'wholesale' ? 'wholesale_price_minor' : 'selling_price_minor';
             $price = $variant[$field] ?? $product[$field];
+            if ($expected !== null && $expected !== $price) {
+                throw new DomainException('A product price changed. Remove and re-add the affected product before issuing the invoice.');
+            }
             $line = self::scale($price, $units, 1000);
             if ($discount > $line) {
                 throw new DomainException('A line discount exceeds its price.');
@@ -130,6 +146,9 @@ final class ProductBilling
         $net = $subtotal - $discountTotal;
         $tax = $settings['tax_enabled'] ? self::scale($net, (int) $settings['tax_rate_basis_points'], 10000) : 0;
         $total = self::add($net, $tax);
+        if ($expectedTotal !== null && $total !== $expectedTotal) {
+            throw new DomainException('The invoice total changed. Reload billing and confirm the current total.');
+        }
         $payment ??= $total;
         if ($payment > $total || ($payment < $total && $due === null)) {
             throw new DomainException('Payment exceeds the invoice total or a balance is missing its due date.');
@@ -140,11 +159,11 @@ final class ProductBilling
         $this->db->prepare("INSERT INTO invoices (
             invoice_number, member_ref, customer_name, customer_phone, customer_email, billing_date, due_date,
             invoice_status, payment_status, currency_code, subtotal_minor, discount_minor, tax_minor, total_minor,
-            paid_minor, balance_minor, tax_enabled, tax_label, tax_rate_basis_points, inventory_applied_at, created_by, updated_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6), ?, ?)")
+            paid_minor, balance_minor, tax_enabled, tax_label, tax_rate_basis_points, inventory_applied_at, notes, created_by, updated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6), ?, ?, ?)")
             ->execute([$number, $member, $customer['full_name'], $customer['phone'], $customer['email'], $today, $due,
                 $paymentStatus, $settings['currency_code'], $subtotal, $discountTotal, $tax, $total, $payment, $total - $payment,
-                $settings['tax_enabled'], $settings['tax_label'], $settings['tax_rate_basis_points'], $actor, $actor]);
+                $settings['tax_enabled'], $settings['tax_label'], $settings['tax_rate_basis_points'], $notes, $actor, $actor]);
         $invoice = (int) $this->db->lastInsertId();
         $insert = $this->db->prepare("INSERT INTO invoice_items (invoice_id, item_type, customer_type, product_id, variant_id,
             description, quantity, unit_price_minor, unit_cost_minor, discount_minor, tax_minor, line_total_minor, sort_order)
