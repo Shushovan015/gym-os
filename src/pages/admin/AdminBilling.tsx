@@ -44,6 +44,8 @@ import {
   getNepalTodayAdDate,
   formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
+  isPayableFee,
+  isZeroAmountFee,
 } from "./adminUtils";
 import type {
   InventoryProduct,
@@ -176,6 +178,7 @@ export default function AdminBilling() {
 
   // Membership fee collection state
   const [memberFees, setMemberFees] = useState<MembershipFee[]>([]);
+  const [zeroAmountFeeCount, setZeroAmountFeeCount] = useState(0);
   const [selectedFeeIds, setSelectedFeeIds] = useState<number[]>([]);
   const [requestedFeeId, setRequestedFeeId] = useState<number>();
   const [memberFeesLoading, setMemberFeesLoading] = useState(false);
@@ -183,6 +186,7 @@ export default function AdminBilling() {
 
   // Load member's unpaid membership fees when member is selected
   useEffect(() => {
+    setZeroAmountFeeCount(0);
     if (!createOpen || !memberId || lineType !== "membership_fee_collection") {
       setMemberFeesLoading(false);
       setMemberFees([]);
@@ -208,7 +212,8 @@ export default function AdminBilling() {
           return;
         }
         const outstandingFees = (data?.outstanding_fees ?? []) as MembershipFee[];
-        const fees = outstandingFees.filter((fee) => fee.amount_minor > fee.paid_amount_minor).map((fee) => ({
+        setZeroAmountFeeCount(outstandingFees.filter(isZeroAmountFee).length);
+        const fees = outstandingFees.filter(isPayableFee).map((fee) => ({
           ...fee,
           currency_code: fee.currency_code ?? settings.currency_code,
         }));
@@ -925,7 +930,7 @@ export default function AdminBilling() {
               </b>
               <div className="flex gap-2">
                 <AdminButton variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</AdminButton>
-                <AdminButton variant="primary" disabled={saving || memberFeesLoading || !billNumber.ready} onClick={() => void createInvoice()}>
+                <AdminButton variant="primary" disabled={saving || memberFeesLoading || !billNumber.ready || (lineType === "membership_fee_collection" && selectedFeeIds.length === 0)} onClick={() => void createInvoice()}>
                   {saving ? "Completing..." : "Create Bill"}
                 </AdminButton>
               </div>
@@ -1115,10 +1120,12 @@ export default function AdminBilling() {
                 <div className="space-y-4">
                   <AdminNotice tone="accent" title="Collect Membership Fee">
                     Select one or more consecutive unpaid months to collect. The total will be calculated automatically.
-                    {memberId && memberFees.length === 0 && !memberFeesLoading && (
-                      <span className="ml-2 text-amber-300">No unpaid fees found for this member.</span>
-                    )}
                   </AdminNotice>
+                  {zeroAmountFeeCount > 0 && memberId && !memberFeesLoading ? (
+                    <AdminNotice tone="warning" title="Fee periods with a zero amount">
+                      {zeroAmountFeeCount} fee {zeroAmountFeeCount === 1 ? "period has" : "periods have"} a zero amount. Check the member's plan and confirm which periods should be charged.
+                    </AdminNotice>
+                  ) : null}
                   {memberFeesLoading ? (
                     <div className="flex justify-center py-8">
                       <AdminLoading label="Loading unpaid fee periods..." />
@@ -1128,7 +1135,7 @@ export default function AdminBilling() {
                   ) : !memberId ? (
                     <AdminEmptyState title="Select a gym member" description="Choose a member to review their outstanding fee periods." />
                   ) : memberFees.length === 0 ? (
-                    <AdminEmptyState title="No unpaid membership fees" description="This member has no outstanding membership fees." />
+                    <AdminEmptyState title="No payable membership fees" description={zeroAmountFeeCount > 0 ? "A positive fee amount is required before Billing can collect a payment." : "This member has no outstanding membership fees."} />
                   ) : (
                     <>
                       <div className="grid gap-3 md:grid-cols-3">
