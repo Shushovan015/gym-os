@@ -344,6 +344,14 @@ export function formatMembershipFeeAmount(minor: number, currencyCode: string = 
   return `${major} ${currencyCode}`;
 }
 
+export function isPayableFee(fee: { amount_minor: number; paid_amount_minor: number }) {
+  return fee.amount_minor > fee.paid_amount_minor;
+}
+
+export function isZeroAmountFee(fee: { amount_minor: number }) {
+  return fee.amount_minor === 0;
+}
+
 export function getMonthNameFromBillingMonth(billingMonth: string): string {
   return getMonthNameFromDueDate(billingMonth);
 }

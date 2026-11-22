@@ -31,6 +31,8 @@ import {
   formatBillingPeriodFromDueDate,
   formatMembershipFeeAmount,
   getNepalTodayAdDate,
+  isPayableFee,
+  isZeroAmountFee,
   membershipFeeStatusTone,
   statusLabel,
 } from "./adminUtils";
@@ -322,6 +324,10 @@ export default function AdminAttendance() {
   }, 0);
 
   if (loading) return <AdminLoading label="Loading attendance..." />;
+
+  const payableFees = (memberFeeStatus?.outstanding_fees ?? []).filter(isPayableFee);
+  const overdueFeeCount = payableFees.filter((fee) => fee.due_date < todayAd).length;
+  const upcomingFeeCount = payableFees.length - overdueFeeCount;
 
   return (
     <div className="space-y-6">
@@ -651,15 +657,20 @@ export default function AdminAttendance() {
                   <>
                     {memberFeeStatus.has_outstanding ? (
                       <>
-                        <AdminNotice tone="warning" title="Outstanding membership fees">
+                        <AdminNotice tone="warning" title={memberFeeStatus.summary.total_due > 0 ? "Outstanding membership fees" : "No amount available to collect"}>
                           Total due: <b>{formatMembershipFeeAmount(memberFeeStatus.summary.total_due, memberFeeStatus.summary.currency_code)}</b>
-                          {memberFeeStatus.summary.overdue_count > 0 && (
-                            <span className="ml-3 text-amber-300"><b>{memberFeeStatus.summary.overdue_count}</b> overdue</span>
+                          {overdueFeeCount > 0 && (
+                            <span className="ml-3 text-amber-300"><b>{overdueFeeCount}</b> overdue</span>
                           )}
-                          {memberFeeStatus.summary.unpaid_count > 0 && (
-                            <span className="ml-3 text-slate-300"><b>{memberFeeStatus.summary.unpaid_count}</b> upcoming</span>
+                          {upcomingFeeCount > 0 && (
+                            <span className="ml-3 text-slate-300"><b>{upcomingFeeCount}</b> upcoming</span>
                           )}
                         </AdminNotice>
+                        {memberFeeStatus.outstanding_fees?.some(isZeroAmountFee) ? (
+                          <AdminNotice tone="warning" title="Fee periods with a zero amount">
+                            Billing can only collect a positive balance. Check the member's plan and confirm which periods should be charged.
+                          </AdminNotice>
+                        ) : null}
                         {memberFeeStatus.outstanding_fees && memberFeeStatus.outstanding_fees.length > 0 && (
                           <div className="space-y-2">
                             {memberFeeStatus.outstanding_fees.map((fee) => (
@@ -675,7 +686,7 @@ export default function AdminAttendance() {
                                     Outstanding: <b>{formatMembershipFeeAmount(fee.amount_minor - fee.paid_amount_minor, fee.currency_code)}</b>
                                   </div>
                                 </div>
-                                <AdminBadge tone={membershipFeeStatusTone(fee.status)}>{statusLabel(fee.status)}</AdminBadge>
+                                <AdminBadge tone={isZeroAmountFee(fee) ? "neutral" : membershipFeeStatusTone(fee.status)}>{isZeroAmountFee(fee) ? "Zero amount" : statusLabel(fee.status)}</AdminBadge>
                               </div>
                             ))}
                           </div>

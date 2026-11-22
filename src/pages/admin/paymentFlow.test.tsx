@@ -62,6 +62,23 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it("explains zero-amount fee periods and cannot create a zero-value membership bill", async () => {
+  const original = fixture.rpc.getMockImplementation()!;
+  fixture.rpc.mockImplementation(async (name: string) => {
+    if (name === "get_member_membership_fee_status") {
+      return { data: { outstanding_fees: [fixture.fees[0]] } };
+    }
+    return original(name);
+  });
+  render(<MemoryRouter initialEntries={[{ pathname: "/admin/billing", state: { memberId: 42 } }]}>
+    <AdminBilling />
+  </MemoryRouter>);
+  const bill = within(await screen.findByRole("dialog", { name: "New Bill" }));
+  expect(await bill.findByText(/1 fee period has a zero amount/)).toBeInTheDocument();
+  expect(bill.getByRole("button", { name: "Create Bill" })).toBeDisabled();
+  expect(bill.queryAllByRole("checkbox")).toHaveLength(0);
+});
+
 it("opens Billing for the fee period clicked in the Members popup without recording a payment", async () => {
   render(<MemoryRouter initialEntries={["/admin/members"]}>
     <Routes>
