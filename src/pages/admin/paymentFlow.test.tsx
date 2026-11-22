@@ -118,6 +118,9 @@ it("opens the Billing dialog from Attendance and collects the reviewed fee perio
   expect(feePeriods[0]).toBeChecked();
   expect(bill.getByText("ram@example.test")).toBeInTheDocument();
   expect(bill.getByDisplayValue(formatMembershipFeeAmount(180000, "NPR"))).toBeInTheDocument();
+  expect(bill.getByLabelText("Amount received")).toHaveAttribute("readonly");
+  expect(bill.getByLabelText("Amount received")).toHaveValue(800);
+  expect(bill.queryByText("Add a discount")).not.toBeInTheDocument();
   expect(fixture.rpc.mock.calls.some(([name]) => name === "record_membership_fee_payment_multi")).toBe(false);
 
   fireEvent.click(bill.getAllByRole("checkbox")[1]);

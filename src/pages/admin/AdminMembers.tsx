@@ -64,6 +64,7 @@ import {
   isZeroAmountFee,
   membershipFeeStatusTone,
   normalizePhone,
+  changedMemberIdentity,
   statusLabel,
   toMemberPayload,
   validateMemberForm,
@@ -288,7 +289,8 @@ export default function AdminMembers() {
 
   const [form, setForm] = useState<MemberForm>(emptyMemberForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof MemberForm, string>>>({});
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
+  const editingId = editingMember?.id ?? null;
   const [formOpen, setFormOpen] = useState(searchParams.get("action") === "add");
   const [saving, setSaving] = useState(false);
   const [memberPhotoFile, setMemberPhotoFile] = useState<File | null>(null);
@@ -373,7 +375,8 @@ const loadMembers = async () => {
   const resetPage = () => setCurrentPage(1);
 
   const openAddMember = () => {
-    setEditingId(null);
+    setEditingMember(null);
+    setFormMessage(null);
     const defaultPlan = activePlanNames.find((plan) => plan.toLowerCase() === settings.default_membership_type.toLowerCase());
     setForm({ ...emptyMemberForm, membership_type: defaultPlan ?? activePlanNames[0] ?? "" });
     setFormErrors({});
@@ -382,7 +385,8 @@ const loadMembers = async () => {
   };
 
   const openEditMember = (member: MemberRow) => {
-    setEditingId(member.id);
+    setEditingMember(member);
+    setFormMessage(null);
     setForm({
       member_id: member.member_id,
       full_name: member.full_name,
@@ -423,35 +427,38 @@ const loadMembers = async () => {
     setFormMessage(null);
 
     const normalizedForm = { ...form, phone: normalizePhone(form.phone) };
-    const errors = validateMemberForm(normalizedForm, members, editingId);
+    const errors = validateMemberForm(normalizedForm, members, editingMember);
     setFormErrors(errors);
     if (hasValidationErrors(errors)) return;
 
     setSaving(true);
+    const changedIdentity = changedMemberIdentity(normalizedForm, editingMember);
     const normalizedEmail = normalizedForm.email?.trim() ?? "";
     const conflictFilters = [
-      `member_id.eq.${normalizedForm.member_id.replace(/[,()]/g, "")}`,
-      `phone.eq.${normalizedForm.phone.replace(/[,()]/g, "")}`,
-      ...(normalizedEmail ? [`email.ilike.${normalizedEmail.replace(/[,()]/g, "")}`] : []),
+      ...(changedIdentity.member_id ? [`member_id.eq.${normalizedForm.member_id.trim().replace(/[,()]/g, "")}`] : []),
+      ...(changedIdentity.phone ? [`phone.eq.${normalizedForm.phone.replace(/[,()]/g, "")}`] : []),
+      ...(changedIdentity.email && normalizedEmail ? [`email.ilike.${normalizedEmail.replace(/[,()]/g, "")}`] : []),
     ];
-    let conflictQuery = supabase
-      .from("members")
-      .select("id,member_id,phone,email")
-      .is("deleted_at", null)
-      .or(conflictFilters.join(","))
-      .limit(1);
-    if (editingId) conflictQuery = conflictQuery.neq("id", editingId);
-    const { data: conflicts, error: conflictError } = await conflictQuery;
-    if (conflictError) {
-      setSaving(false);
-      setFormMessage({ type: "error", text: conflictError.message });
-      return;
-    }
-    if (conflicts?.length) {
-      setSaving(false);
-      setFormErrors({ member_id: "Member ID, phone or email is already used by another member." });
-      setFormMessage({ type: "error", text: "This member ID, phone, or email is already in use." });
-      return;
+    if (conflictFilters.length) {
+      let conflictQuery = supabase
+        .from("members")
+        .select("id,member_id,phone,email")
+        .is("deleted_at", null)
+        .or(conflictFilters.join(","))
+        .limit(1);
+      if (editingId) conflictQuery = conflictQuery.neq("id", editingId);
+      const { data: conflicts, error: conflictError } = await conflictQuery;
+      if (conflictError) {
+        setSaving(false);
+        setFormMessage({ type: "error", text: conflictError.message });
+        return;
+      }
+      if (conflicts?.length) {
+        setSaving(false);
+        setFormErrors({ member_id: "Member ID, phone or email is already used by another member." });
+        setFormMessage({ type: "error", text: "This member ID, phone, or email is already in use." });
+        return;
+      }
     }
     let photoUrl = normalizedForm.photo_url;
     if (memberPhotoFile) {
@@ -466,8 +473,14 @@ const loadMembers = async () => {
       photoUrl = supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
     }
     const payload = toMemberPayload({ ...normalizedForm, photo_url: photoUrl });
+    const { member_id, phone, email, ...memberDetails } = payload;
     const result = editingId
-      ? await supabase.from("members").update(payload).eq("id", editingId)
+      ? await supabase.from("members").update({
+        ...memberDetails,
+        ...(changedIdentity.member_id ? { member_id } : {}),
+        ...(changedIdentity.phone ? { phone } : {}),
+        ...(changedIdentity.email ? { email } : {}),
+      }).eq("id", editingId)
       : await supabase.from("members").insert({ ...payload, is_active: true });
 
     if (result.error) {
@@ -518,6 +531,7 @@ const loadMembers = async () => {
       return;
     }
     setMessage("Member restored.");
+    setDetailMember((current) => current?.id === member.id ? { ...current, deleted_at: null } : current);
     await loadMembers();
   };
 
@@ -571,11 +585,25 @@ const loadMembers = async () => {
   };
   const markPresentToday = async (member: MemberRow) => {
     const attendanceDate = getNepalTodayAdDate();
+    if (!member.is_active || member.deleted_at) {
+      setMessage("Only active members can be marked present.");
+      return;
+    }
+    if (new Date(`${attendanceDate}T00:00:00Z`).getUTCDay() === settings.weekly_closing_day) {
+      setMessage("Attendance is unavailable on the weekly closing day.");
+      return;
+    }
+    if (settings.attendance_holiday_lock) {
+      const holiday = await supabase.from("attendance_holidays").select("id").eq("holiday_date", attendanceDate).maybeSingle();
+      if (holiday.error) { setMessage(holiday.error.message); return; }
+      if (holiday.data) { setMessage("Attendance is locked for today's holiday."); return; }
+    }
     const { error } = await supabase.from("attendance_records").upsert({ member_ref: member.id, attendance_date: attendanceDate, status: "present", deleted_at: null }, { onConflict: "member_ref,attendance_date" });
     if (error) { setMessage(error.message); return; }
-    await supabase.from("members").update({ last_visit_date: attendanceDate }).eq("id", member.id);
     setMessage(`${member.full_name} marked present for today.`);
-    await loadMemberProfile(member);
+    const { data: updatedMember, error: reloadError } = await supabase.from("members").select("*").eq("id", member.id).maybeSingle();
+    if (reloadError) { setMessage(reloadError.message); return; }
+    await loadMemberProfile((updatedMember as MemberRow | null) ?? member);
   };
 
   const toggleMemberActive = async (memberId: number, isActive: boolean) => {
@@ -680,7 +708,12 @@ const loadMembers = async () => {
   const importCsvRows = async () => {
     if (validCsvRows.length === 0 || importing) return;
     setImporting(true);
-    const payload = validCsvRows.map((row) => ({ ...toMemberPayload(row), is_active: false }));
+    // The database defaults newly imported members to inactive. Omit activation
+    // and fields outside the CSV template so updates preserve existing values.
+    const payload = validCsvRows.map((row) => {
+      const { address: _address, photo_url: _photoUrl, ...member } = toMemberPayload(row);
+      return member;
+    });
     const { error } = await supabase.from("members").upsert(payload, { onConflict: "member_id" });
 
     if (error) {
@@ -1175,7 +1208,7 @@ const loadMembers = async () => {
                   <ReceiptText className="h-4 w-4" />
                   Record payment / Create bill
                 </AdminButton>
-                {!detailMember.deleted_at ? <AdminButton type="button" variant="primary" onClick={() => void markPresentToday(detailMember)}><CheckCircle2 className="h-4 w-4"/>Mark Present</AdminButton> : null}
+                {!detailMember.deleted_at ? <AdminButton type="button" variant="primary" disabled={!detailMember.is_active} onClick={() => void markPresentToday(detailMember)}><CheckCircle2 className="h-4 w-4"/>Mark Present</AdminButton> : null}
                 <ToggleSwitch
                   checked={detailMember.is_active}
                   disabled={Boolean(detailMember.deleted_at)}

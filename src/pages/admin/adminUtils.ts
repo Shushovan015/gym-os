@@ -207,16 +207,26 @@ export function getMemberLifecycle(member: Pick<MemberRow, "membership_status" |
   return "active";
 }
 
-export function validateMemberForm(form: MemberForm, existing: MemberRow[], editingId: number | null) {
+export function changedMemberIdentity(form: MemberForm, original: MemberRow | null) {
+  return {
+    member_id: !original || form.member_id.trim() !== original.member_id.trim(),
+    phone: !original || normalizePhone(form.phone) !== normalizePhone(original.phone),
+    email: !original || (form.email ?? "").trim() !== (original.email ?? "").trim(),
+  };
+}
+
+export function validateMemberForm(form: MemberForm, existing: MemberRow[], original: MemberRow | null) {
   const errors: Partial<Record<keyof MemberForm, string>> = {};
   const memberId = form.member_id.trim();
+  const changed = changedMemberIdentity(form, original);
+  const editingId = original?.id;
 
   if (!memberId) errors.member_id = "Member ID is required.";
   if (!form.full_name.trim() || form.full_name.trim().length < 2) {
     errors.full_name = "Full name must be at least 2 characters.";
   }
-  if (!form.phone.trim()) errors.phone = "Phone number is required.";
-  if (!isValidEmail(form.email)) errors.email = "Enter a valid email address.";
+  if (changed.phone && !form.phone.trim()) errors.phone = "Phone number is required.";
+  if (changed.email && !isValidEmail(form.email)) errors.email = "Enter a valid email address.";
   if (!form.membership_type.trim()) errors.membership_type = "Select a plan.";
   if (!membershipStatuses.includes(form.membership_status)) errors.membership_status = "Select a valid status.";
   if (!paymentStatuses.includes(form.payment_status)) errors.payment_status = "Select a valid payment status.";
@@ -227,13 +237,13 @@ export function validateMemberForm(form: MemberForm, existing: MemberRow[], edit
   if (!isValidAdDate(form.payment_due_date)) errors.payment_due_date = "Choose a valid Nepali date.";
 
   const duplicate = existing.find((member) => member.member_id.trim() === memberId && member.id !== editingId);
-  if (duplicate) errors.member_id = "Another member already uses this ID.";
+  if (changed.member_id && duplicate) errors.member_id = "Another member already uses this ID.";
   const normalizedPhone = normalizePhone(form.phone);
   const duplicatePhone = existing.find((member) => normalizePhone(member.phone) === normalizedPhone && member.id !== editingId);
-  if (normalizedPhone && duplicatePhone) errors.phone = `This phone belongs to ${duplicatePhone.full_name}${duplicatePhone.deleted_at ? " in Deleted members" : ""}. Open that existing record instead.`;
+  if (changed.phone && normalizedPhone && duplicatePhone) errors.phone = `This phone belongs to ${duplicatePhone.full_name}${duplicatePhone.deleted_at ? " in Deleted members" : ""}. Open that existing record instead.`;
   const normalizedEmail = form.email?.trim().toLowerCase() ?? "";
   const duplicateEmail = normalizedEmail && existing.find((member) => member.email?.trim().toLowerCase() === normalizedEmail && member.id !== editingId);
-  if (duplicateEmail) errors.email = `This email belongs to ${duplicateEmail.full_name}${duplicateEmail.deleted_at ? " in Deleted members" : ""}. Open that existing record instead.`;
+  if (changed.email && duplicateEmail) errors.email = `This email belongs to ${duplicateEmail.full_name}${duplicateEmail.deleted_at ? " in Deleted members" : ""}. Open that existing record instead.`;
 
   return errors;
 }

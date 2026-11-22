@@ -256,7 +256,6 @@ export default function AdminAttendance() {
         setActiveCell("");
         return;
       }
-      await supabase.from("members").update({ last_visit_date: day.adDate }).eq("id", member.id);
     } else if (existing) {
       const { error } = await supabase.from("attendance_records").update({ deleted_at: new Date().toISOString() }).eq("id", existing.id);
       if (error) {

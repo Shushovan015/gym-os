@@ -32,5 +32,6 @@ export type DraftLine = {
   customerType?: import("./pricing").CustomerType;
   key: string; itemType: InvoiceItemType; productId: number | null; variantId: number | null;
   description: string; quantity: number; unitPriceMinor: number; discountMinor: number;
+  unitCostMinor?: number | null;
   membershipPeriodStart?: string; membershipPeriodEnd?: string;
 };

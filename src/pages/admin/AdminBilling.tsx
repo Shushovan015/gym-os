@@ -301,16 +301,7 @@ export default function AdminBilling() {
   const pageCount = Math.max(1, Math.ceil(invoiceCount / pageSize));
   const pageInvoices = invoices;
   const automaticPrice = majorToMinor(linePrice, settings.currency_minor_unit);
-  const currentLines = lineType === "product" ? lines.map(line => {
-    if (!line.variantId) return line;
-    const variant = variants.find(v => v.id === line.variantId);
-    const product = products.find(p => p.id === line.productId);
-    const currentPrice = productCustomerType === "wholesale"
-      ? variant?.wholesale_price_minor ?? product?.wholesale_price_minor ?? line.unitPriceMinor
-      : variant?.selling_price_minor ?? product?.selling_price_minor ?? line.unitPriceMinor;
-    return { ...line, unitPriceMinor: currentPrice };
-  }) : [];
-  const billLines = lineType === "product" ? currentLines : lineType === "membership_fee_collection" ? [] : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
+  const billLines = lineType === "product" ? lines : lineType === "membership_fee_collection" ? [] : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
   const totals = calculateInvoiceTotals(
     billLines,
     majorToMinor(discount, settings.currency_minor_unit) ?? 0,
@@ -325,6 +316,10 @@ export default function AdminBilling() {
   const effectiveTotals = lineType === "membership_fee_collection"
     ? calculateInvoiceTotals(selectedFeeLines, 0, settings.tax_enabled, settings.tax_rate_basis_points)
     : totals;
+  const collectingMembershipFees = lineType === "membership_fee_collection";
+  const receivedMinor = collectingMembershipFees || !paymentTouched
+    ? effectiveTotals.totalMinor
+    : majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0;
   const openCreate = useCallback((member?: MemberRow, feeId?: number) => {
     setRequestedFeeId(feeId);
     setCustomerMode("member");
@@ -430,7 +425,8 @@ export default function AdminBilling() {
       let unitPriceMinor: number;
       try { unitPriceMinor = inventoryPrice(product, variant, productCustomerType); }
       catch (error) { setCreateError(error instanceof Error ? error.message : "Invalid product price."); return; }
-      setLines((current) => current.some((line) => line.variantId === variant.id && line.customerType === productCustomerType) ? current : [...current, { key: makeKey(), itemType: "product", productId: product.id, variantId: variant.id, description, customerType: productCustomerType, quantity: 1, unitPriceMinor, discountMinor: 0 }]);
+      const unitCostMinor = variant.cost_price_minor ?? product.cost_price_minor ?? null;
+      setLines((current) => current.some((line) => line.variantId === variant.id && line.customerType === productCustomerType) ? current : [...current, { key: makeKey(), itemType: "product", productId: product.id, variantId: variant.id, description, customerType: productCustomerType, quantity: 1, unitPriceMinor, unitCostMinor, discountMinor: 0 }]);
     }
   };
   const createInvoice = async () => {
@@ -557,11 +553,7 @@ export default function AdminBilling() {
         description: line.description,
         quantity: line.quantity,
         unit_price_minor: line.unitPriceMinor,
-        unit_cost_minor: line.variantId
-          ? (variants.find((variant) => variant.id === line.variantId)?.cost_price_minor
-            ?? products.find((product) => product.id === line.productId)?.cost_price_minor
-            ?? 0)
-          : null,
+        unit_cost_minor: line.unitCostMinor ?? null,
         discount_minor: line.discountMinor,
         tax_minor: index === billLines.length - 1 ? totals.taxMinor : 0,
         line_total_minor:
@@ -1081,11 +1073,9 @@ export default function AdminBilling() {
                     {(productResultsFor === productSearch ? variants : [])
                       .map((variant) => {
                         const product = products.find((item) => item.id === variant.product_id);
-                        console.log('variant:', variant.id, 'wholesale:', variant.wholesale_price_minor, 'selling:', variant.selling_price_minor, 'product wholesale:', product?.wholesale_price_minor, 'product selling:', product?.selling_price_minor, 'type:', productCustomerType);
                         const price = productCustomerType === "wholesale"
                           ? variant.wholesale_price_minor ?? product?.wholesale_price_minor
                           : variant.selling_price_minor ?? product?.selling_price_minor;
-                        console.log('computed price:', price, 'key:', `${variant.id}-${productCustomerType}`);
                         const selected = lineVariant === String(variant.id);
                         return (
                           <button
@@ -1281,14 +1271,7 @@ export default function AdminBilling() {
                 >
                   <div>
                     <b className="text-white">{line.description}</b>
-                    <div className="text-xs text-slate-400">{customerTypeLabels[line.customerType ?? "general"]} - {formatMoney(
-                      line.variantId && line.customerType === productCustomerType
-                        ? line.unitPriceMinor
-                        : line.variantId
-                          ? (productCustomerType === "wholesale"
-                            ? (variants.find(v => v.id === line.variantId)?.wholesale_price_minor ?? products.find(p => p.id === line.productId)?.wholesale_price_minor ?? line.unitPriceMinor)
-                            : (variants.find(v => v.id === line.variantId)?.selling_price_minor ?? products.find(p => p.id === line.productId)?.selling_price_minor ?? line.unitPriceMinor))
-                          : line.unitPriceMinor, settings.currency_code)} each</div>
+                    <div className="text-xs text-slate-400">{customerTypeLabels[line.customerType ?? "general"]} - {formatMoney(line.unitPriceMinor, settings.currency_code)} each</div>
                     <div className="mt-2 flex items-center gap-2">
                       <AdminButton
                         className="h-9 min-h-9 w-9 p-0"
@@ -1327,34 +1310,12 @@ export default function AdminBilling() {
                       </AdminButton>
                       <span className="text-xs text-slate-500">
                         ×{" "}
-                        {formatMoney(
-                          line.variantId && line.customerType === productCustomerType
-                            ? line.unitPriceMinor
-                            : line.variantId
-                              ? (productCustomerType === "wholesale"
-                                ? (variants.find(v => v.id === line.variantId)?.wholesale_price_minor ?? products.find(p => p.id === line.productId)?.wholesale_price_minor ?? line.unitPriceMinor)
-                                : (variants.find(v => v.id === line.variantId)?.selling_price_minor ?? products.find(p => p.id === line.productId)?.selling_price_minor ?? line.unitPriceMinor))
-                              : line.unitPriceMinor,
-                          settings.currency_code,
-                        )}
+                        {formatMoney(line.unitPriceMinor, settings.currency_code)}
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <b>
-                      {formatMoney(
-                        Math.round(line.quantity * (
-                          line.variantId && line.customerType === productCustomerType
-                            ? line.unitPriceMinor
-                            : line.variantId
-                              ? (productCustomerType === "wholesale"
-                                ? (variants.find(v => v.id === line.variantId)?.wholesale_price_minor ?? products.find(p => p.id === line.productId)?.wholesale_price_minor ?? line.unitPriceMinor)
-                                : (variants.find(v => v.id === line.variantId)?.selling_price_minor ?? products.find(p => p.id === line.productId)?.selling_price_minor ?? line.unitPriceMinor))
-                              : line.unitPriceMinor
-                        )),
-                        settings.currency_code,
-                      )}
-                    </b>
+                    <b>{formatMoney(Math.round(line.quantity * line.unitPriceMinor), settings.currency_code)}</b>
                     <AdminButton
                       variant="ghost"
                       onClick={() =>
@@ -1371,7 +1332,7 @@ export default function AdminBilling() {
             </div>
           ) : null}
           <div className="space-y-4">
-            <details>
+            {!collectingMembershipFees ? <details>
               <summary className="cursor-pointer text-sm font-bold text-slate-300">
                 Add a discount
               </summary>
@@ -1386,17 +1347,18 @@ export default function AdminBilling() {
                   />
                 </AdminField>
               </div>
-            </details>
+            </details> : null}
             <AdminField label="Amount received">
               <AdminInput
                 type="number"
                 min="0"
                 step="0.01"
-                value={paymentTouched ? paymentAmount : minorToInput(totals.totalMinor, settings.currency_minor_unit)}
+                value={!collectingMembershipFees && paymentTouched ? paymentAmount : minorToInput(receivedMinor, settings.currency_minor_unit)}
+                readOnly={collectingMembershipFees}
                 onChange={(e) => { setPaymentTouched(true); setPaymentAmount(e.target.value); }}
               />
             </AdminField>
-            {(paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : totals.totalMinor) < totals.totalMinor ? (
+            {receivedMinor < effectiveTotals.totalMinor ? (
               <AdminField label="Payment due date">
                 <AdminBsDateInput value={dueDate} onChange={setDueDate} />
               </AdminField>
@@ -1436,8 +1398,8 @@ export default function AdminBilling() {
               <b>{formatMoney(effectiveTotals.taxMinor, settings.currency_code)}</b>
             </div> : null}
             <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-base text-white"><span>Total</span><b>{formatMoney(effectiveTotals.totalMinor, settings.currency_code)}</b></div>
-            <div className="flex justify-between"><span>Received</span><b>{formatMoney(paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : effectiveTotals.totalMinor, settings.currency_code)}</b></div>
-            <div className="flex justify-between"><span>Balance</span><b>{formatMoney(Math.max(0, effectiveTotals.totalMinor - (paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) ?? 0 : effectiveTotals.totalMinor)), settings.currency_code)}</b></div>
+            <div className="flex justify-between"><span>Received</span><b>{formatMoney(receivedMinor, settings.currency_code)}</b></div>
+            <div className="flex justify-between"><span>Balance</span><b>{formatMoney(Math.max(0, effectiveTotals.totalMinor - receivedMinor), settings.currency_code)}</b></div>
           </div>
         </div>
       </AdminDialog>
