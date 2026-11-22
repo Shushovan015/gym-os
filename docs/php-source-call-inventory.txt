@@ -1,0 +1,295 @@
+﻿supabase/functions\send-progress-report\index.ts:2:import { createClient } from "npm:@supabase/supabase-js@2.97.0";
+supabase/functions\send-progress-report\index.ts:40:    const callerClient = createClient(supabaseUrl, anonKey, {
+supabase/functions\send-progress-report\index.ts:43:    const { data: caller, error: callerError } = await callerClient.auth.getUser();
+supabase/functions\send-progress-report\index.ts:51:    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+supabase/functions\send-progress-report\index.ts:53:      .from("profiles")
+supabase/functions\send-progress-report\index.ts:74:      .from("members")
+supabase/functions\send-progress-report\index.ts:86:      .from("member_measurements")
+supabase/functions\send-progress-report\index.ts:92:      .from("member_transformations")
+supabase/functions\send-progress-report\index.ts:123:    const { error: logInsertError } = await adminClient.from("member_report_logs").insert({
+scripts\verify-local.mjs:4:import { createClient } from "@supabase/supabase-js";
+scripts\verify-local.mjs:28:const client = createClient(url, key);
+scripts\verify-local.mjs:47:  const publicRead = await client.from("home_content").select("id").limit(1);
+scripts\verify-local.mjs:50:  const denied = await client.from("members").insert({
+scripts\verify-local.mjs:65:  const profile = await client.from("profiles").select("role").single();
+scripts\verify-local.mjs:68:  await client.auth.signOut();
+scripts\verify-local.mjs:69:  const login = await client.auth.signInWithPassword({ email, password });
+scripts\verify-local.mjs:74:    .from("members")
+scripts\verify-local.mjs:90:    .from("gym-media")
+scripts\verify-local.mjs:91:    .upload(mediaPath, new Uint8Array([137, 80, 78, 71]), { contentType: "image/png" });
+scripts\verify-local.mjs:93:  const publicUrl = client.storage.from("gym-media").getPublicUrl(mediaPath).data.publicUrl;
+scripts\verify-local.mjs:97:  const report = await client.functions.invoke("send-progress-report", { body: { member_id: memberId } });
+scripts\verify-local.mjs:100:  const removeMedia = await client.storage.from("gym-media").remove([mediaPath]);
+scripts\verify-local.mjs:102:  const removeMember = await client.from("members").delete().eq("id", memberId);
+scripts\verify-local.mjs:105:  await client.auth.signOut();
+scripts\verify-local.mjs:110:  await client.storage.from("gym-media").remove([mediaPath]);
+src\Client\supabase.ts:1:import { createClient } from "@supabase/supabase-js";
+src\Client\supabase.ts:12:export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+supabase/functions\send-bill\index.ts:1:import { createClient } from "npm:@supabase/supabase-js@2.97.0";
+supabase/functions\send-bill\index.ts:6:const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
+src\hooks\interactions.test.tsx:17:  await act(async () => root.unmount()); host.remove(); vi.useRealTimers();
+src\hooks\interactions.test.tsx:86:    } finally { style.remove(); }
+supabase/functions\send-bill\handler.ts:1:import type { SupabaseClient } from "npm:@supabase/supabase-js@2.97.0";
+supabase/functions\send-bill\handler.ts:23:      const { data: auth, error: authError } = await db.auth.getUser(token);
+supabase/functions\send-bill\handler.ts:26:      const { data: profile, error: profileError } = await db.from("profiles").select("role").eq("id", auth.user.id).single();
+supabase/functions\send-bill\handler.ts:34:      const { data: delivery, error: deliveryError } = await db.from("invoice_email_deliveries").select("status").eq("invoice_id", id).maybeSingle();
+supabase/functions\send-bill\handler.ts:41:        db.from("invoices").select("*").eq("id", id).single(),
+supabase/functions\send-bill\handler.ts:42:        db.from("admin_settings").select("*").eq("id", 1).single(),
+supabase/functions\send-bill\handler.ts:43:        db.from("invoice_items").select("*").eq("invoice_id", id).order("sort_order").order("id"),
+supabase/functions\send-bill\handler.ts:50:      const { data: member, error: memberError } = await db.from("members").select("email,full_name").eq("id", bill.member_ref).is("deleted_at", null).single();
+supabase/functions\send-bill\handler.ts:61:      const { data: claim, error: claimError } = await db.rpc("claim_gmail_bill", {
+supabase/functions\send-bill\handler.ts:70:        const result = await db.rpc("finish_gmail_bill", { p_invoice_id: id, p_attempt_id: claim.attempt_id, p_status: status, p_message_id: messageId, p_error: error });
+src\features\billing\useNextBillNumber.ts:2:import { supabase } from "@src/Client/supabase";
+src\features\billing\useNextBillNumber.ts:22:      const result = await supabase.rpc("next_bill_number");
+src\pages\ProShop.tsx:154:  const categories = useMemo(() => ["All", ...Array.from(new Set(products.map((item) => item.category).filter(Boolean)))], [products]);
+src\features\billing\useNextBillNumber.test.tsx:8:vi.mock("@src/Client/supabase", () => ({ supabase: { rpc } }));
+src\features\billing\useNextBillNumber.test.tsx:17:afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+src\features\billing\useBillEmail.tsx:3:import { supabase } from "@src/Client/supabase";
+src\features\billing\useBillEmail.tsx:18:  const ids = Array.from(new Set(invoices.map((invoice) => invoice.id))).sort((a, b) => a - b).join(",");
+src\features\billing\useBillEmail.tsx:23:    void supabase.from("invoice_email_deliveries").select("invoice_id,status,error_message")
+src\features\billing\useBillEmail.tsx:48:        supabase.from("members").select("email").eq("id", invoice.member_ref).is("deleted_at", null).maybeSingle(),
+src\features\billing\useBillEmail.tsx:49:        supabase.from("invoice_email_deliveries").select("invoice_id,status,error_message").eq("invoice_id", invoice.id).maybeSingle(),
+src\features\billing\useBillEmail.tsx:66:      const result = await supabase.functions.invoke("send-bill", { body: { invoice_id: invoice.id, expected_email: recipient } });
+src\features\legacy-import\migrationService.test.ts:5:vi.mock('@src/Client/supabase', () => ({
+src\features\legacy-import\migrationService.ts:1:import { supabase } from '@src/Client/supabase';
+src\features\legacy-import\migrationService.ts:31:  const { data: { user }, error: authError } = await supabase.auth.getUser();
+src\features\legacy-import\migrationService.ts:34:  const { error: accessError } = await supabase.rpc('import_legacy_bill', { p_invoice: null });
+src\features\legacy-import\migrationService.ts:119:      const { error } = await supabase.from('members').update({ is_active: true })
+src\features\legacy-import\migrationService.ts:203:    .from('members')
+src\features\legacy-import\migrationService.ts:218:      .from('members')
+src\features\legacy-import\migrationService.ts:230:      .from('members')
+src\features\legacy-import\migrationService.ts:275:      .from('membership_fees')
+src\features\legacy-import\migrationService.ts:293:      .from('membership_fees')
+src\features\legacy-import\migrationService.ts:330:    const { data, error } = await supabase.rpc('import_legacy_bill', {
+src\features\legacy-import\migrationService.ts:342:  const { error } = await supabase.from('import_logs').insert({
+src\routes\AppRoutes.test.tsx:9:vi.mock("@src/Client/supabase", () => ({
+src\pages\admin\AdminLayout.tsx:23:import type { User } from "@supabase/supabase-js";
+src\pages\admin\AdminLayout.tsx:24:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminLayout.tsx:124:    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+src\pages\admin\AdminLayout.tsx:128:    supabase.auth.getSession().then(({ data: sessionData }) => {
+src\pages\admin\AdminLayout.tsx:142:    await supabase.auth.signOut();
+src\pages\admin\AdminTestimonials.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminTestimonials.tsx:44:      .from("testimonials")
+src\pages\admin\AdminTestimonials.tsx:59:    const { error } = await supabase.storage.from("gym-media").upload(path, file);
+src\pages\admin\AdminTestimonials.tsx:62:    return supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
+src\pages\admin\AdminTestimonials.tsx:93:        const { error } = await supabase.from("testimonials").update(payload).eq("id", editingId);
+src\pages\admin\AdminTestimonials.tsx:97:        const { error } = await supabase.from("testimonials").insert(payload);
+src\pages\admin\AdminTestimonials.tsx:130:    const { error } = await supabase.from("testimonials").delete().eq("id", id);
+src\pages\admin\AdminPricing.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminPricing.tsx:135:        .from("pricing_items")
+src\pages\admin\AdminPricing.tsx:139:      supabase.from("pricing_page_content").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminPricing.tsx:187:        const { error } = await supabase.from("pricing_items").update(payload).eq("id", editingId);
+src\pages\admin\AdminPricing.tsx:191:        const { error } = await supabase.from("pricing_items").insert(payload);
+src\pages\admin\AdminPricing.tsx:225:    const { error } = await supabase.from("pricing_items").delete().eq("id", id);
+src\pages\admin\AdminPricing.tsx:269:      .from("pricing_page_content")
+src\pages\admin\AdminInventory.tsx:16:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminInventory.tsx:190:      supabase.rpc("admin_inventory_page", { p_search: debouncedSearch.trim(), p_category: category, p_stock: stockFilter, p_active: activeFilter, p_offset: (page - 1) * pageSize, p_limit: pageSize }),
+src\pages\admin\AdminInventory.tsx:191:      supabase.from("inventory_suppliers").select("*").order("name"),
+src\pages\admin\AdminInventory.tsx:207:    const ids = Array.from(new Set(productIds));
+src\pages\admin\AdminInventory.tsx:211:    const productResult = await supabase.from("shop_items").update({ is_active: active, deactivated_at: active ? null : new Date().toISOString() }).in("id", ids);
+src\pages\admin\AdminInventory.tsx:213:    const variantResult = await supabase.from("inventory_product_variants").update({ is_active: active }).in("product_id", ids);
+src\pages\admin\AdminInventory.tsx:338:          .from("shop_items")
+src\pages\admin\AdminInventory.tsx:343:      : await supabase.from("shop_items").insert(payload).select("id").single();
+src\pages\admin\AdminInventory.tsx:352:        .from("inventory_product_variants")
+src\pages\admin\AdminInventory.tsx:371:        const opening = await supabase.rpc("record_stock_movement", {
+src\pages\admin\AdminInventory.tsx:438:          .from("inventory_product_variants")
+src\pages\admin\AdminInventory.tsx:442:          .from("inventory_product_variants")
+src\pages\admin\AdminInventory.tsx:465:    const { error } = await supabase.rpc("record_stock_movement", {
+src\pages\admin\AdminInventory.tsx:485:          .from("inventory_product_variants")
+src\pages\admin\AdminInventory.tsx:509:    const { error } = await supabase.storage
+src\pages\admin\AdminInventory.tsx:510:      .from("gym-media")
+src\pages\admin\AdminInventory.tsx:511:      .upload(path, file, { upsert: false });
+src\pages\admin\AdminInventory.tsx:516:        image: supabase.storage.from("gym-media").getPublicUrl(path).data
+src\pages\admin\AdminInventory.tsx:525:      .from("stock_movements")
+src\pages\admin\AdminInventory.tsx:535:    const { error } = await supabase.from("inventory_suppliers").insert({
+src\pages\admin\AdminInventory.tsx:686:            <AdminButton variant="danger" onClick={() => setProductsActive(Array.from(selectedProductIds), false)}><Trash2 className="h-4 w-4" />Delete selected</AdminButton>
+src\pages\admin\AdminInventory.tsx:687:            <AdminButton variant="secondary" onClick={() => setProductsActive(Array.from(selectedProductIds), true)}><Archive className="h-4 w-4" />Restore selected</AdminButton>
+src\pages\admin\AdminInventory.tsx:1064:                    {Array.from(
+src\pages\admin\AdminSettings.tsx:4:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminSettings.tsx:70:      .from("admin_settings")
+src\pages\admin\AdminSettings.tsx:144:      .from("admin_settings")
+src\pages\admin\AdminHome.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminHome.tsx:194:      supabase.from("home_content").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminHome.tsx:195:      supabase.from("home_status_items").select("*").order("sort_order", { ascending: true }),
+src\pages\admin\AdminHome.tsx:196:      supabase.from("home_maximus_points").select("*").order("sort_order", { ascending: true }),
+src\pages\admin\AdminHome.tsx:282:    const { error } = await supabase.from("home_content").upsert(payload, { onConflict: "id" });
+src\pages\admin\AdminHome.tsx:293:        .from("home_status_items")
+src\pages\admin\AdminHome.tsx:299:      const { error } = await supabase.from("home_status_items").insert(statusForm);
+src\pages\admin\AdminHome.tsx:322:    await supabase.from("home_status_items").delete().eq("id", id);
+src\pages\admin\AdminHome.tsx:338:        .from("home_maximus_points")
+src\pages\admin\AdminHome.tsx:344:      const { error } = await supabase.from("home_maximus_points").insert(pointForm);
+src\pages\admin\AdminHome.tsx:366:    await supabase.from("home_maximus_points").delete().eq("id", id);
+src\pages\admin\AdminMembers.tsx:18:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminMembers.tsx:312:    let query = supabase.from("members").select("*", { count: "exact" });
+src\pages\admin\AdminMembers.tsx:343:    const summaryRes = await supabase.rpc("admin_member_summary");
+src\pages\admin\AdminMembers.tsx:352:      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminMembers.tsx:353:      supabase.from("pricing_items").select("id,title,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
+src\pages\admin\AdminMembers.tsx:372:  const filterPlanNames = Array.from(new Set([...activePlanNames, ...members.map((member) => member.membership_type)])).sort();
+src\pages\admin\AdminMembers.tsx:373:  const formPlanNames = Array.from(new Set([...activePlanNames, form.membership_type].filter(Boolean)));
+src\pages\admin\AdminMembers.tsx:444:        .from("members")
+src\pages\admin\AdminMembers.tsx:467:      const upload = await supabase.storage.from("gym-media").upload(path, memberPhotoFile);
+src\pages\admin\AdminMembers.tsx:473:      photoUrl = supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
+src\pages\admin\AdminMembers.tsx:478:      ? await supabase.from("members").update({
+src\pages\admin\AdminMembers.tsx:484:      : await supabase.from("members").insert({ ...payload, is_active: true });
+src\pages\admin\AdminMembers.tsx:517:    const { error } = await supabase.from("members").update({ deleted_at: new Date().toISOString() }).eq("id", member.id);
+src\pages\admin\AdminMembers.tsx:528:    const { error } = await supabase.from("members").update({ deleted_at: null }).eq("id", member.id);
+src\pages\admin\AdminMembers.tsx:539:    const ids = Array.from(selectedMemberIds);
+src\pages\admin\AdminMembers.tsx:543:    const { error } = await supabase.from("members").update({ deleted_at: deleted ? new Date().toISOString() : null }).in("id", ids);
+src\pages\admin\AdminMembers.tsx:568:      supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").eq("member_ref", member.id).order("attendance_date", { ascending: false }).limit(60),
+src\pages\admin\AdminMembers.tsx:569:      supabase.rpc("get_member_membership_fee_status", { p_member_id: member.id }),
+src\pages\admin\AdminMembers.tsx:597:      const holiday = await supabase.from("attendance_holidays").select("id").eq("holiday_date", attendanceDate).maybeSingle();
+src\pages\admin\AdminMembers.tsx:601:    const { error } = await supabase.from("attendance_records").upsert({ member_ref: member.id, attendance_date: attendanceDate, status: "present", deleted_at: null }, { onConflict: "member_ref,attendance_date" });
+src\pages\admin\AdminMembers.tsx:604:    const { data: updatedMember, error: reloadError } = await supabase.from("members").select("*").eq("id", member.id).maybeSingle();
+src\pages\admin\AdminMembers.tsx:617:    const { error } = await supabase.rpc("set_member_active_status", {
+src\pages\admin\AdminMembers.tsx:717:    const { error } = await supabase.from("members").upsert(payload, { onConflict: "member_id" });
+src\pages\admin\AdminMembers.tsx:763:      const { data, error } = await supabase.rpc("apply_all_member_action", { p_action: masterAction });
+src\pages\admin\AdminReports.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminReports.tsx:83:      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminReports.tsx:84:      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").gte("created_at", `${startDate}T00:00:00`).lte("created_at", `${endDate}T23:59:59`).range(from, to)),
+src\pages\admin\AdminReports.tsx:85:      fetchAllPages<InvoiceRow>((from, to) => supabase.from("invoices").select("*").gte("billing_date", startDate).lte("billing_date", endDate).range(from, to)),
+src\pages\admin\AdminReports.tsx:86:      fetchAllPages<InvoiceItemRow>((from, to) => supabase.from("invoice_items").select("*,invoices!inner(billing_date,invoice_status)").gte("invoices.billing_date", startDate).lte("invoices.billing_date", endDate).eq("invoices.invoice_status", "issued").range(from, to)),
+src\pages\admin\AdminReports.tsx:87:      fetchAllPages<PaymentRow>((from, to) => supabase.from("invoice_payments").select("id,invoice_id,amount_minor,payment_method,payment_date,is_reversal").gte("payment_date", startDate).lte("payment_date", endDate).range(from, to)),
+src\pages\admin\AdminReports.tsx:88:      fetchAllPages<InventoryProduct>((from, to) => supabase.from("shop_items").select("*").eq("inventory_enabled", true).range(from, to)),
+src\pages\admin\AdminReports.tsx:89:      fetchAllPages<InventoryVariant>((from, to) => supabase.from("inventory_product_variants").select("*").range(from, to)),
+src\pages\admin\AdminReports.tsx:166:    const productRows = Array.from(productMap, ([label, data]) => ({ label, value: data.value, count: data.count, cost: data.cost })).sort((a, b) => b.value - a.value);
+src\pages\admin\AdminReports.tsx:197:      const products = Array.from(detailMap, ([name, detail]) => ({ name, ...detail, profit: detail.revenue - detail.cost })).sort((a, b) => b.revenue - a.revenue);
+src\pages\admin\AdminReports.tsx:216:      categoryRows: Array.from(categoryMap, ([label, data]) => ({ label, ...data })).sort((a, b) => b.value - a.value),
+src\pages\admin\AdminReports.tsx:217:      paymentRows: Array.from(paymentMap, ([label, data]) => ({ label, ...data })).sort((a, b) => b.value - a.value),
+src\pages\admin\AdminReports.tsx:218:      planRows: Array.from(planCollections, ([label, data]) => ({ label, ...data })).sort((a, b) => b.value - a.value),
+src\pages\admin\AdminLogin.tsx:5:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminLogin.tsx:26:      const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+src\pages\admin\AdminHolidayManager.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminHolidayManager.tsx:114:      .from("attendance_holidays")
+src\pages\admin\AdminHolidayManager.tsx:130:      .from("attendance_holiday_templates")
+src\pages\admin\AdminHolidayManager.tsx:177:      .from("attendance_holidays")
+src\pages\admin\AdminHolidayManager.tsx:196:      .from("attendance_holidays")
+src\pages\admin\AdminHolidayManager.tsx:208:    const { error } = await supabase.from("attendance_holidays").delete().eq("id", holiday.id);
+src\pages\admin\AdminHolidayManager.tsx:228:    const { error } = await supabase.from("attendance_holiday_templates").insert({
+src\pages\admin\AdminHolidayManager.tsx:249:      .from("attendance_holiday_templates")
+src\pages\admin\AdminHolidayManager.tsx:260:    const { error } = await supabase.from("attendance_holiday_templates").delete().eq("id", templateId);
+src\pages\admin\AdminHolidayManager.tsx:288:      .from("attendance_holidays")
+src\pages\admin\AdminHolidayManager.tsx:437:            {Array.from({ length: maxDayInTemplateMonth }, (_, i) => i + 1).map((day) => (
+src\pages\admin\BackupRestorePanel.test.tsx:5:vi.mock("@src/Client/supabase", () => ({
+src\pages\admin\StudioLayout.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\StudioLayout.tsx:27:      const { error: signOutError } = await supabase.auth.signOut();
+src\pages\admin\AdminProShop.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminProShop.tsx:133:    () => Array.from(new Set(rows.map((r) => r.category).filter(Boolean))),
+src\pages\admin\AdminProShop.tsx:140:        .from("shop_items")
+src\pages\admin\AdminProShop.tsx:144:      supabase.from("shop_page_content").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminProShop.tsx:196:        const { error } = await supabase.from("shop_items").update(payload).eq("id", editingId);
+src\pages\admin\AdminProShop.tsx:200:        const { error } = await supabase.from("shop_items").insert(payload);
+src\pages\admin\AdminProShop.tsx:234:    const { error } = await supabase.from("shop_items").delete().eq("id", id);
+src\pages\admin\AdminProShop.tsx:284:    const { error } = await supabase.from("shop_page_content").upsert(payload, { onConflict: "id" });
+src\pages\admin\AdminFooter.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminFooter.tsx:42:      .from("footer_content")
+src\pages\admin\AdminFooter.tsx:77:      .from("footer_content")
+src\pages\admin\ProtectedAdminRoute.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\ProtectedAdminRoute.tsx:13:      } = await supabase.auth.getSession();
+src\pages\admin\ProtectedAdminRoute.tsx:22:        .from("profiles")
+src\components\admin\AdminUI.tsx:49:        const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]') ?? []).filter((element) => element.getClientRects().length > 0);
+src\components\admin\AdminUI.tsx:231:const BS_YEARS = Array.from({ length: MAX_BS_YEAR - MIN_BS_YEAR + 1 }, (_, index) => MIN_BS_YEAR + index);
+src\components\admin\AdminUI.tsx:276:      <div className="mt-2 grid grid-cols-7 gap-1">{Array.from({ length: firstOffset }, (_, index) => <span key={`empty-${index}`} />)}{days.map((item) => { const itemBs = `${viewYear}-${String(viewMonth + 1).padStart(2,"0")}-${String(item.bsDay).padStart(2,"0")}`; const selected = itemBs === selectedBs; const today = itemBs === currentBs; return <button key={item.bsDay} type="button" onClick={() => { onChange(item.adDate); setOpen(false); }} className={cx("aspect-square rounded-lg text-sm font-semibold transition", selected ? "bg-amber-400 text-slate-950" : today ? "border border-amber-400 text-amber-200" : "text-slate-300 hover:bg-slate-800")}>{item.bsDay}</button>; })}</div>
+src\components\admin\AdminUI.tsx:298:    <select aria-label="BS day" value={value ? day : ""} required={required} onChange={(event) => event.target.value ? commit(year, month, Number(event.target.value)) : onChange("")} className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"><option value="">Day</option>{Array.from({ length: 32 }, (_, index) => index + 1).map((item) => <option key={item} value={item}>{item}</option>)}</select>
+src\pages\admin\AdminAttendance.tsx:8:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminAttendance.tsx:134:      .from("attendance_records")
+src\pages\admin\AdminAttendance.tsx:139:      .from("attendance_records")
+src\pages\admin\AdminAttendance.tsx:151:        .from("attendance_holidays")
+src\pages\admin\AdminAttendance.tsx:171:    supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle().then(({ data, error }) => {
+src\pages\admin\AdminAttendance.tsx:187:    let query = supabase.from("members").select("*", { count: "exact" }).is("deleted_at", null);
+src\pages\admin\AdminAttendance.tsx:210:    supabase.rpc("get_member_membership_fee_status", { p_member_id: profileMember.id }).then(({ data, error }) => {
+src\pages\admin\AdminAttendance.tsx:245:      const { error } = await supabase.from("attendance_records").upsert(
+src\pages\admin\AdminAttendance.tsx:260:      const { error } = await supabase.from("attendance_records").update({ deleted_at: new Date().toISOString() }).eq("id", existing.id);
+src\pages\admin\AdminAttendance.tsx:274:    const { error } = await supabase.from("attendance_records").update({ deleted_at: null }).eq("id", record.id);
+src\pages\admin\AdminAttendance.tsx:291:      ? supabase.from("attendance_holidays").update({ name }).eq("id", existing.id)
+src\pages\admin\AdminAttendance.tsx:292:      : supabase.from("attendance_holidays").insert({ holiday_date: day.adDate, name });
+src\pages\admin\AdminAttendance.tsx:306:    const { error } = await supabase.from("attendance_holidays").delete().eq("id", existing.id);
+src\pages\admin\AdminTrainers.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminTrainers.tsx:262:      supabase.from("trainers").select("*").order("sort_order", { ascending: true }),
+src\pages\admin\AdminTrainers.tsx:263:      supabase.from("trainer_page_content").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminTrainers.tsx:264:      supabase.from("personal_training_plans").select("*").order("sort_order", { ascending: true }),
+src\pages\admin\AdminTrainers.tsx:289:    const { error } = await supabase.storage.from("gym-media").upload(path, file);
+src\pages\admin\AdminTrainers.tsx:292:    return supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
+src\pages\admin\AdminTrainers.tsx:334:        const { error } = await supabase.from("trainers").update(payload).eq("id", trainerEditingId);
+src\pages\admin\AdminTrainers.tsx:338:        const { error } = await supabase.from("trainers").insert(payload);
+src\pages\admin\AdminTrainers.tsx:388:    await supabase.from("trainers").delete().eq("id", id);
+src\pages\admin\AdminTrainers.tsx:463:      const { error } = await supabase.from("trainer_page_content").upsert(payload, { onConflict: "id" });
+src\pages\admin\AdminTrainers.tsx:494:        const { error } = await supabase.from("personal_training_plans").update(payload).eq("id", planEditingId);
+src\pages\admin\AdminTrainers.tsx:498:        const { error } = await supabase.from("personal_training_plans").insert(payload);
+src\pages\admin\AdminTrainers.tsx:528:    await supabase.from("personal_training_plans").delete().eq("id", id);
+src\components\Pagination.tsx:24:      return Array.from({ length: totalPages }, (_, i) => i + 1);
+src\redux\services\trainers.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\trainers.ts:9:    supabase.from("trainers").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+src\redux\services\trainers.ts:10:    supabase.from("trainer_page_content").select("*").eq("id", 1).maybeSingle(),
+src\redux\services\trainers.ts:11:    supabase.from("personal_training_plans").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+src\pages\admin\AdminContact.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminContact.tsx:118:      supabase.from("contact_content").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminContact.tsx:119:      supabase.from("contact_faqs").select("*").order("sort_order", { ascending: true }),
+src\pages\admin\AdminContact.tsx:156:    const { error } = await supabase.from("contact_content").upsert(payload, { onConflict: "id" });
+src\pages\admin\AdminContact.tsx:165:      await supabase.from("contact_faqs").update(faqForm).eq("id", faqEditId);
+src\pages\admin\AdminContact.tsx:167:      await supabase.from("contact_faqs").insert(faqForm);
+src\pages\admin\AdminContact.tsx:185:    await supabase.from("contact_faqs").delete().eq("id", id);
+src\redux\services\proShop.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\proShop.ts:7:        .from("shop_items")
+src\redux\services\proShop.ts:11:      supabase.from("shop_page_content").select("*").eq("id", 1).maybeSingle(),
+src\redux\services\proShop.ts:12:      supabase.from("public_shop_availability").select("product_id,availability"),
+src\pages\admin\BackupRestorePanel.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\BackupRestorePanel.tsx:10:async function token() { const { data } = await supabase.auth.getSession(); if (!data.session?.access_token) throw new Error("Please sign in again."); return data.session.access_token; }
+src\pages\admin\AdminBilling.tsx:19:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminBilling.tsx:205:      .rpc("get_member_membership_fee_status", { p_member_id: Number(memberId) })
+src\pages\admin\AdminBilling.tsx:238:    let invoiceQuery = supabase.from("invoices").select("*, invoice_email_deliveries(status)", { count: "exact" });
+src\pages\admin\AdminBilling.tsx:250:      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminBilling.tsx:251:      supabase.from("pricing_items").select("id,title,price,is_active").eq("kind", "plan").eq("is_active", true).order("sort_order"),
+src\pages\admin\AdminBilling.tsx:252:      supabase.from("personal_training_plans").select("id,title:name,price:details,is_active").eq("is_active", true).order("sort_order"),
+src\pages\admin\AdminBilling.tsx:262:    const summary = await supabase.rpc("admin_billing_summary");
+src\pages\admin\AdminBilling.tsx:275:    void supabase.from("members").select("*").is("deleted_at", null).eq("is_active", true)
+src\pages\admin\AdminBilling.tsx:288:      const { data, error } = await supabase.rpc("admin_inventory_page", {
+src\pages\admin\AdminBilling.tsx:294:      setProducts(Array.from(new Map(rows.map((row) => [row.product.id, row.product])).values()));
+src\pages\admin\AdminBilling.tsx:363:    void supabase.from("members").select("*").eq("id", redirectedMemberId)
+src\pages\admin\AdminBilling.tsx:479:        const { data, error } = await supabase.rpc("record_membership_fee_payment_multi", {
+src\pages\admin\AdminBilling.tsx:493:        const issuedNumber = data.invoice_number ?? (await supabase.from("invoices")
+src\pages\admin\AdminBilling.tsx:524:        .from("invoices")
+src\pages\admin\AdminBilling.tsx:565:      const itemsRes = await supabase.from("invoice_items").insert(itemPayload);
+src\pages\admin\AdminBilling.tsx:570:      const finalRes = await supabase.rpc("finalize_invoice", {
+src\pages\admin\AdminBilling.tsx:610:        .from("invoice_items")
+src\pages\admin\AdminBilling.tsx:615:        .from("invoice_payments")
+src\pages\admin\AdminBilling.tsx:636:    const { error } = await supabase.rpc("record_invoice_payment", {
+src\pages\admin\AdminBilling.tsx:653:      .from("invoices")
+src\pages\admin\AdminBilling.tsx:661:    const { error } = await supabase.rpc("cancel_invoice", {
+src\pages\admin\AdminBilling.tsx:676:      .from("invoices")
+src\pages\admin\paymentFlow.test.tsx:24:vi.mock("@src/Client/supabase", () => ({
+src\pages\admin\AdminDashboard.tsx:19:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminDashboard.tsx:131:      supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminDashboard.tsx:132:      fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("id, member_id, full_name, email, phone, membership_type, membership_status, start_date, end_date, last_visit_date, payment_status, payment_due_date, notes, created_at, updated_at, deleted_at, is_active, activated_at, deactivated_at").order("updated_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+src\pages\admin\AdminDashboard.tsx:133:      fetchAllPages<AttendanceRow>((from, to) => supabase.from("attendance_records").select("id, member_ref, attendance_date, status, deleted_at").gte("attendance_date", periodStartAd).lte("attendance_date", todayAd).order("attendance_date", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+src\pages\admin\AdminDashboard.tsx:135:        .from("attendance_holidays")
+src\pages\admin\AdminDashboard.tsx:140:      supabase.from("inventory_product_variants").select("current_quantity,low_stock_threshold,product_id").eq("is_active", true),
+src\pages\admin\AdminDashboard.tsx:141:      supabase.from("shop_items").select("id,low_stock_threshold").eq("inventory_enabled", true).eq("is_active", true),
+src\pages\admin\AdminDashboard.tsx:142:      supabase.from("invoices").select("billing_date,invoice_status,paid_minor,balance_minor").neq("invoice_status", "draft").gte("billing_date", periodStartAd),
+src\pages\admin\AdminDashboard.tsx:239:      attendanceLabels: Array.from(attendanceByDate.keys()),
+src\pages\admin\AdminDashboard.tsx:240:      attendanceValues: Array.from(attendanceByDate.values()),
+src\pages\admin\AdminFacilities.tsx:3:import { supabase } from "@src/Client/supabase";
+src\pages\admin\AdminFacilities.tsx:125:        .from("facility_items")
+src\pages\admin\AdminFacilities.tsx:129:      supabase.from("facilities_page_content").select("*").eq("id", 1).maybeSingle(),
+src\pages\admin\AdminFacilities.tsx:152:    const { error } = await supabase.storage.from("gym-media").upload(path, file);
+src\pages\admin\AdminFacilities.tsx:154:    return supabase.storage.from("gym-media").getPublicUrl(path).data.publicUrl;
+src\pages\admin\AdminFacilities.tsx:191:        const { error } = await supabase.from("facility_items").update(payload).eq("id", editingId);
+src\pages\admin\AdminFacilities.tsx:195:        const { error } = await supabase.from("facility_items").insert(payload);
+src\pages\admin\AdminFacilities.tsx:228:    const { error } = await supabase.from("facility_items").delete().eq("id", id);
+src\pages\admin\AdminFacilities.tsx:272:      .from("facilities_page_content")
+src\redux\services\footer.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\footer.ts:5:    .from("footer_content")
+src\redux\services\pricing.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\pricing.ts:7:        .from("pricing_items")
+src\redux\services\pricing.ts:11:      supabase.from("pricing_page_content").select("*").eq("id", 1).maybeSingle(),
+src\redux\services\testimonials.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\testimonials.ts:5:    .from("testimonials")
+src\redux\services\contact.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\contact.ts:6:      .from("contact_content")
+src\redux\services\contact.ts:12:      .from("contact_faqs")
+src\redux\services\home.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\home.ts:6:      supabase.from("home_content").select("*").eq("id", 1).maybeSingle(),
+src\redux\services\home.ts:7:      supabase.from("home_status_items").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+src\redux\services\home.ts:8:      supabase.from("home_maximus_points").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+src\redux\services\facilities.ts:1:import { supabase } from "@src/Client/supabase";
+src\redux\services\facilities.ts:7:        .from("facility_items")
+src\redux\services\facilities.ts:11:      supabase.from("facilities_page_content").select("*").eq("id", 1).maybeSingle(),

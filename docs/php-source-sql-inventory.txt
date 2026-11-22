@@ -1,0 +1,850 @@
+﻿supabase/migrations\202609010012_auth_profile_trigger.sql:5:create or replace function public.handle_new_user()
+supabase/migrations\202609010012_auth_profile_trigger.sql:19:drop trigger if exists on_auth_user_created on auth.users;
+supabase/migrations\202609010012_auth_profile_trigger.sql:20:create trigger on_auth_user_created
+supabase/migrations\202609080004_billing_summary.sql:1:create or replace function public.admin_billing_summary()
+supabase/migrations\202609080004_billing_summary.sql:22:revoke all on function public.admin_billing_summary() from public;
+supabase/migrations\202609080004_billing_summary.sql:23:grant execute on function public.admin_billing_summary() to authenticated;
+supabase/migrations\202609010006_attendance_holiday_templates.sql:2:create table if not exists public.attendance_holiday_templates (
+supabase/migrations\202609010006_attendance_holiday_templates.sql:13:create index if not exists attendance_holiday_templates_month_day_idx
+supabase/migrations\202609010006_attendance_holiday_templates.sql:16:create or replace function public.set_attendance_holiday_templates_updated_at()
+supabase/migrations\202609010006_attendance_holiday_templates.sql:26:drop trigger if exists trg_attendance_holiday_templates_updated_at on public.attendance_holiday_templates;
+supabase/migrations\202609010006_attendance_holiday_templates.sql:27:create trigger trg_attendance_holiday_templates_updated_at
+supabase/migrations\202609010006_attendance_holiday_templates.sql:32:alter table public.attendance_holiday_templates enable row level security;
+supabase/migrations\202609010006_attendance_holiday_templates.sql:34:drop policy if exists attendance_holiday_templates_select_admin on public.attendance_holiday_templates;
+supabase/migrations\202609010006_attendance_holiday_templates.sql:35:create policy attendance_holiday_templates_select_admin
+supabase/migrations\202609010006_attendance_holiday_templates.sql:47:drop policy if exists attendance_holiday_templates_insert_admin on public.attendance_holiday_templates;
+supabase/migrations\202609010006_attendance_holiday_templates.sql:48:create policy attendance_holiday_templates_insert_admin
+supabase/migrations\202609010006_attendance_holiday_templates.sql:60:drop policy if exists attendance_holiday_templates_update_admin on public.attendance_holiday_templates;
+supabase/migrations\202609010006_attendance_holiday_templates.sql:61:create policy attendance_holiday_templates_update_admin
+supabase/migrations\202609010006_attendance_holiday_templates.sql:80:drop policy if exists attendance_holiday_templates_delete_admin on public.attendance_holiday_templates;
+supabase/migrations\202609010006_attendance_holiday_templates.sql:81:create policy attendance_holiday_templates_delete_admin
+supabase/migrations\202609080001_member_address_photo_dynamic_plans.sql:1:alter table public.members
+supabase/migrations\202609080001_member_address_photo_dynamic_plans.sql:2:  add column if not exists address text,
+supabase/migrations\202609080001_member_address_photo_dynamic_plans.sql:3:  add column if not exists photo_url text;
+supabase/migrations\202609080001_member_address_photo_dynamic_plans.sql:7:alter table public.members
+supabase/migrations\202609080001_member_address_photo_dynamic_plans.sql:8:  drop constraint if exists members_membership_type_check;
+supabase/migrations\202609210001_invoice_numbering.sql:2:alter table public.admin_settings
+supabase/migrations\202609210001_invoice_numbering.sql:3:  add column invoice_start_number bigint not null default 1 check (invoice_start_number between 1 and 9007199254740991),
+supabase/migrations\202609210001_invoice_numbering.sql:4:  add column if not exists bill_sender_email text;
+supabase/migrations\202609210001_invoice_numbering.sql:5:create sequence public.invoice_serial_seq as bigint minvalue 1 maxvalue 9007199254740991 no cycle;
+supabase/migrations\202609210001_invoice_numbering.sql:6:revoke all on sequence public.invoice_serial_seq from public, anon, authenticated;
+supabase/migrations\202609210001_invoice_numbering.sql:17:create function public.configure_invoice_start() returns trigger
+supabase/migrations\202609210001_invoice_numbering.sql:30:create trigger configure_invoice_start before insert or update on public.admin_settings
+supabase/migrations\202609210001_invoice_numbering.sql:33:create function public.assign_invoice_number() returns trigger
+supabase/migrations\202609210001_invoice_numbering.sql:58:create trigger assign_invoice_number before insert or update or delete on public.invoices
+supabase/migrations\202609210001_invoice_numbering.sql:60:revoke all on function public.configure_invoice_start() from public, anon, authenticated;
+supabase/migrations\202609210001_invoice_numbering.sql:61:revoke all on function public.assign_invoice_number() from public, anon, authenticated;
+supabase/migrations\202609210001_invoice_numbering.sql:63:CREATE OR REPLACE FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint DEFAULT 0, "p_payment_method" "text" DEFAULT 'cash'::"text", "p_payment_reference" "text" DEFAULT NULL::"text") RETURNS "public"."invoices"
+supabase/migrations\202609020001_scalability_indexes.sql:2:create index if not exists members_updated_at_idx on public.members (updated_at desc);
+supabase/migrations\202609020001_scalability_indexes.sql:3:create index if not exists members_active_name_idx on public.members (full_name) where deleted_at is null;
+supabase/migrations\202609020001_scalability_indexes.sql:4:create index if not exists members_phone_idx on public.members (phone);
+supabase/migrations\202609020001_scalability_indexes.sql:5:create index if not exists members_last_visit_idx on public.members (last_visit_date) where deleted_at is null;
+supabase/migrations\202609020001_scalability_indexes.sql:6:create index if not exists attendance_records_date_live_idx on public.attendance_records (attendance_date desc, member_ref) where deleted_at is null;
+supabase/migrations\202609020001_scalability_indexes.sql:7:create index if not exists attendance_records_member_date_idx on public.attendance_records (member_ref, attendance_date desc);
+supabase/migrations\202609020001_scalability_indexes.sql:8:create index if not exists invoices_billing_date_idx on public.invoices (billing_date desc);
+supabase/migrations\202609020001_scalability_indexes.sql:9:create index if not exists invoices_created_at_idx on public.invoices (created_at desc);
+supabase/migrations\202609020001_scalability_indexes.sql:10:create index if not exists shop_items_inventory_active_idx on public.shop_items (title) where inventory_enabled = true and is_active = true;
+supabase/migrations\202609020001_scalability_indexes.sql:11:create index if not exists inventory_variants_product_active_idx on public.inventory_product_variants (product_id, sku) where is_active = true;
+supabase/migrations\202609010011_gym_media_storage.sql:15:drop policy if exists gym_media_public_read on storage.objects;
+supabase/migrations\202609010011_gym_media_storage.sql:16:create policy gym_media_public_read
+supabase/migrations\202609010011_gym_media_storage.sql:21:drop policy if exists gym_media_admin_insert on storage.objects;
+supabase/migrations\202609010011_gym_media_storage.sql:22:create policy gym_media_admin_insert
+supabase/migrations\202609010011_gym_media_storage.sql:27:drop policy if exists gym_media_admin_update on storage.objects;
+supabase/migrations\202609010011_gym_media_storage.sql:28:create policy gym_media_admin_update
+supabase/migrations\202609010011_gym_media_storage.sql:34:drop policy if exists gym_media_admin_delete on storage.objects;
+supabase/migrations\202609010011_gym_media_storage.sql:35:create policy gym_media_admin_delete
+supabase/migrations\202609080003_invoice_cost_snapshots.sql:1:alter table public.invoice_items
+supabase/migrations\202609080003_invoice_cost_snapshots.sql:2:  add column if not exists unit_cost_minor bigint;
+supabase/migrations\202609080003_invoice_cost_snapshots.sql:4:alter table public.invoice_items
+supabase/migrations\202609080003_invoice_cost_snapshots.sql:5:  add constraint invoice_items_unit_cost_minor_check
+supabase/migrations\202609080003_invoice_cost_snapshots.sql:8:comment on column public.invoice_items.unit_cost_minor is
+supabase/migrations\202609080006_member_summary.sql:1:create or replace function public.admin_member_summary()
+supabase/migrations\202609080006_member_summary.sql:9:revoke all on function public.admin_member_summary() from public;
+supabase/migrations\202609080006_member_summary.sql:10:grant execute on function public.admin_member_summary() to authenticated;
+supabase/migrations\202609210002_bill_email.sql:3:create table if not exists public.invoice_email_deliveries (
+supabase/migrations\202609210002_bill_email.sql:16:alter table public.invoice_email_deliveries enable row level security;
+supabase/migrations\202609210002_bill_email.sql:17:revoke all on public.invoice_email_deliveries from public, anon, authenticated;
+supabase/migrations\202609210002_bill_email.sql:18:grant select(invoice_id,status,recipient_email,sent_at,error_message) on public.invoice_email_deliveries to authenticated;
+supabase/migrations\202609210002_bill_email.sql:19:grant all on public.invoice_email_deliveries to service_role;
+supabase/migrations\202609210002_bill_email.sql:20:drop policy if exists invoice_email_admin_read on public.invoice_email_deliveries;
+supabase/migrations\202609210002_bill_email.sql:21:create policy invoice_email_admin_read on public.invoice_email_deliveries for select to authenticated using (public.is_admin());
+supabase/migrations\202609210002_bill_email.sql:23:create function public.claim_bill_email(p_invoice_id bigint, p_payload jsonb) returns jsonb
+supabase/migrations\202609210002_bill_email.sql:56:create function public.finish_bill_email(p_invoice_id bigint, p_lease_token uuid, p_status text, p_provider_id text default null, p_error text default null) returns void
+supabase/migrations\202609210002_bill_email.sql:65:revoke all on function public.claim_bill_email(bigint,jsonb) from public, anon, authenticated;
+supabase/migrations\202609210002_bill_email.sql:66:revoke all on function public.finish_bill_email(bigint,uuid,text,text,text) from public, anon, authenticated;
+supabase/migrations\202609210002_bill_email.sql:67:grant execute on function public.claim_bill_email(bigint,jsonb) to service_role;
+supabase/migrations\202609210002_bill_email.sql:68:grant execute on function public.finish_bill_email(bigint,uuid,text,text,text) to service_role;
+supabase/migrations\202609270000_nepal_date_helpers.sql:3:CREATE OR REPLACE FUNCTION public.get_nepal_today_ad()
+supabase/migrations\202609270000_nepal_date_helpers.sql:8:GRANT EXECUTE ON FUNCTION public.get_nepal_today_ad() TO anon, authenticated, service_role;
+supabase/migrations\202609080002_nepali_date_display.sql:1:alter table public.admin_settings
+supabase/migrations\202609080002_nepali_date_display.sql:2:  alter column date_display_preference set default 'bs';
+supabase/migrations\202609230001_editable_bill_number.sql:16:create or replace function public.configure_invoice_start() returns trigger
+supabase/migrations\202609230001_editable_bill_number.sql:43:create function public.next_bill_number() returns text
+supabase/migrations\202609230001_editable_bill_number.sql:58:revoke all on function public.next_bill_number() from public,anon;
+supabase/migrations\202609230001_editable_bill_number.sql:59:grant execute on function public.next_bill_number() to authenticated,service_role;
+supabase/migrations\202609230001_editable_bill_number.sql:61:create or replace function public.assign_invoice_number() returns trigger
+supabase/migrations\202609080005_inventory_page.sql:1:create or replace function public.admin_inventory_page(
+supabase/migrations\202609080005_inventory_page.sql:25:revoke all on function public.admin_inventory_page(text,text,text,text,integer,integer) from public;
+supabase/migrations\202609080005_inventory_page.sql:26:grant execute on function public.admin_inventory_page(text,text,text,text,integer,integer) to authenticated;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:2:alter table public.admin_settings add column if not exists bill_sender_email text;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:4:create table if not exists public.invoice_email_deliveries (
+supabase/migrations\202609220001_gmail_bill_delivery.sql:17:alter table public.invoice_email_deliveries
+supabase/migrations\202609220001_gmail_bill_delivery.sql:18:  add column if not exists attempt_id uuid not null default gen_random_uuid(),
+supabase/migrations\202609220001_gmail_bill_delivery.sql:19:  add column if not exists sender_email text not null default '',
+supabase/migrations\202609220001_gmail_bill_delivery.sql:20:  add column if not exists sent_by uuid references auth.users(id) on delete set null,
+supabase/migrations\202609220001_gmail_bill_delivery.sql:21:  add column if not exists started_at timestamptz not null default now(),
+supabase/migrations\202609220001_gmail_bill_delivery.sql:22:  add column if not exists message_id text;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:25:    alter table public.invoice_email_deliveries alter column payload drop not null;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:29:alter table public.invoice_email_deliveries enable row level security;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:30:revoke all on public.invoice_email_deliveries from public, anon, authenticated;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:31:grant select(invoice_id,status,recipient_email,sender_email,sent_at,error_message) on public.invoice_email_deliveries to authenticated;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:32:grant all on public.invoice_email_deliveries to service_role;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:33:drop policy if exists invoice_email_admin_read on public.invoice_email_deliveries;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:34:create policy invoice_email_admin_read on public.invoice_email_deliveries
+supabase/migrations\202609220001_gmail_bill_delivery.sql:37:create function public.claim_gmail_bill(p_invoice_id bigint, p_recipient text, p_sender text, p_admin_id uuid)
+supabase/migrations\202609220001_gmail_bill_delivery.sql:78:create function public.finish_gmail_bill(p_invoice_id bigint,p_attempt_id uuid,p_status text,p_message_id text default null,p_error text default null)
+supabase/migrations\202609220001_gmail_bill_delivery.sql:87:revoke all on function public.claim_gmail_bill(bigint,text,text,uuid) from public, anon, authenticated;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:88:revoke all on function public.finish_gmail_bill(bigint,uuid,text,text,text) from public, anon, authenticated;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:89:grant execute on function public.claim_gmail_bill(bigint,text,text,uuid) to service_role;
+supabase/migrations\202609220001_gmail_bill_delivery.sql:90:grant execute on function public.finish_gmail_bill(bigint,uuid,text,text,text) to service_role;
+supabase/migrations\202610010001_fix_membership_due_date_preservation.sql:6:DROP FUNCTION IF EXISTS public.initialize_membership_fees(bigint);
+supabase/migrations\202610010001_fix_membership_due_date_preservation.sql:8:CREATE OR REPLACE FUNCTION public.initialize_membership_fees(p_member_id bigint)
+supabase/migrations\202610010001_fix_membership_due_date_preservation.sql:94:DROP FUNCTION IF EXISTS public.record_membership_fee_payment_multi(bigint[], text, date, text, text);
+supabase/migrations\202610010001_fix_membership_due_date_preservation.sql:96:CREATE OR REPLACE FUNCTION public.record_membership_fee_payment_multi(
+supabase/migrations\202609220003_merge_billing_compatibility.sql:3:create or replace function public.configure_invoice_start() returns trigger
+supabase/migrations\202609220003_merge_billing_compatibility.sql:19:create or replace function public.assign_invoice_number() returns trigger
+supabase/migrations\202609220003_merge_billing_compatibility.sql:49:CREATE OR REPLACE FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint DEFAULT 0, "p_payment_method" "text" DEFAULT 'cash'::"text", "p_payment_reference" "text" DEFAULT NULL::"text") RETURNS "public"."invoices"
+supabase/migrations\202609220003_merge_billing_compatibility.sql:91:drop function if exists public.claim_bill_email(bigint,jsonb);
+supabase/migrations\202609220003_merge_billing_compatibility.sql:92:drop function if exists public.finish_bill_email(bigint,uuid,text,text,text);
+supabase/migrations\202609220003_merge_billing_compatibility.sql:93:revoke all on function public.claim_gmail_bill(bigint,text,text,uuid) from public, anon, authenticated;
+supabase/migrations\202609220003_merge_billing_compatibility.sql:94:revoke all on function public.finish_gmail_bill(bigint,uuid,text,text,text) from public, anon, authenticated;
+supabase/migrations\202609220003_merge_billing_compatibility.sql:95:grant execute on function public.claim_gmail_bill(bigint,text,text,uuid) to service_role;
+supabase/migrations\202609220003_merge_billing_compatibility.sql:96:grant execute on function public.finish_gmail_bill(bigint,uuid,text,text,text) to service_role;
+supabase/migrations\202609220003_merge_billing_compatibility.sql:100:    alter table public.invoice_email_deliveries alter column payload drop not null;
+supabase/migrations\202610040001_legacy_import_tables.sql:2:CREATE TABLE IF NOT EXISTS public.import_logs (
+supabase/migrations\202610040001_legacy_import_tables.sql:20:ALTER TABLE public.import_logs OWNER TO postgres;
+supabase/migrations\202610040001_legacy_import_tables.sql:22:CREATE INDEX IF NOT EXISTS import_logs_import_date_idx ON public.import_logs (import_date DESC);
+supabase/migrations\202610040001_legacy_import_tables.sql:24:ALTER TABLE public.import_logs ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202610040001_legacy_import_tables.sql:26:CREATE POLICY "import_logs_select_admin" ON public.import_logs FOR SELECT TO authenticated USING (public.is_admin());
+supabase/migrations\202610040001_legacy_import_tables.sql:27:CREATE POLICY "import_logs_insert_admin" ON public.import_logs FOR INSERT TO authenticated WITH CHECK (public.is_admin());
+supabase/migrations\202610040001_legacy_import_tables.sql:29:GRANT ALL ON TABLE public.import_logs TO anon, authenticated, service_role;
+supabase/migrations\202610040001_legacy_import_tables.sql:30:GRANT ALL ON SEQUENCE public.import_logs_id_seq TO anon, authenticated, service_role;
+supabase/migrations\202610040001_legacy_import_tables.sql:33:ALTER TABLE public.members
+supabase/migrations\202610040001_legacy_import_tables.sql:34:ADD COLUMN IF NOT EXISTS legacy_register_id bigint,
+supabase/migrations\202610040001_legacy_import_tables.sql:35:ADD COLUMN IF NOT EXISTS legacy_source text;
+supabase/migrations\202610040001_legacy_import_tables.sql:37:CREATE INDEX IF NOT EXISTS members_legacy_idx ON public.members (legacy_source, legacy_register_id) WHERE legacy_source IS NOT NULL;
+supabase/migrations\202610040001_legacy_import_tables.sql:40:ALTER TABLE public.membership_fees
+supabase/migrations\202610040001_legacy_import_tables.sql:41:ADD COLUMN IF NOT EXISTS legacy_officeregister_id bigint,
+supabase/migrations\202610040001_legacy_import_tables.sql:42:ADD COLUMN IF NOT EXISTS legacy_source text;
+supabase/migrations\202610040001_legacy_import_tables.sql:44:CREATE INDEX IF NOT EXISTS membership_fees_legacy_idx ON public.membership_fees (legacy_source, legacy_officeregister_id) WHERE legacy_source IS NOT NULL;
+supabase/migrations\202610040001_legacy_import_tables.sql:47:ALTER TABLE public.invoices
+supabase/migrations\202610040001_legacy_import_tables.sql:48:ADD COLUMN IF NOT EXISTS legacy_bill_id bigint,
+supabase/migrations\202610040001_legacy_import_tables.sql:49:ADD COLUMN IF NOT EXISTS legacy_source text;
+supabase/migrations\202610040001_legacy_import_tables.sql:51:CREATE INDEX IF NOT EXISTS invoices_legacy_idx ON public.invoices (legacy_source, legacy_bill_id) WHERE legacy_source IS NOT NULL;
+supabase/migrations\202610040001_legacy_import_tables.sql:54:ALTER TABLE public.invoice_payments
+supabase/migrations\202610040001_legacy_import_tables.sql:55:ADD COLUMN IF NOT EXISTS legacy_bill_id bigint,
+supabase/migrations\202610040001_legacy_import_tables.sql:56:ADD COLUMN IF NOT EXISTS legacy_source text;
+supabase/migrations\202610040001_legacy_import_tables.sql:58:CREATE INDEX IF NOT EXISTS invoice_payments_legacy_idx ON public.invoice_payments (legacy_source, legacy_bill_id) WHERE legacy_source IS NOT NULL;
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:20:CREATE OR REPLACE FUNCTION public.sync_member_fee_state(p_member_id bigint)
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:47:CREATE OR REPLACE FUNCTION public.on_member_activated_initialize_fees()
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:55:DROP TRIGGER IF EXISTS member_activated_initialize_fees ON public.members;
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:56:CREATE TRIGGER member_activated_initialize_fees
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:63:CREATE OR REPLACE FUNCTION public.on_member_dates_changed_initialize_fees()
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:73:DROP TRIGGER IF EXISTS member_dates_changed_initialize_fees ON public.members;
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:74:CREATE TRIGGER member_dates_changed_initialize_fees
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:128:CREATE OR REPLACE FUNCTION public.get_member_membership_fee_status(p_member_id bigint)
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:182:GRANT EXECUTE ON FUNCTION public.sync_member_fee_state(bigint) TO anon, authenticated, service_role;
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:183:GRANT EXECUTE ON FUNCTION public.on_member_activated_initialize_fees() TO anon, authenticated, service_role;
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:184:GRANT EXECUTE ON FUNCTION public.on_member_dates_changed_initialize_fees() TO anon, authenticated, service_role;
+supabase/migrations\202611060001_fix_member_fee_initialization.sql:185:GRANT EXECUTE ON FUNCTION public.get_member_membership_fee_status(bigint) TO anon, authenticated, service_role;
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:12:ALTER TABLE public.membership_fees ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:14:DROP POLICY IF EXISTS "membership_fees_select_admin" ON public.membership_fees;
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:15:CREATE POLICY "membership_fees_select_admin" ON public.membership_fees
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:19:DROP POLICY IF EXISTS "membership_fees_insert_admin" ON public.membership_fees;
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:20:CREATE POLICY "membership_fees_insert_admin" ON public.membership_fees
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:24:DROP POLICY IF EXISTS "membership_fees_update_admin" ON public.membership_fees;
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:25:CREATE POLICY "membership_fees_update_admin" ON public.membership_fees
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:30:DROP POLICY IF EXISTS "membership_fees_delete_admin" ON public.membership_fees;
+supabase/migrations\202611060002_membership_fees_rls_policies.sql:31:CREATE POLICY "membership_fees_delete_admin" ON public.membership_fees
+supabase/migrations\202610050001_member_active_status.sql:4:ALTER TABLE public.members
+supabase/migrations\202610050001_member_active_status.sql:5:ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT false;
+supabase/migrations\202610050001_member_active_status.sql:8:ALTER TABLE public.members
+supabase/migrations\202610050001_member_active_status.sql:9:ADD COLUMN IF NOT EXISTS activated_at timestamp with time zone,
+supabase/migrations\202610050001_member_active_status.sql:10:ADD COLUMN IF NOT EXISTS deactivated_at timestamp with time zone;
+supabase/migrations\202610050001_member_active_status.sql:13:CREATE INDEX IF NOT EXISTS members_is_active_idx ON public.members (is_active) WHERE is_active = true;
+supabase/migrations\202610050001_member_active_status.sql:14:CREATE INDEX IF NOT EXISTS members_is_active_all_idx ON public.members (is_active);
+supabase/migrations\202610050001_member_active_status.sql:17:CREATE TABLE IF NOT EXISTS public.member_status_history (
+supabase/migrations\202610050001_member_active_status.sql:27:ALTER TABLE public.member_status_history OWNER TO postgres;
+supabase/migrations\202610050001_member_active_status.sql:29:CREATE INDEX IF NOT EXISTS member_status_history_member_id_idx ON public.member_status_history (member_id);
+supabase/migrations\202610050001_member_active_status.sql:30:CREATE INDEX IF NOT EXISTS member_status_history_changed_at_idx ON public.member_status_history (changed_at DESC);
+supabase/migrations\202610050001_member_active_status.sql:32:ALTER TABLE public.member_status_history ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202610050001_member_active_status.sql:34:CREATE POLICY "member_status_history_select_admin" ON public.member_status_history FOR SELECT TO authenticated USING (public.is_admin());
+supabase/migrations\202610050001_member_active_status.sql:35:CREATE POLICY "member_status_history_insert_admin" ON public.member_status_history FOR INSERT TO authenticated WITH CHECK (public.is_admin());
+supabase/migrations\202610050001_member_active_status.sql:37:GRANT ALL ON TABLE public.member_status_history TO anon, authenticated, service_role;
+supabase/migrations\202610050001_member_active_status.sql:38:GRANT ALL ON SEQUENCE public.member_status_history_id_seq TO anon, authenticated, service_role;
+supabase/migrations\202610050001_member_active_status.sql:41:CREATE OR REPLACE FUNCTION public.set_member_active_status(
+supabase/migrations\202610050001_member_active_status.sql:94:ALTER FUNCTION public.set_member_active_status(bigint, boolean, uuid, text) OWNER TO postgres;
+supabase/migrations\202610050001_member_active_status.sql:96:GRANT EXECUTE ON FUNCTION public.set_member_active_status(bigint, boolean, uuid, text) TO anon, authenticated, service_role;
+supabase/migrations\202610050001_member_active_status.sql:106:DROP FUNCTION IF EXISTS public.initialize_membership_fees(bigint);
+supabase/migrations\202610050001_member_active_status.sql:108:CREATE OR REPLACE FUNCTION public.initialize_membership_fees(p_member_id bigint)
+supabase/migrations\202610050001_member_active_status.sql:189:DROP FUNCTION IF EXISTS public.update_overdue_membership_fees();
+supabase/migrations\202610050001_member_active_status.sql:191:CREATE OR REPLACE FUNCTION public.update_overdue_membership_fees()
+supabase/migrations\202610050001_member_active_status.sql:227:DROP FUNCTION IF EXISTS public.get_member_membership_fee_status(bigint);
+supabase/migrations\202610050001_member_active_status.sql:229:CREATE OR REPLACE FUNCTION public.get_member_membership_fee_status(p_member_id bigint)
+supabase/migrations\202610050001_member_active_status.sql:297:CREATE OR REPLACE FUNCTION public.prevent_inactive_attendance()
+supabase/migrations\202610050001_member_active_status.sql:309:CREATE TRIGGER attendance_prevent_inactive
+supabase/migrations\202610050001_member_active_status.sql:314:DROP FUNCTION IF EXISTS public.record_membership_fee_payment(
+supabase/migrations\202610050001_member_active_status.sql:318:CREATE OR REPLACE FUNCTION public.record_membership_fee_payment(
+supabase/migrations\202610050001_member_active_status.sql:393:GRANT EXECUTE ON FUNCTION public.set_member_active_status(bigint, boolean, uuid, text) TO anon, authenticated, service_role;
+supabase/migrations\202610050001_member_active_status.sql:394:GRANT EXECUTE ON FUNCTION public.initialize_membership_fees(bigint) TO anon, authenticated, service_role;
+supabase/migrations\202610050001_member_active_status.sql:395:GRANT EXECUTE ON FUNCTION public.update_overdue_membership_fees() TO anon, authenticated, service_role;
+supabase/migrations\202610050001_member_active_status.sql:396:GRANT EXECUTE ON FUNCTION public.get_member_membership_fee_status(bigint) TO anon, authenticated, service_role;
+supabase/migrations\202610050001_member_active_status.sql:397:GRANT EXECUTE ON FUNCTION public.record_membership_fee_payment(bigint, bigint, text, date, text, text) TO anon, authenticated, service_role;
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:2:alter table public.shop_items add column wholesale_price_minor bigint;
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:4:alter table public.shop_items alter column wholesale_price_minor set not null;
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:5:alter table public.shop_items add constraint shop_items_wholesale_price_check
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:8:alter table public.inventory_product_variants add column wholesale_price_minor bigint;
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:11:alter table public.inventory_product_variants add constraint variants_wholesale_price_check
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:15:create function public.default_inventory_wholesale() returns trigger language plpgsql
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:21:create trigger shop_items_default_wholesale before insert on public.shop_items
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:24:alter table public.shop_items add constraint shop_items_safe_prices
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:26:alter table public.inventory_product_variants add constraint variants_safe_prices
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:30:alter table public.invoice_items add column customer_type text;
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:32:create function public.default_invoice_customer_type() returns trigger language plpgsql
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:38:create trigger invoice_items_default_customer_type before insert on public.invoice_items
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:40:alter table public.invoice_items add constraint invoice_items_customer_type_check check (
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:44:comment on column public.invoice_items.customer_type is 'Customer pricing category saved with the unit_price_minor snapshot; catalog edits never reprice existing lines.';
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:48:create function public.validate_bill_number() returns trigger language plpgsql security definer
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:66:create trigger invoices_validate_bill_number before insert or update of invoice_number on public.invoices
+supabase/migrations\202609220002_inventory_pricing_bill_numbers.sql:69:CREATE OR REPLACE FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint DEFAULT 0, "p_payment_method" "text" DEFAULT 'cash'::"text", "p_payment_reference" "text" DEFAULT NULL::"text") RETURNS "public"."invoices"
+supabase/migrations\202609270001_membership_fee_tracking.sql:5:CREATE TABLE IF NOT EXISTS public.membership_fees (
+supabase/migrations\202609270001_membership_fee_tracking.sql:26:ALTER TABLE public.membership_fees OWNER TO postgres;
+supabase/migrations\202609270001_membership_fee_tracking.sql:28:CREATE INDEX IF NOT EXISTS membership_fees_member_id_idx ON public.membership_fees (member_id);
+supabase/migrations\202609270001_membership_fee_tracking.sql:29:CREATE INDEX IF NOT EXISTS membership_fees_billing_month_idx ON public.membership_fees (billing_month);
+supabase/migrations\202609270001_membership_fee_tracking.sql:30:CREATE INDEX IF NOT EXISTS membership_fees_status_idx ON public.membership_fees (status);
+supabase/migrations\202609270001_membership_fee_tracking.sql:31:CREATE INDEX IF NOT EXISTS membership_fees_due_date_idx ON public.membership_fees (due_date);
+supabase/migrations\202609270001_membership_fee_tracking.sql:34:CREATE OR REPLACE FUNCTION public.next_month_first_day(p_date date)
+supabase/migrations\202609270001_membership_fee_tracking.sql:40:CREATE OR REPLACE FUNCTION public.add_months_preserving_day(p_date date, p_months integer)
+supabase/migrations\202609270001_membership_fee_tracking.sql:60:CREATE OR REPLACE FUNCTION public.initialize_membership_fees(p_member_id bigint)
+supabase/migrations\202609270001_membership_fee_tracking.sql:138:CREATE OR REPLACE FUNCTION public.record_membership_fee_payment(
+supabase/migrations\202609270001_membership_fee_tracking.sql:208:CREATE OR REPLACE FUNCTION public.update_overdue_membership_fees()
+supabase/migrations\202609270001_membership_fee_tracking.sql:241:CREATE OR REPLACE FUNCTION public.get_membership_fee_summary(p_member_id bigint)
+supabase/migrations\202609270001_membership_fee_tracking.sql:284:CREATE OR REPLACE FUNCTION public.record_membership_fee_payment_multi(
+supabase/migrations\202609270001_membership_fee_tracking.sql:539:CREATE OR REPLACE FUNCTION public.get_member_membership_fee_status(p_member_id bigint)
+supabase/migrations\202609270001_membership_fee_tracking.sql:587:CREATE OR REPLACE FUNCTION public.set_membership_fees_updated_at()
+supabase/migrations\202609270001_membership_fee_tracking.sql:594:CREATE TRIGGER membership_fees_updated_at
+supabase/migrations\202609270001_membership_fee_tracking.sql:599:GRANT ALL ON TABLE public.membership_fees TO anon;
+supabase/migrations\202609270001_membership_fee_tracking.sql:600:GRANT ALL ON TABLE public.membership_fees TO authenticated;
+supabase/migrations\202609270001_membership_fee_tracking.sql:601:GRANT ALL ON TABLE public.membership_fees TO service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:602:GRANT ALL ON SEQUENCE public.membership_fees_id_seq TO anon;
+supabase/migrations\202609270001_membership_fee_tracking.sql:603:GRANT ALL ON SEQUENCE public.membership_fees_id_seq TO authenticated;
+supabase/migrations\202609270001_membership_fee_tracking.sql:604:GRANT ALL ON SEQUENCE public.membership_fees_id_seq TO service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:606:GRANT EXECUTE ON FUNCTION public.next_month_first_day(date) TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:607:GRANT EXECUTE ON FUNCTION public.add_months_preserving_day(date, integer) TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:608:GRANT EXECUTE ON FUNCTION public.initialize_membership_fees(bigint) TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:609:GRANT EXECUTE ON FUNCTION public.record_membership_fee_payment(bigint, bigint, text, date, text, text) TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:610:GRANT EXECUTE ON FUNCTION public.record_membership_fee_payment_multi(bigint[], text, date, text, text) TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:611:GRANT EXECUTE ON FUNCTION public.update_overdue_membership_fees() TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:612:GRANT EXECUTE ON FUNCTION public.get_membership_fee_summary(bigint) TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:613:GRANT EXECUTE ON FUNCTION public.get_member_membership_fee_status(bigint) TO anon, authenticated, service_role;
+supabase/migrations\202609270001_membership_fee_tracking.sql:616:CREATE OR REPLACE FUNCTION public.on_member_created()
+supabase/migrations\202609270001_membership_fee_tracking.sql:624:CREATE TRIGGER member_created_initialize_fees
+supabase/migrations\202611210002_bulk_member_management.sql:1:create function public.apply_all_member_action(p_action text)
+supabase/migrations\202611210002_bulk_member_management.sql:42:revoke all on function public.apply_all_member_action(text) from public, anon;
+supabase/migrations\202611210002_bulk_member_management.sql:43:grant execute on function public.apply_all_member_action(text) to authenticated;
+supabase/migrations\202611210002_bulk_member_management.sql:45:create or replace function public.admin_member_summary()
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:2:drop policy if exists profiles_update_own on public.profiles;
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:3:revoke update on table public.profiles from public, anon, authenticated;
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:6:revoke execute on function public.initialize_membership_fees(bigint)
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:8:revoke execute on function public.sync_member_fee_state(bigint)
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:12:alter function public.get_membership_fee_summary(bigint) security invoker;
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:13:alter function public.get_member_membership_fee_status(bigint) security invoker;
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:14:revoke execute on function public.get_membership_fee_summary(bigint)
+supabase/migrations\202611210001_restrict_privileged_browser_access.sql:16:revoke execute on function public.get_member_membership_fee_status(bigint)
+supabase/migrations\202608310000_cloud_public_baseline.sql:18:CREATE SCHEMA IF NOT EXISTS "public";
+supabase/migrations\202608310000_cloud_public_baseline.sql:21:ALTER SCHEMA "public" OWNER TO "pg_database_owner";
+supabase/migrations\202608310000_cloud_public_baseline.sql:24:COMMENT ON SCHEMA "public" IS 'standard public schema';
+supabase/migrations\202608310000_cloud_public_baseline.sql:32:CREATE TABLE IF NOT EXISTS "public"."invoices" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:75:ALTER TABLE "public"."invoices" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:78:CREATE OR REPLACE FUNCTION "public"."cancel_invoice"("p_invoice_id" bigint, "p_reason" "text") RETURNS "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:102:ALTER FUNCTION "public"."cancel_invoice"("p_invoice_id" bigint, "p_reason" "text") OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:105:CREATE OR REPLACE FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint DEFAULT 0, "p_payment_method" "text" DEFAULT 'cash'::"text", "p_payment_reference" "text" DEFAULT NULL::"text") RETURNS "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:148:ALTER FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint, "p_payment_method" "text", "p_payment_reference" "text") OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:151:CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
+supabase/migrations\202608310000_cloud_public_baseline.sql:164:ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:167:CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
+supabase/migrations\202608310000_cloud_public_baseline.sql:173:ALTER FUNCTION "public"."is_admin"() OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:176:CREATE OR REPLACE FUNCTION "public"."recalculate_invoice_payment_state"("p_invoice_id" bigint) RETURNS "void"
+supabase/migrations\202608310000_cloud_public_baseline.sql:191:ALTER FUNCTION "public"."recalculate_invoice_payment_state"("p_invoice_id" bigint) OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:194:CREATE TABLE IF NOT EXISTS "public"."invoice_payments" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:211:ALTER TABLE "public"."invoice_payments" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:214:CREATE OR REPLACE FUNCTION "public"."record_invoice_payment"("p_invoice_id" bigint, "p_amount_minor" bigint, "p_payment_method" "text", "p_payment_date" "date" DEFAULT NULL::"date", "p_reference" "text" DEFAULT NULL::"text", "p_notes" "text" DEFAULT NULL::"text") RETURNS "public"."invoice_payments"
+supabase/migrations\202608310000_cloud_public_baseline.sql:234:ALTER FUNCTION "public"."record_invoice_payment"("p_invoice_id" bigint, "p_amount_minor" bigint, "p_payment_method" "text", "p_payment_date" "date", "p_reference" "text", "p_notes" "text") OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:237:CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:255:ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:258:CREATE OR REPLACE FUNCTION "public"."record_stock_movement"("p_variant_id" bigint, "p_movement_type" "text", "p_quantity_delta" numeric, "p_reference" "text" DEFAULT NULL::"text", "p_notes" "text" DEFAULT NULL::"text", "p_supplier_id" bigint DEFAULT NULL::bigint) RETURNS "public"."stock_movements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:278:ALTER FUNCTION "public"."record_stock_movement"("p_variant_id" bigint, "p_movement_type" "text", "p_quantity_delta" numeric, "p_reference" "text", "p_notes" "text", "p_supplier_id" bigint) OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:281:CREATE OR REPLACE FUNCTION "public"."set_admin_settings_updated_at"() RETURNS "trigger"
+supabase/migrations\202608310000_cloud_public_baseline.sql:291:ALTER FUNCTION "public"."set_admin_settings_updated_at"() OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:294:CREATE OR REPLACE FUNCTION "public"."set_attendance_holidays_updated_at"() RETURNS "trigger"
+supabase/migrations\202608310000_cloud_public_baseline.sql:304:ALTER FUNCTION "public"."set_attendance_holidays_updated_at"() OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:307:CREATE OR REPLACE FUNCTION "public"."set_attendance_records_updated_at"() RETURNS "trigger"
+supabase/migrations\202608310000_cloud_public_baseline.sql:317:ALTER FUNCTION "public"."set_attendance_records_updated_at"() OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:320:CREATE OR REPLACE FUNCTION "public"."set_inventory_billing_updated_at"() RETURNS "trigger"
+supabase/migrations\202608310000_cloud_public_baseline.sql:325:ALTER FUNCTION "public"."set_inventory_billing_updated_at"() OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:328:CREATE OR REPLACE FUNCTION "public"."set_members_updated_at"() RETURNS "trigger"
+supabase/migrations\202608310000_cloud_public_baseline.sql:338:ALTER FUNCTION "public"."set_members_updated_at"() OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:341:CREATE TABLE IF NOT EXISTS "public"."admin_settings" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:378:ALTER TABLE "public"."admin_settings" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:381:CREATE TABLE IF NOT EXISTS "public"."attendance_holidays" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:390:ALTER TABLE "public"."attendance_holidays" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:393:ALTER TABLE "public"."attendance_holidays" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:404:CREATE TABLE IF NOT EXISTS "public"."attendance_records" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:420:ALTER TABLE "public"."attendance_records" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:423:ALTER TABLE "public"."attendance_records" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:434:CREATE TABLE IF NOT EXISTS "public"."contact_content" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:469:ALTER TABLE "public"."contact_content" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:472:CREATE TABLE IF NOT EXISTS "public"."contact_faqs" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:482:ALTER TABLE "public"."contact_faqs" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:485:ALTER TABLE "public"."contact_faqs" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:496:CREATE TABLE IF NOT EXISTS "public"."facilities_page_content" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:519:ALTER TABLE "public"."facilities_page_content" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:522:CREATE TABLE IF NOT EXISTS "public"."facility_items" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:536:ALTER TABLE "public"."facility_items" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:539:ALTER TABLE "public"."facility_items" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:550:CREATE TABLE IF NOT EXISTS "public"."footer_content" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:568:ALTER TABLE "public"."footer_content" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:571:CREATE TABLE IF NOT EXISTS "public"."home_content" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:606:ALTER TABLE "public"."home_content" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:609:CREATE TABLE IF NOT EXISTS "public"."home_maximus_points" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:617:ALTER TABLE "public"."home_maximus_points" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:620:ALTER TABLE "public"."home_maximus_points" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:631:CREATE TABLE IF NOT EXISTS "public"."home_status_items" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:640:ALTER TABLE "public"."home_status_items" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:643:ALTER TABLE "public"."home_status_items" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:654:CREATE TABLE IF NOT EXISTS "public"."inventory_product_variants" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:676:ALTER TABLE "public"."inventory_product_variants" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:679:ALTER TABLE "public"."inventory_product_variants" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:690:CREATE TABLE IF NOT EXISTS "public"."inventory_suppliers" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:704:ALTER TABLE "public"."inventory_suppliers" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:707:ALTER TABLE "public"."inventory_suppliers" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:718:CREATE TABLE IF NOT EXISTS "public"."invoice_items" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:745:ALTER TABLE "public"."invoice_items" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:748:ALTER TABLE "public"."invoice_items" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:759:CREATE TABLE IF NOT EXISTS "public"."invoice_number_sequences" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:767:ALTER TABLE "public"."invoice_number_sequences" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:770:ALTER TABLE "public"."invoice_payments" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:781:ALTER TABLE "public"."invoices" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:792:CREATE TABLE IF NOT EXISTS "public"."member_measurements" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:808:ALTER TABLE "public"."member_measurements" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:811:ALTER TABLE "public"."member_measurements" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:822:CREATE TABLE IF NOT EXISTS "public"."member_report_logs" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:835:ALTER TABLE "public"."member_report_logs" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:838:ALTER TABLE "public"."member_report_logs" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:849:CREATE TABLE IF NOT EXISTS "public"."member_transformations" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:860:ALTER TABLE "public"."member_transformations" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:863:ALTER TABLE "public"."member_transformations" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:874:CREATE TABLE IF NOT EXISTS "public"."members" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:897:ALTER TABLE "public"."members" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:900:ALTER TABLE "public"."members" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:911:CREATE TABLE IF NOT EXISTS "public"."personal_training_plans" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:922:ALTER TABLE "public"."personal_training_plans" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:925:ALTER TABLE "public"."personal_training_plans" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:936:CREATE TABLE IF NOT EXISTS "public"."pricing_items" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:952:ALTER TABLE "public"."pricing_items" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:955:ALTER TABLE "public"."pricing_items" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:966:CREATE TABLE IF NOT EXISTS "public"."pricing_page_content" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:992:ALTER TABLE "public"."pricing_page_content" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:995:CREATE TABLE IF NOT EXISTS "public"."profiles" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1004:ALTER TABLE "public"."profiles" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:1007:CREATE TABLE IF NOT EXISTS "public"."shop_items" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1037:ALTER TABLE "public"."shop_items" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:1040:CREATE OR REPLACE VIEW "public"."public_shop_availability" AS
+supabase/migrations\202608310000_cloud_public_baseline.sql:1057:ALTER VIEW "public"."public_shop_availability" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:1060:ALTER TABLE "public"."shop_items" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1071:CREATE TABLE IF NOT EXISTS "public"."shop_page_content" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1098:ALTER TABLE "public"."shop_page_content" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:1101:ALTER TABLE "public"."stock_movements" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1112:CREATE TABLE IF NOT EXISTS "public"."testimonials" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1124:ALTER TABLE "public"."testimonials" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:1127:ALTER TABLE "public"."testimonials" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1138:CREATE TABLE IF NOT EXISTS "public"."trainer_page_content" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1161:ALTER TABLE "public"."trainer_page_content" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:1164:CREATE TABLE IF NOT EXISTS "public"."trainers" (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1179:ALTER TABLE "public"."trainers" OWNER TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:1182:ALTER TABLE "public"."trainers" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+supabase/migrations\202608310000_cloud_public_baseline.sql:1193:ALTER TABLE ONLY "public"."admin_settings"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1194:    ADD CONSTRAINT "admin_settings_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1198:ALTER TABLE ONLY "public"."attendance_holidays"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1199:    ADD CONSTRAINT "attendance_holidays_holiday_date_key" UNIQUE ("holiday_date");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1203:ALTER TABLE ONLY "public"."attendance_holidays"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1204:    ADD CONSTRAINT "attendance_holidays_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1208:ALTER TABLE ONLY "public"."attendance_records"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1209:    ADD CONSTRAINT "attendance_records_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1213:ALTER TABLE ONLY "public"."attendance_records"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1214:    ADD CONSTRAINT "attendance_records_unique_member_date" UNIQUE ("member_ref", "attendance_date");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1218:ALTER TABLE ONLY "public"."contact_content"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1219:    ADD CONSTRAINT "contact_content_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1223:ALTER TABLE ONLY "public"."contact_faqs"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1224:    ADD CONSTRAINT "contact_faqs_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1228:ALTER TABLE ONLY "public"."facilities_page_content"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1229:    ADD CONSTRAINT "facilities_page_content_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1233:ALTER TABLE ONLY "public"."facility_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1234:    ADD CONSTRAINT "facility_items_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1238:ALTER TABLE ONLY "public"."footer_content"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1239:    ADD CONSTRAINT "footer_content_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1243:ALTER TABLE ONLY "public"."home_content"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1244:    ADD CONSTRAINT "home_content_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1248:ALTER TABLE ONLY "public"."home_maximus_points"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1249:    ADD CONSTRAINT "home_maximus_points_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1253:ALTER TABLE ONLY "public"."home_status_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1254:    ADD CONSTRAINT "home_status_items_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1258:ALTER TABLE ONLY "public"."inventory_product_variants"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1259:    ADD CONSTRAINT "inventory_product_variants_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1263:ALTER TABLE ONLY "public"."inventory_suppliers"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1264:    ADD CONSTRAINT "inventory_suppliers_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1268:ALTER TABLE ONLY "public"."inventory_product_variants"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1269:    ADD CONSTRAINT "inventory_variant_barcode_unique" UNIQUE ("barcode");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1273:ALTER TABLE ONLY "public"."inventory_product_variants"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1274:    ADD CONSTRAINT "inventory_variant_sku_unique" UNIQUE ("sku");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1278:ALTER TABLE ONLY "public"."invoice_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1279:    ADD CONSTRAINT "invoice_items_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1283:ALTER TABLE ONLY "public"."invoice_number_sequences"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1284:    ADD CONSTRAINT "invoice_number_sequences_pkey" PRIMARY KEY ("sequence_year");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1288:ALTER TABLE ONLY "public"."invoice_payments"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1289:    ADD CONSTRAINT "invoice_payments_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1293:ALTER TABLE ONLY "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1294:    ADD CONSTRAINT "invoices_invoice_number_key" UNIQUE ("invoice_number");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1298:ALTER TABLE ONLY "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1299:    ADD CONSTRAINT "invoices_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1303:ALTER TABLE ONLY "public"."member_measurements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1304:    ADD CONSTRAINT "member_measurements_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1308:ALTER TABLE ONLY "public"."member_report_logs"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1309:    ADD CONSTRAINT "member_report_logs_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1313:ALTER TABLE ONLY "public"."member_transformations"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1314:    ADD CONSTRAINT "member_transformations_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1318:ALTER TABLE ONLY "public"."members"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1319:    ADD CONSTRAINT "members_member_id_key" UNIQUE ("member_id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1323:ALTER TABLE ONLY "public"."members"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1324:    ADD CONSTRAINT "members_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1328:ALTER TABLE ONLY "public"."personal_training_plans"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1329:    ADD CONSTRAINT "personal_training_plans_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1333:ALTER TABLE ONLY "public"."pricing_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1334:    ADD CONSTRAINT "pricing_items_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1338:ALTER TABLE ONLY "public"."pricing_page_content"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1339:    ADD CONSTRAINT "pricing_page_content_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1343:ALTER TABLE ONLY "public"."profiles"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1344:    ADD CONSTRAINT "profiles_email_key" UNIQUE ("email");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1348:ALTER TABLE ONLY "public"."profiles"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1349:    ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1353:ALTER TABLE ONLY "public"."shop_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1354:    ADD CONSTRAINT "shop_items_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1358:ALTER TABLE ONLY "public"."shop_page_content"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1359:    ADD CONSTRAINT "shop_page_content_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1363:ALTER TABLE ONLY "public"."stock_movements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1364:    ADD CONSTRAINT "stock_movements_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1368:ALTER TABLE ONLY "public"."testimonials"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1369:    ADD CONSTRAINT "testimonials_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1373:ALTER TABLE ONLY "public"."trainer_page_content"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1374:    ADD CONSTRAINT "trainer_page_content_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1378:ALTER TABLE ONLY "public"."trainers"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1379:    ADD CONSTRAINT "trainers_pkey" PRIMARY KEY ("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1383:CREATE INDEX "attendance_holidays_date_idx" ON "public"."attendance_holidays" USING "btree" ("holiday_date");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1387:CREATE INDEX "attendance_records_attendance_date_idx" ON "public"."attendance_records" USING "btree" ("attendance_date" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1391:CREATE INDEX "attendance_records_deleted_at_idx" ON "public"."attendance_records" USING "btree" ("deleted_at");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1395:CREATE INDEX "attendance_records_member_ref_idx" ON "public"."attendance_records" USING "btree" ("member_ref");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1399:CREATE INDEX "attendance_records_status_idx" ON "public"."attendance_records" USING "btree" ("status");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1403:CREATE INDEX "inventory_variants_product_idx" ON "public"."inventory_product_variants" USING "btree" ("product_id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1407:CREATE INDEX "invoice_items_invoice_idx" ON "public"."invoice_items" USING "btree" ("invoice_id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1411:CREATE INDEX "invoice_items_variant_idx" ON "public"."invoice_items" USING "btree" ("variant_id") WHERE ("variant_id" IS NOT NULL);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1415:CREATE INDEX "invoice_payments_date_idx" ON "public"."invoice_payments" USING "btree" ("payment_date" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1419:CREATE INDEX "invoice_payments_invoice_idx" ON "public"."invoice_payments" USING "btree" ("invoice_id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1423:CREATE INDEX "invoices_billing_date_idx" ON "public"."invoices" USING "btree" ("billing_date" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1427:CREATE INDEX "invoices_member_idx" ON "public"."invoices" USING "btree" ("member_ref");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1431:CREATE INDEX "invoices_payment_status_idx" ON "public"."invoices" USING "btree" ("payment_status");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1435:CREATE INDEX "invoices_status_idx" ON "public"."invoices" USING "btree" ("invoice_status");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1439:CREATE INDEX "member_measurements_member_ref_idx" ON "public"."member_measurements" USING "btree" ("member_ref", "recorded_at" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1443:CREATE INDEX "member_report_logs_member_ref_idx" ON "public"."member_report_logs" USING "btree" ("member_ref", "sent_at" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1447:CREATE INDEX "member_transformations_member_ref_idx" ON "public"."member_transformations" USING "btree" ("member_ref", "captured_at" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1451:CREATE INDEX "members_deleted_at_idx" ON "public"."members" USING "btree" ("deleted_at");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1455:CREATE INDEX "members_membership_status_idx" ON "public"."members" USING "btree" ("membership_status");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1459:CREATE INDEX "members_payment_status_idx" ON "public"."members" USING "btree" ("payment_status");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1463:CREATE INDEX "members_updated_at_idx" ON "public"."members" USING "btree" ("updated_at" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1467:CREATE INDEX "shop_items_active_sort_idx" ON "public"."shop_items" USING "btree" ("is_active", "sort_order");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1471:CREATE UNIQUE INDEX "shop_items_barcode_unique" ON "public"."shop_items" USING "btree" ("barcode") WHERE ("barcode" IS NOT NULL);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1475:CREATE UNIQUE INDEX "shop_items_sku_unique" ON "public"."shop_items" USING "btree" ("lower"("sku")) WHERE ("sku" IS NOT NULL);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1479:CREATE INDEX "stock_movements_invoice_idx" ON "public"."stock_movements" USING "btree" ("invoice_id") WHERE ("invoice_id" IS NOT NULL);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1483:CREATE INDEX "stock_movements_variant_idx" ON "public"."stock_movements" USING "btree" ("variant_id", "created_at" DESC);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1487:CREATE OR REPLACE TRIGGER "trg_admin_settings_updated_at" BEFORE UPDATE ON "public"."admin_settings" FOR EACH ROW EXECUTE FUNCTION "public"."set_admin_settings_updated_at"();
+supabase/migrations\202608310000_cloud_public_baseline.sql:1491:CREATE OR REPLACE TRIGGER "trg_attendance_holidays_updated_at" BEFORE UPDATE ON "public"."attendance_holidays" FOR EACH ROW EXECUTE FUNCTION "public"."set_attendance_holidays_updated_at"();
+supabase/migrations\202608310000_cloud_public_baseline.sql:1495:CREATE OR REPLACE TRIGGER "trg_attendance_records_updated_at" BEFORE UPDATE ON "public"."attendance_records" FOR EACH ROW EXECUTE FUNCTION "public"."set_attendance_records_updated_at"();
+supabase/migrations\202608310000_cloud_public_baseline.sql:1499:CREATE OR REPLACE TRIGGER "trg_inventory_suppliers_updated_at" BEFORE UPDATE ON "public"."inventory_suppliers" FOR EACH ROW EXECUTE FUNCTION "public"."set_inventory_billing_updated_at"();
+supabase/migrations\202608310000_cloud_public_baseline.sql:1503:CREATE OR REPLACE TRIGGER "trg_inventory_variants_updated_at" BEFORE UPDATE ON "public"."inventory_product_variants" FOR EACH ROW EXECUTE FUNCTION "public"."set_inventory_billing_updated_at"();
+supabase/migrations\202608310000_cloud_public_baseline.sql:1507:CREATE OR REPLACE TRIGGER "trg_invoices_updated_at" BEFORE UPDATE ON "public"."invoices" FOR EACH ROW EXECUTE FUNCTION "public"."set_inventory_billing_updated_at"();
+supabase/migrations\202608310000_cloud_public_baseline.sql:1511:CREATE OR REPLACE TRIGGER "trg_members_updated_at" BEFORE UPDATE ON "public"."members" FOR EACH ROW EXECUTE FUNCTION "public"."set_members_updated_at"();
+supabase/migrations\202608310000_cloud_public_baseline.sql:1515:ALTER TABLE ONLY "public"."attendance_records"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1516:    ADD CONSTRAINT "attendance_records_member_ref_fkey" FOREIGN KEY ("member_ref") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1520:ALTER TABLE ONLY "public"."inventory_product_variants"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1521:    ADD CONSTRAINT "inventory_product_variants_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."shop_items"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1525:ALTER TABLE ONLY "public"."invoice_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1526:    ADD CONSTRAINT "invoice_items_invoice_id_fkey" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1530:ALTER TABLE ONLY "public"."invoice_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1531:    ADD CONSTRAINT "invoice_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."shop_items"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1535:ALTER TABLE ONLY "public"."invoice_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1536:    ADD CONSTRAINT "invoice_items_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "public"."inventory_product_variants"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1540:ALTER TABLE ONLY "public"."invoice_payments"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1541:    ADD CONSTRAINT "invoice_payments_invoice_id_fkey" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1545:ALTER TABLE ONLY "public"."invoice_payments"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1546:    ADD CONSTRAINT "invoice_payments_received_by_fkey" FOREIGN KEY ("received_by") REFERENCES "auth"."users"("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1550:ALTER TABLE ONLY "public"."invoice_payments"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1551:    ADD CONSTRAINT "invoice_payments_reverses_payment_id_fkey" FOREIGN KEY ("reverses_payment_id") REFERENCES "public"."invoice_payments"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1555:ALTER TABLE ONLY "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1556:    ADD CONSTRAINT "invoices_cancelled_by_fkey" FOREIGN KEY ("cancelled_by") REFERENCES "auth"."users"("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1560:ALTER TABLE ONLY "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1561:    ADD CONSTRAINT "invoices_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1565:ALTER TABLE ONLY "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1566:    ADD CONSTRAINT "invoices_member_ref_fkey" FOREIGN KEY ("member_ref") REFERENCES "public"."members"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1570:ALTER TABLE ONLY "public"."invoices"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1571:    ADD CONSTRAINT "invoices_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1575:ALTER TABLE ONLY "public"."member_measurements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1576:    ADD CONSTRAINT "member_measurements_member_ref_fkey" FOREIGN KEY ("member_ref") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1580:ALTER TABLE ONLY "public"."member_report_logs"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1581:    ADD CONSTRAINT "member_report_logs_member_ref_fkey" FOREIGN KEY ("member_ref") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1585:ALTER TABLE ONLY "public"."member_transformations"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1586:    ADD CONSTRAINT "member_transformations_member_ref_fkey" FOREIGN KEY ("member_ref") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1590:ALTER TABLE ONLY "public"."profiles"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1591:    ADD CONSTRAINT "profiles_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1595:ALTER TABLE ONLY "public"."shop_items"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1596:    ADD CONSTRAINT "shop_items_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "public"."inventory_suppliers"("id") ON DELETE SET NULL;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1600:ALTER TABLE ONLY "public"."stock_movements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1601:    ADD CONSTRAINT "stock_movements_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id");
+supabase/migrations\202608310000_cloud_public_baseline.sql:1605:ALTER TABLE ONLY "public"."stock_movements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1606:    ADD CONSTRAINT "stock_movements_invoice_id_fkey" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1610:ALTER TABLE ONLY "public"."stock_movements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1611:    ADD CONSTRAINT "stock_movements_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "public"."inventory_suppliers"("id") ON DELETE SET NULL;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1615:ALTER TABLE ONLY "public"."stock_movements"
+supabase/migrations\202608310000_cloud_public_baseline.sql:1616:    ADD CONSTRAINT "stock_movements_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "public"."inventory_product_variants"("id") ON DELETE RESTRICT;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1620:ALTER TABLE "public"."admin_settings" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1623:CREATE POLICY "admin_settings_insert_admin" ON "public"."admin_settings" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1629:CREATE POLICY "admin_settings_select_admin" ON "public"."admin_settings" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1635:CREATE POLICY "admin_settings_update_admin" ON "public"."admin_settings" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1643:ALTER TABLE "public"."attendance_holidays" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1646:CREATE POLICY "attendance_holidays_delete_admin" ON "public"."attendance_holidays" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1652:CREATE POLICY "attendance_holidays_insert_admin" ON "public"."attendance_holidays" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1658:CREATE POLICY "attendance_holidays_select_admin" ON "public"."attendance_holidays" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1664:CREATE POLICY "attendance_holidays_update_admin" ON "public"."attendance_holidays" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1672:ALTER TABLE "public"."attendance_records" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1675:CREATE POLICY "attendance_records_delete_admin" ON "public"."attendance_records" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1681:CREATE POLICY "attendance_records_insert_admin" ON "public"."attendance_records" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1687:CREATE POLICY "attendance_records_select_admin" ON "public"."attendance_records" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1693:CREATE POLICY "attendance_records_update_admin" ON "public"."attendance_records" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1701:ALTER TABLE "public"."contact_content" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1704:CREATE POLICY "contact_content_admin_write" ON "public"."contact_content" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1708:CREATE POLICY "contact_content_public_read" ON "public"."contact_content" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1712:ALTER TABLE "public"."contact_faqs" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1715:CREATE POLICY "contact_faqs_admin_write" ON "public"."contact_faqs" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1719:CREATE POLICY "contact_faqs_public_read" ON "public"."contact_faqs" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1723:ALTER TABLE "public"."facility_items" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1726:CREATE POLICY "facility_items_admin_write" ON "public"."facility_items" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1730:CREATE POLICY "facility_items_public_read" ON "public"."facility_items" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1734:ALTER TABLE "public"."footer_content" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1737:CREATE POLICY "footer_content_admin_write" ON "public"."footer_content" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1741:CREATE POLICY "footer_content_public_read" ON "public"."footer_content" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1745:ALTER TABLE "public"."home_content" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1748:CREATE POLICY "home_content_admin_write" ON "public"."home_content" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1752:CREATE POLICY "home_content_public_read" ON "public"."home_content" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1756:ALTER TABLE "public"."home_maximus_points" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1759:CREATE POLICY "home_maximus_points_admin_write" ON "public"."home_maximus_points" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1763:CREATE POLICY "home_maximus_points_public_read" ON "public"."home_maximus_points" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1767:ALTER TABLE "public"."home_status_items" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1770:CREATE POLICY "home_status_items_admin_write" ON "public"."home_status_items" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1774:CREATE POLICY "home_status_items_public_read" ON "public"."home_status_items" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1778:ALTER TABLE "public"."inventory_product_variants" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1781:CREATE POLICY "inventory_product_variants_select_admin" ON "public"."inventory_product_variants" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1785:ALTER TABLE "public"."inventory_suppliers" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1788:CREATE POLICY "inventory_suppliers_select_admin" ON "public"."inventory_suppliers" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1792:CREATE POLICY "inventory_suppliers_write_admin" ON "public"."inventory_suppliers" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1796:CREATE POLICY "inventory_variants_write_admin" ON "public"."inventory_product_variants" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1800:ALTER TABLE "public"."invoice_items" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1803:CREATE POLICY "invoice_items_select_admin" ON "public"."invoice_items" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1807:CREATE POLICY "invoice_items_write_draft_admin" ON "public"."invoice_items" TO "authenticated" USING (("public"."is_admin"() AND (EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1815:ALTER TABLE "public"."invoice_number_sequences" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1818:CREATE POLICY "invoice_number_sequences_select_admin" ON "public"."invoice_number_sequences" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1822:ALTER TABLE "public"."invoice_payments" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1825:CREATE POLICY "invoice_payments_select_admin" ON "public"."invoice_payments" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1829:ALTER TABLE "public"."invoices" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1832:CREATE POLICY "invoices_insert_admin" ON "public"."invoices" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_admin"() AND ("invoice_status" = 'draft'::"text")));
+supabase/migrations\202608310000_cloud_public_baseline.sql:1836:CREATE POLICY "invoices_select_admin" ON "public"."invoices" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1840:CREATE POLICY "invoices_update_draft_admin" ON "public"."invoices" FOR UPDATE TO "authenticated" USING (("public"."is_admin"() AND ("invoice_status" = 'draft'::"text"))) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1844:ALTER TABLE "public"."member_measurements" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1847:CREATE POLICY "member_measurements_delete_admin" ON "public"."member_measurements" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1853:CREATE POLICY "member_measurements_insert_admin" ON "public"."member_measurements" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1859:CREATE POLICY "member_measurements_select_admin" ON "public"."member_measurements" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1865:CREATE POLICY "member_measurements_update_admin" ON "public"."member_measurements" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1873:ALTER TABLE "public"."member_report_logs" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1876:CREATE POLICY "member_report_logs_delete_admin" ON "public"."member_report_logs" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1882:CREATE POLICY "member_report_logs_insert_admin" ON "public"."member_report_logs" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1888:CREATE POLICY "member_report_logs_select_admin" ON "public"."member_report_logs" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1894:CREATE POLICY "member_report_logs_update_admin" ON "public"."member_report_logs" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1902:ALTER TABLE "public"."member_transformations" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1905:CREATE POLICY "member_transformations_delete_admin" ON "public"."member_transformations" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1911:CREATE POLICY "member_transformations_insert_admin" ON "public"."member_transformations" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1917:CREATE POLICY "member_transformations_select_admin" ON "public"."member_transformations" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1923:CREATE POLICY "member_transformations_update_admin" ON "public"."member_transformations" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1931:ALTER TABLE "public"."members" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1934:CREATE POLICY "members_delete_admin" ON "public"."members" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1940:CREATE POLICY "members_insert_admin" ON "public"."members" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1946:CREATE POLICY "members_select_admin" ON "public"."members" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1952:CREATE POLICY "members_update_admin" ON "public"."members" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+supabase/migrations\202608310000_cloud_public_baseline.sql:1960:ALTER TABLE "public"."personal_training_plans" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1963:CREATE POLICY "personal_training_plans_admin_write" ON "public"."personal_training_plans" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1967:CREATE POLICY "personal_training_plans_public_read" ON "public"."personal_training_plans" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1971:ALTER TABLE "public"."pricing_items" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1974:CREATE POLICY "pricing_items_admin_write" ON "public"."pricing_items" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:1978:CREATE POLICY "pricing_items_public_read" ON "public"."pricing_items" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:1982:ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1985:CREATE POLICY "profiles_select_own" ON "public"."profiles" FOR SELECT TO "authenticated" USING (("id" = "auth"."uid"()));
+supabase/migrations\202608310000_cloud_public_baseline.sql:1989:CREATE POLICY "profiles_update_own" ON "public"."profiles" FOR UPDATE TO "authenticated" USING (("id" = "auth"."uid"())) WITH CHECK (("id" = "auth"."uid"()));
+supabase/migrations\202608310000_cloud_public_baseline.sql:1993:ALTER TABLE "public"."stock_movements" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:1996:CREATE POLICY "stock_movements_select_admin" ON "public"."stock_movements" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:2000:ALTER TABLE "public"."testimonials" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:2003:CREATE POLICY "testimonials_admin_write" ON "public"."testimonials" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:2007:CREATE POLICY "testimonials_public_read" ON "public"."testimonials" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:2011:ALTER TABLE "public"."trainer_page_content" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:2014:CREATE POLICY "trainer_page_content_admin_write" ON "public"."trainer_page_content" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:2018:CREATE POLICY "trainer_page_content_public_read" ON "public"."trainer_page_content" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:2022:ALTER TABLE "public"."trainers" ENABLE ROW LEVEL SECURITY;
+supabase/migrations\202608310000_cloud_public_baseline.sql:2025:CREATE POLICY "trainers_admin_write" ON "public"."trainers" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+supabase/migrations\202608310000_cloud_public_baseline.sql:2029:CREATE POLICY "trainers_public_read" ON "public"."trainers" FOR SELECT USING (true);
+supabase/migrations\202608310000_cloud_public_baseline.sql:2033:GRANT USAGE ON SCHEMA "public" TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2034:GRANT USAGE ON SCHEMA "public" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2035:GRANT USAGE ON SCHEMA "public" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2036:GRANT USAGE ON SCHEMA "public" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2040:GRANT ALL ON TABLE "public"."invoices" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2041:GRANT ALL ON TABLE "public"."invoices" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2042:GRANT ALL ON TABLE "public"."invoices" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2046:REVOKE ALL ON FUNCTION "public"."cancel_invoice"("p_invoice_id" bigint, "p_reason" "text") FROM PUBLIC;
+supabase/migrations\202608310000_cloud_public_baseline.sql:2047:GRANT ALL ON FUNCTION "public"."cancel_invoice"("p_invoice_id" bigint, "p_reason" "text") TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2048:GRANT ALL ON FUNCTION "public"."cancel_invoice"("p_invoice_id" bigint, "p_reason" "text") TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2049:GRANT ALL ON FUNCTION "public"."cancel_invoice"("p_invoice_id" bigint, "p_reason" "text") TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2053:REVOKE ALL ON FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint, "p_payment_method" "text", "p_payment_reference" "text") FROM PUBLIC;
+supabase/migrations\202608310000_cloud_public_baseline.sql:2054:GRANT ALL ON FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint, "p_payment_method" "text", "p_payment_reference" "text") TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2055:GRANT ALL ON FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint, "p_payment_method" "text", "p_payment_reference" "text") TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2056:GRANT ALL ON FUNCTION "public"."finalize_invoice"("p_invoice_id" bigint, "p_payment_amount_minor" bigint, "p_payment_method" "text", "p_payment_reference" "text") TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2060:GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2061:GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2062:GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2066:GRANT ALL ON FUNCTION "public"."is_admin"() TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2067:GRANT ALL ON FUNCTION "public"."is_admin"() TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2068:GRANT ALL ON FUNCTION "public"."is_admin"() TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2072:GRANT ALL ON FUNCTION "public"."recalculate_invoice_payment_state"("p_invoice_id" bigint) TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2073:GRANT ALL ON FUNCTION "public"."recalculate_invoice_payment_state"("p_invoice_id" bigint) TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2074:GRANT ALL ON FUNCTION "public"."recalculate_invoice_payment_state"("p_invoice_id" bigint) TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2078:GRANT ALL ON TABLE "public"."invoice_payments" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2079:GRANT ALL ON TABLE "public"."invoice_payments" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2080:GRANT ALL ON TABLE "public"."invoice_payments" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2084:REVOKE ALL ON FUNCTION "public"."record_invoice_payment"("p_invoice_id" bigint, "p_amount_minor" bigint, "p_payment_method" "text", "p_payment_date" "date", "p_reference" "text", "p_notes" "text") FROM PUBLIC;
+supabase/migrations\202608310000_cloud_public_baseline.sql:2085:GRANT ALL ON FUNCTION "public"."record_invoice_payment"("p_invoice_id" bigint, "p_amount_minor" bigint, "p_payment_method" "text", "p_payment_date" "date", "p_reference" "text", "p_notes" "text") TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2086:GRANT ALL ON FUNCTION "public"."record_invoice_payment"("p_invoice_id" bigint, "p_amount_minor" bigint, "p_payment_method" "text", "p_payment_date" "date", "p_reference" "text", "p_notes" "text") TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2087:GRANT ALL ON FUNCTION "public"."record_invoice_payment"("p_invoice_id" bigint, "p_amount_minor" bigint, "p_payment_method" "text", "p_payment_date" "date", "p_reference" "text", "p_notes" "text") TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2091:GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2092:GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2093:GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2097:REVOKE ALL ON FUNCTION "public"."record_stock_movement"("p_variant_id" bigint, "p_movement_type" "text", "p_quantity_delta" numeric, "p_reference" "text", "p_notes" "text", "p_supplier_id" bigint) FROM PUBLIC;
+supabase/migrations\202608310000_cloud_public_baseline.sql:2098:GRANT ALL ON FUNCTION "public"."record_stock_movement"("p_variant_id" bigint, "p_movement_type" "text", "p_quantity_delta" numeric, "p_reference" "text", "p_notes" "text", "p_supplier_id" bigint) TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2099:GRANT ALL ON FUNCTION "public"."record_stock_movement"("p_variant_id" bigint, "p_movement_type" "text", "p_quantity_delta" numeric, "p_reference" "text", "p_notes" "text", "p_supplier_id" bigint) TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2100:GRANT ALL ON FUNCTION "public"."record_stock_movement"("p_variant_id" bigint, "p_movement_type" "text", "p_quantity_delta" numeric, "p_reference" "text", "p_notes" "text", "p_supplier_id" bigint) TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2104:GRANT ALL ON FUNCTION "public"."set_admin_settings_updated_at"() TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2105:GRANT ALL ON FUNCTION "public"."set_admin_settings_updated_at"() TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2106:GRANT ALL ON FUNCTION "public"."set_admin_settings_updated_at"() TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2110:GRANT ALL ON FUNCTION "public"."set_attendance_holidays_updated_at"() TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2111:GRANT ALL ON FUNCTION "public"."set_attendance_holidays_updated_at"() TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2112:GRANT ALL ON FUNCTION "public"."set_attendance_holidays_updated_at"() TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2116:GRANT ALL ON FUNCTION "public"."set_attendance_records_updated_at"() TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2117:GRANT ALL ON FUNCTION "public"."set_attendance_records_updated_at"() TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2118:GRANT ALL ON FUNCTION "public"."set_attendance_records_updated_at"() TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2122:GRANT ALL ON FUNCTION "public"."set_inventory_billing_updated_at"() TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2123:GRANT ALL ON FUNCTION "public"."set_inventory_billing_updated_at"() TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2124:GRANT ALL ON FUNCTION "public"."set_inventory_billing_updated_at"() TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2128:GRANT ALL ON FUNCTION "public"."set_members_updated_at"() TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2129:GRANT ALL ON FUNCTION "public"."set_members_updated_at"() TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2130:GRANT ALL ON FUNCTION "public"."set_members_updated_at"() TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2134:GRANT ALL ON TABLE "public"."admin_settings" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2135:GRANT ALL ON TABLE "public"."admin_settings" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2136:GRANT ALL ON TABLE "public"."admin_settings" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2140:GRANT ALL ON TABLE "public"."attendance_holidays" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2141:GRANT ALL ON TABLE "public"."attendance_holidays" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2142:GRANT ALL ON TABLE "public"."attendance_holidays" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2146:GRANT ALL ON SEQUENCE "public"."attendance_holidays_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2147:GRANT ALL ON SEQUENCE "public"."attendance_holidays_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2148:GRANT ALL ON SEQUENCE "public"."attendance_holidays_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2152:GRANT ALL ON TABLE "public"."attendance_records" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2153:GRANT ALL ON TABLE "public"."attendance_records" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2154:GRANT ALL ON TABLE "public"."attendance_records" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2158:GRANT ALL ON SEQUENCE "public"."attendance_records_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2159:GRANT ALL ON SEQUENCE "public"."attendance_records_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2160:GRANT ALL ON SEQUENCE "public"."attendance_records_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2164:GRANT ALL ON TABLE "public"."contact_content" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2165:GRANT ALL ON TABLE "public"."contact_content" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2166:GRANT ALL ON TABLE "public"."contact_content" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2170:GRANT ALL ON TABLE "public"."contact_faqs" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2171:GRANT ALL ON TABLE "public"."contact_faqs" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2172:GRANT ALL ON TABLE "public"."contact_faqs" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2176:GRANT ALL ON SEQUENCE "public"."contact_faqs_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2177:GRANT ALL ON SEQUENCE "public"."contact_faqs_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2178:GRANT ALL ON SEQUENCE "public"."contact_faqs_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2182:GRANT ALL ON TABLE "public"."facilities_page_content" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2183:GRANT ALL ON TABLE "public"."facilities_page_content" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2184:GRANT ALL ON TABLE "public"."facilities_page_content" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2188:GRANT ALL ON TABLE "public"."facility_items" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2189:GRANT ALL ON TABLE "public"."facility_items" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2190:GRANT ALL ON TABLE "public"."facility_items" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2194:GRANT ALL ON SEQUENCE "public"."facility_items_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2195:GRANT ALL ON SEQUENCE "public"."facility_items_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2196:GRANT ALL ON SEQUENCE "public"."facility_items_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2200:GRANT ALL ON TABLE "public"."footer_content" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2201:GRANT ALL ON TABLE "public"."footer_content" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2202:GRANT ALL ON TABLE "public"."footer_content" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2206:GRANT ALL ON TABLE "public"."home_content" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2207:GRANT ALL ON TABLE "public"."home_content" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2208:GRANT ALL ON TABLE "public"."home_content" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2212:GRANT ALL ON TABLE "public"."home_maximus_points" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2213:GRANT ALL ON TABLE "public"."home_maximus_points" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2214:GRANT ALL ON TABLE "public"."home_maximus_points" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2218:GRANT ALL ON SEQUENCE "public"."home_maximus_points_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2219:GRANT ALL ON SEQUENCE "public"."home_maximus_points_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2220:GRANT ALL ON SEQUENCE "public"."home_maximus_points_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2224:GRANT ALL ON TABLE "public"."home_status_items" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2225:GRANT ALL ON TABLE "public"."home_status_items" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2226:GRANT ALL ON TABLE "public"."home_status_items" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2230:GRANT ALL ON SEQUENCE "public"."home_status_items_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2231:GRANT ALL ON SEQUENCE "public"."home_status_items_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2232:GRANT ALL ON SEQUENCE "public"."home_status_items_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2236:GRANT ALL ON TABLE "public"."inventory_product_variants" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2237:GRANT ALL ON TABLE "public"."inventory_product_variants" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2238:GRANT ALL ON TABLE "public"."inventory_product_variants" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2242:GRANT ALL ON SEQUENCE "public"."inventory_product_variants_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2243:GRANT ALL ON SEQUENCE "public"."inventory_product_variants_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2244:GRANT ALL ON SEQUENCE "public"."inventory_product_variants_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2248:GRANT ALL ON TABLE "public"."inventory_suppliers" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2249:GRANT ALL ON TABLE "public"."inventory_suppliers" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2250:GRANT ALL ON TABLE "public"."inventory_suppliers" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2254:GRANT ALL ON SEQUENCE "public"."inventory_suppliers_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2255:GRANT ALL ON SEQUENCE "public"."inventory_suppliers_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2256:GRANT ALL ON SEQUENCE "public"."inventory_suppliers_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2260:GRANT ALL ON TABLE "public"."invoice_items" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2261:GRANT ALL ON TABLE "public"."invoice_items" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2262:GRANT ALL ON TABLE "public"."invoice_items" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2266:GRANT ALL ON SEQUENCE "public"."invoice_items_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2267:GRANT ALL ON SEQUENCE "public"."invoice_items_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2268:GRANT ALL ON SEQUENCE "public"."invoice_items_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2272:GRANT ALL ON TABLE "public"."invoice_number_sequences" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2273:GRANT ALL ON TABLE "public"."invoice_number_sequences" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2274:GRANT ALL ON TABLE "public"."invoice_number_sequences" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2278:GRANT ALL ON SEQUENCE "public"."invoice_payments_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2279:GRANT ALL ON SEQUENCE "public"."invoice_payments_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2280:GRANT ALL ON SEQUENCE "public"."invoice_payments_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2284:GRANT ALL ON SEQUENCE "public"."invoices_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2285:GRANT ALL ON SEQUENCE "public"."invoices_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2286:GRANT ALL ON SEQUENCE "public"."invoices_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2290:GRANT ALL ON TABLE "public"."member_measurements" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2291:GRANT ALL ON TABLE "public"."member_measurements" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2292:GRANT ALL ON TABLE "public"."member_measurements" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2296:GRANT ALL ON SEQUENCE "public"."member_measurements_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2297:GRANT ALL ON SEQUENCE "public"."member_measurements_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2298:GRANT ALL ON SEQUENCE "public"."member_measurements_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2302:GRANT ALL ON TABLE "public"."member_report_logs" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2303:GRANT ALL ON TABLE "public"."member_report_logs" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2304:GRANT ALL ON TABLE "public"."member_report_logs" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2308:GRANT ALL ON SEQUENCE "public"."member_report_logs_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2309:GRANT ALL ON SEQUENCE "public"."member_report_logs_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2310:GRANT ALL ON SEQUENCE "public"."member_report_logs_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2314:GRANT ALL ON TABLE "public"."member_transformations" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2315:GRANT ALL ON TABLE "public"."member_transformations" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2316:GRANT ALL ON TABLE "public"."member_transformations" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2320:GRANT ALL ON SEQUENCE "public"."member_transformations_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2321:GRANT ALL ON SEQUENCE "public"."member_transformations_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2322:GRANT ALL ON SEQUENCE "public"."member_transformations_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2326:GRANT ALL ON TABLE "public"."members" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2327:GRANT ALL ON TABLE "public"."members" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2328:GRANT ALL ON TABLE "public"."members" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2332:GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2333:GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2334:GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2338:GRANT ALL ON TABLE "public"."personal_training_plans" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2339:GRANT ALL ON TABLE "public"."personal_training_plans" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2340:GRANT ALL ON TABLE "public"."personal_training_plans" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2344:GRANT ALL ON SEQUENCE "public"."personal_training_plans_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2345:GRANT ALL ON SEQUENCE "public"."personal_training_plans_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2346:GRANT ALL ON SEQUENCE "public"."personal_training_plans_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2350:GRANT ALL ON TABLE "public"."pricing_items" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2351:GRANT ALL ON TABLE "public"."pricing_items" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2352:GRANT ALL ON TABLE "public"."pricing_items" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2356:GRANT ALL ON SEQUENCE "public"."pricing_items_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2357:GRANT ALL ON SEQUENCE "public"."pricing_items_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2358:GRANT ALL ON SEQUENCE "public"."pricing_items_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2362:GRANT ALL ON TABLE "public"."pricing_page_content" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2363:GRANT ALL ON TABLE "public"."pricing_page_content" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2364:GRANT ALL ON TABLE "public"."pricing_page_content" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2368:GRANT ALL ON TABLE "public"."profiles" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2369:GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2370:GRANT ALL ON TABLE "public"."profiles" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2374:GRANT ALL ON TABLE "public"."shop_items" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2375:GRANT ALL ON TABLE "public"."shop_items" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2376:GRANT ALL ON TABLE "public"."shop_items" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2380:GRANT ALL ON TABLE "public"."public_shop_availability" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2381:GRANT ALL ON TABLE "public"."public_shop_availability" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2382:GRANT ALL ON TABLE "public"."public_shop_availability" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2386:GRANT ALL ON SEQUENCE "public"."shop_items_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2387:GRANT ALL ON SEQUENCE "public"."shop_items_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2388:GRANT ALL ON SEQUENCE "public"."shop_items_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2392:GRANT ALL ON TABLE "public"."shop_page_content" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2393:GRANT ALL ON TABLE "public"."shop_page_content" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2394:GRANT ALL ON TABLE "public"."shop_page_content" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2398:GRANT ALL ON SEQUENCE "public"."stock_movements_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2399:GRANT ALL ON SEQUENCE "public"."stock_movements_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2400:GRANT ALL ON SEQUENCE "public"."stock_movements_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2404:GRANT ALL ON TABLE "public"."testimonials" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2405:GRANT ALL ON TABLE "public"."testimonials" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2406:GRANT ALL ON TABLE "public"."testimonials" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2410:GRANT ALL ON SEQUENCE "public"."testimonials_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2411:GRANT ALL ON SEQUENCE "public"."testimonials_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2412:GRANT ALL ON SEQUENCE "public"."testimonials_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2416:GRANT ALL ON TABLE "public"."trainer_page_content" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2417:GRANT ALL ON TABLE "public"."trainer_page_content" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2418:GRANT ALL ON TABLE "public"."trainer_page_content" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2422:GRANT ALL ON TABLE "public"."trainers" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2423:GRANT ALL ON TABLE "public"."trainers" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2424:GRANT ALL ON TABLE "public"."trainers" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2428:GRANT ALL ON SEQUENCE "public"."trainers_id_seq" TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2429:GRANT ALL ON SEQUENCE "public"."trainers_id_seq" TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2430:GRANT ALL ON SEQUENCE "public"."trainers_id_seq" TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2434:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2435:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2436:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2437:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2444:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2445:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2446:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2447:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2454:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2455:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2456:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
+supabase/migrations\202608310000_cloud_public_baseline.sql:2457:ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
+supabase/migrations\202611220004_sync_member_last_visit_from_attendance.sql:3:create function public.sync_member_visit_from_attendance()
+supabase/migrations\202611220004_sync_member_last_visit_from_attendance.sql:41:revoke all on function public.sync_member_visit_from_attendance() from public, anon, authenticated;
+supabase/migrations\202611220004_sync_member_last_visit_from_attendance.sql:42:create trigger attendance_sync_member_visit
+supabase/migrations\202611220004_sync_member_last_visit_from_attendance.sql:49:create function public.keep_recorded_member_visit()
+supabase/migrations\202611220004_sync_member_last_visit_from_attendance.sql:62:revoke all on function public.keep_recorded_member_visit() from public, anon, authenticated;
+supabase/migrations\202611220004_sync_member_last_visit_from_attendance.sql:63:create trigger member_keep_recorded_visit
+supabase/migrations\202611210003_authenticated_legacy_import.sql:1:alter table public.import_logs add column if not exists imported_by uuid default auth.uid();
+supabase/migrations\202611210003_authenticated_legacy_import.sql:3:drop policy if exists import_logs_insert_admin on public.import_logs;
+supabase/migrations\202611210003_authenticated_legacy_import.sql:4:create policy import_logs_insert_admin on public.import_logs for insert to authenticated
+supabase/migrations\202611210003_authenticated_legacy_import.sql:7:create function public.import_legacy_bill(p_invoice jsonb, p_payment jsonb default null)
+supabase/migrations\202611210003_authenticated_legacy_import.sql:76:revoke all on function public.import_legacy_bill(jsonb, jsonb) from public, anon;
+supabase/migrations\202611210003_authenticated_legacy_import.sql:77:grant execute on function public.import_legacy_bill(jsonb, jsonb) to authenticated;
+supabase/migrations\202611220002_fix_returned_membership_invoice_number.sql:4:CREATE OR REPLACE FUNCTION public.record_membership_fee_payment_multi(
+supabase/migrations\202611220001_reviewed_fee_date_and_payment_fixes.sql:4:CREATE OR REPLACE FUNCTION public.add_months_preserving_day(p_date date, p_months integer)
+supabase/migrations\202611220001_reviewed_fee_date_and_payment_fixes.sql:18:CREATE OR REPLACE FUNCTION public.record_membership_fee_payment(
+supabase/migrations\202611220001_reviewed_fee_date_and_payment_fixes.sql:92:CREATE OR REPLACE FUNCTION public.record_membership_fee_payment_multi(
+supabase/migrations\202611220003_reverse_all_sold_stock_on_cancel.sql:3:create or replace function public.cancel_invoice(p_invoice_id bigint, p_reason text)
