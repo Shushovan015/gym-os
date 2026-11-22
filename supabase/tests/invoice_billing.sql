@@ -20,7 +20,7 @@ do $$ declare n1 text; n2 text; before_seq bigint; rejected boolean; c jsonb; re
 begin
   select invoice_number into n1 from public.invoices where id=900001;
   select invoice_number into n2 from public.invoices where id=900002;
-  if n1 not like '%-000500' or n2 not like '%-000501' then raise exception 'Starting number/increment failed: %, %',n1,n2; end if;
+  if n1 <> '500' or n2 <> '501' then raise exception 'Starting number/increment failed: %, %',n1,n2; end if;
   rejected:=false;
   begin update public.admin_settings set invoice_start_number=1 where id=1; exception when others then rejected:=true; end;
   if not rejected then raise exception 'Number reset was permitted'; end if;

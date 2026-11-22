@@ -1,3 +1,4 @@
+import { backupApi } from "./config/backupApi";
 import { useScrollLock } from "./hooks/useScrollLock";
 import Navbar from "./components/Navbar";
 import AppRoutes from "./routes/AppRoutes";
@@ -16,9 +17,9 @@ export default function App() {
   useScrollLock(checksMaintenance && maintenance);
 
   useEffect(() => {
-    if (!checksMaintenance) return;
+    if (!checksMaintenance || backupApi === null) return;
     let active = true;
-    const check = () => fetch("http://127.0.0.1:4174/api/maintenance", { cache: "no-store" })
+    const check = () => fetch(`${backupApi}/api/maintenance`, { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
       .then((body) => { if (active) setMaintenance(body?.active === true); })
       .catch(() => { /* The optional local service may be stopped in development. */ });

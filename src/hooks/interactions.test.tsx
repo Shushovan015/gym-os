@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 describe("search interactions", () => {
-  it("updates the input immediately but waits 350ms after the last keystroke for results", async () => {
+  it("updates the input immediately but waits 300ms after the last keystroke for results", async () => {
     vi.useFakeTimers();
     let type: (value: string) => void = () => undefined;
     function Search() {
@@ -31,9 +31,9 @@ describe("search interactions", () => {
     const input = host.querySelector("input");
     await act(async () => type("a"));
     expect(input?.value).toBe("a");
-    await act(async () => vi.advanceTimersByTime(300));
+    await act(async () => vi.advanceTimersByTime(200));
     await act(async () => type("alice"));
-    await act(async () => vi.advanceTimersByTime(349));
+    await act(async () => vi.advanceTimersByTime(299));
     expect(host.querySelector("output")?.textContent).toBe("");
     await act(async () => vi.advanceTimersByTime(1));
     expect(host.querySelector("output")?.textContent).toBe("alice");

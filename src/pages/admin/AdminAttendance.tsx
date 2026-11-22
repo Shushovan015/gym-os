@@ -1,6 +1,8 @@
+import { namePrefixPattern, normalizeNameSearch } from "@src/utils/nameSearch";
+import { useLatestRequest } from "@src/hooks/useLatestRequest";
 import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import NepaliDate from "nepali-date-converter";
 import { CalendarDays, Check, Info, RotateCcw, Search, UserRound, X } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
@@ -61,6 +63,7 @@ export default function AdminAttendance() {
   const [selectedBsMonth, setSelectedBsMonth] = useState(initialBs.getMonth());
   const [focusDay, setFocusDay] = useState(initialBs.getDate());
   const [viewMode, setViewMode] = useState<ViewMode>("day");
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebouncedValue(searchTerm);
   const [resultsLoading, setResultsLoading] = useState(false);
@@ -174,23 +177,23 @@ export default function AdminAttendance() {
     };
   }, []);
 
+  const beginSearch = useLatestRequest(JSON.stringify([searchTerm, page, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]));
   useEffect(() => {
-    let alive = true;
     if (searchTerm !== debouncedSearch) return;
+    const isCurrent = beginSearch();
     setResultsLoading(true);
     let query = supabase.from("members").select("*", { count: "exact" }).is("deleted_at", null);
-    const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
-    if (term) query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
-    query.eq("is_active", true).order("full_name", { ascending: true }).range((page - 1) * pageSize, page * pageSize - 1).then(async ({ data, count, error }) => {
-      if (!alive) return;
+    const term = normalizeNameSearch(debouncedSearch);
+    if (term) query = query.filter("full_name", "imatch", namePrefixPattern(term));
+    query.eq("is_active", true).order("full_name", { ascending: true }).order("id").range((page - 1) * pageSize, page * pageSize - 1).then(async ({ data, count, error }) => {
+      if (!isCurrent()) return;
       if (error) setMessage(error.message);
       const nextMembers = (data ?? []) as MemberRow[];
       setMembers(nextMembers);
       setMemberCount(count ?? 0);
-      await loadAttendanceData(selectedBsYear, selectedBsMonth, nextMembers.map((member) => member.id), settings, () => alive);
-      if (alive) { setLoading(false); setResultsLoading(false); }
+      await loadAttendanceData(selectedBsYear, selectedBsMonth, nextMembers.map((member) => member.id), settings, isCurrent);
+      if (isCurrent()) { setLoading(false); setResultsLoading(false); }
     });
-    return () => { alive = false; };
     // settings changes only after its initial database load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchTerm, debouncedSearch, selectedBsMonth, selectedBsYear, settings.weekly_closing_day]);
@@ -355,7 +358,7 @@ export default function AdminAttendance() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1fr_0.6fr_1fr]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <AdminInput value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }} placeholder="Search members by name, ID or phone" className="pl-9" />
+            <AdminInput value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }} placeholder="Search members by name" className="pl-9" />
           </div>
           <AdminSelect<number> options={yearOptions} value={selectedBsYear} onChange={(event) => changeMonth(Number(event.target.value), selectedBsMonth)} />
           <AdminSelect<number> options={monthOptions} value={selectedBsMonth} onChange={(event) => changeMonth(selectedBsYear, Number(event.target.value))} />
@@ -604,6 +607,11 @@ export default function AdminAttendance() {
         description={profileMember ? `${profileMember.member_id} | ${profileMember.phone}` : undefined}
         onClose={() => setProfileMember(null)}
         size="lg"
+        footer={profileMember?.is_active ? (
+          <AdminButton type="button" variant="primary" onClick={() => navigate("/admin/billing", { state: { memberId: profileMember.id } })}>
+            Record Payment
+          </AdminButton>
+        ) : null}
       >
         {profileMember ? (
           <div className="space-y-4">

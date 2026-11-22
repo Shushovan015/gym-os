@@ -1,3 +1,4 @@
+import { namePrefixPattern, normalizeNameSearch } from "@src/utils/nameSearch";
 import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
 import { useLatestRequest } from "@src/hooks/useLatestRequest";
 import { useEffect, useMemo, useState } from "react";
@@ -43,7 +44,6 @@ import type {
   MemberForm,
   MemberMembershipFeeStatus,
   MemberRow,
-  MembershipFee,
   MembershipStatus,
   MembershipType,
   PaymentStatus,
@@ -295,9 +295,6 @@ export default function AdminMembers() {
   const [memberAttendance, setMemberAttendance] = useState<AttendanceRow[]>([]);
   const [memberFeeStatus, setMemberFeeStatus] = useState<MemberMembershipFeeStatus | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
-  const [feePaymentOpen, setFeePaymentOpen] = useState<number | null>(null);
-  const [feePaymentAmount, setFeePaymentAmount] = useState("");
-  const [feePaymentMethod, setFeePaymentMethod] = useState<"cash" | "card" | "bank_transfer" | "digital_wallet" | "other">("cash");
   const [csvRows, setCsvRows] = useState<CsvParsedRow[]>([]);
   const [csvName, setCsvName] = useState("");
   const [importing, setImporting] = useState(false);
@@ -314,8 +311,8 @@ const loadMembers = async () => {
     if (activeFilter === "active") query = query.eq("is_active", true);
     if (activeFilter === "inactive") query = query.eq("is_active", false);
     if (debouncedSearch.trim()) {
-      const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
-      query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
+      const term = normalizeNameSearch(debouncedSearch);
+      query = query.filter("full_name", "imatch", namePrefixPattern(term));
     }
     if (planFilter !== "all") query = query.eq("membership_type", planFilter);
     if (paymentFilter !== "all") query = query.eq("payment_status", paymentFilter);
@@ -579,28 +576,6 @@ const loadMembers = async () => {
     await loadMemberProfile(member);
   };
 
-  const recordMembershipFeePayment = async (fee: MembershipFee) => {
-    if (!detailMember) return;
-    const amountMinor = Math.round(parseFloat(feePaymentAmount) * 100);
-    if (!amountMinor || amountMinor <= 0 || amountMinor > (fee.amount_minor - fee.paid_amount_minor)) {
-      setMessage("Invalid payment amount.");
-      return;
-    }
-    const { error } = await supabase.rpc("record_membership_fee_payment", {
-      p_fee_id: fee.id,
-      p_amount_minor: amountMinor,
-      p_payment_method: feePaymentMethod,
-    });
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-    setFeePaymentOpen(null);
-    setFeePaymentAmount("");
-    setMessage("Membership fee payment recorded.");
-    await loadMemberProfile(detailMember);
-  };
-
   const toggleMemberActive = async (memberId: number, isActive: boolean) => {
     // Optimistic update
     setMembers((prev) =>
@@ -836,7 +811,7 @@ const loadMembers = async () => {
               setSearchTerm(value);
               resetPage();
             }}
-            placeholder="Search by name, phone, email or member ID"
+            placeholder="Search members by name"
           />
           <AdminSelect
             options={membershipOptions}
@@ -1308,11 +1283,8 @@ const loadMembers = async () => {
                                   <AdminButton
                                     type="button"
                                     variant="primary"
-                                    onClick={() => {
-                                      setFeePaymentOpen(fee.id);
-                                      setFeePaymentAmount(((fee.amount_minor - fee.paid_amount_minor) / 100).toFixed(2));
-                                    }}
-                                    disabled={feePaymentOpen !== null}
+                                    disabled={fee.amount_minor <= fee.paid_amount_minor}
+                                    onClick={() => navigate("/admin/billing", { state: { memberId: detailMember.id, feeId: fee.id } })}
                                   >
                                     Record payment
                                   </AdminButton>
@@ -1320,50 +1292,6 @@ const loadMembers = async () => {
                               </div>
                             ))}
                           </div>
-                        )}
-                        {feePaymentOpen && memberFeeStatus.outstanding_fees && (
-                          <>
-                            {memberFeeStatus.outstanding_fees
-                              .filter((fee) => fee.id === feePaymentOpen)
-                              .map((fee) => (
-                                <div key={fee.id} className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4">
-                                  <div className="font-semibold text-white">Record payment for {formatBillingPeriodFromDueDate(fee.due_date)}</div>
-                                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                                    <AdminField label="Amount">
-                                      <AdminInput
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={feePaymentAmount}
-                                        onChange={(event) => setFeePaymentAmount(event.target.value)}
-                                        placeholder={((fee.amount_minor - fee.paid_amount_minor) / 100).toFixed(2)}
-                                      />
-                                    </AdminField>
-                                    <AdminField label="Payment method">
-                                      <AdminSelect
-                                        value={feePaymentMethod}
-                                        onChange={(event) => setFeePaymentMethod(event.target.value as typeof feePaymentMethod)}
-                                        options={[
-                                          { value: "cash", label: "Cash" },
-                                          { value: "card", label: "Card" },
-                                          { value: "bank_transfer", label: "Bank transfer" },
-                                          { value: "digital_wallet", label: "Digital wallet" },
-                                          { value: "other", label: "Other" },
-                                        ]}
-                                      />
-                                    </AdminField>
-                                  </div>
-                                  <div className="mt-3 flex gap-2">
-                                    <AdminButton type="button" variant="primary" onClick={() => recordMembershipFeePayment(fee)}>
-                                      Confirm payment
-                                    </AdminButton>
-                                    <AdminButton type="button" variant="secondary" onClick={() => setFeePaymentOpen(null)}>
-                                      Cancel
-                                    </AdminButton>
-                                  </div>
-                                </div>
-                              ))}
-                          </>
                         )}
                       </>
                     ) : !detailMember.is_active ? (

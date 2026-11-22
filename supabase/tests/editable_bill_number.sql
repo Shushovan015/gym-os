@@ -12,14 +12,14 @@ update public.admin_settings set invoice_start_number=1001 where id=1;
 do $$
 declare first_id bigint; edited_id bigint; bill public.invoices; rejected boolean; before_rollback text;
 begin
-  if public.next_bill_number()<>'1002' or public.next_bill_number()<>'1002' then raise exception 'Preview did not start at base + 1, or consumed a number'; end if;
+  if public.next_bill_number()<>'1001' or public.next_bill_number()<>'1001' then raise exception 'Preview did not return the configured starting number, or consumed a number'; end if;
   if (select is_called from public.invoice_serial_seq) then raise exception 'Preview reserved a number'; end if;
   insert into public.invoices(customer_name) values('First numeric bill') returning id into first_id;
   insert into public.invoice_items(invoice_id,item_type,description,quantity,unit_price_minor,line_total_minor)
     values(first_id,'miscellaneous','Test charge',1,10000,10000);
   bill:=public.finalize_invoice(first_id,5000,'cash',null);
-  if bill.invoice_number<>'1002' or bill.balance_minor<>5000 or bill.payment_status<>'partially_paid' then raise exception 'Saved number or existing payment behavior changed'; end if;
-  if public.next_bill_number()<>'1003' then raise exception 'Next bill did not increment'; end if;
+  if bill.invoice_number<>'1001' or bill.balance_minor<>5000 or bill.payment_status<>'partially_paid' then raise exception 'Saved number or existing payment behavior changed'; end if;
+  if public.next_bill_number()<>'1002' then raise exception 'Next bill did not increment'; end if;
   insert into public.invoices(customer_name,invoice_number) values('Edited number','002000') returning id into edited_id;
   if (select invoice_number from public.invoices where id=edited_id)<>'2000' or public.next_bill_number()<>'2001' then raise exception 'Edited number did not advance counter'; end if;
   begin
@@ -33,7 +33,7 @@ begin
   begin update public.invoices set invoice_number='2005' where id=first_id; exception when others then rejected:=true; end;
   if not rejected then raise exception 'Saved bill number changed'; end if;
   perform public.cancel_invoice(first_id,'Test cancellation');
-  if (select invoice_number from public.invoices where id=first_id)<>'1002' then raise exception 'Cancellation changed number'; end if;
+  if (select invoice_number from public.invoices where id=first_id)<>'1001' then raise exception 'Cancellation changed number'; end if;
   rejected:=false;
   begin delete from public.invoices where id=first_id; exception when others then rejected:=true; end;
   if not rejected then raise exception 'Numbered bill deleted'; end if;

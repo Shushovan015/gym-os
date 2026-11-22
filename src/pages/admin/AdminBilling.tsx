@@ -1,9 +1,10 @@
+import { namePrefixPattern, normalizeNameSearch } from "@src/utils/nameSearch";
 import { useNextBillNumber } from "@src/features/billing/useNextBillNumber";
 import { customerTypeLabels, inventoryPrice, type CustomerType } from "@src/features/billing/pricing";
 import { useBillEmail } from "@src/features/billing/useBillEmail";
 import { useDebouncedValue } from "@src/hooks/useDebouncedValue";
 import { useLatestRequest } from "@src/hooks/useLatestRequest";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Banknote,
   ListFilter,
@@ -72,7 +73,7 @@ type BillingSettings = AdminSettings & {
   pan_vat_number: string | null;
   receipt_footer: string;
 };
-type LocationState = { memberId?: number };
+type LocationState = { memberId?: number; feeId?: number };
 type BillablePlan = { id: number; title: string; price: string; is_active: boolean };
 const paymentMethods: Array<{ value: PaymentMethod; label: string }> = [
   { value: "cash", label: "Cash" },
@@ -146,6 +147,7 @@ export default function AdminBilling() {
   const [paymentAmount, setPaymentAmount] = useState("0");
   const [paymentTouched, setPaymentTouched] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const submittingFee = useRef(false);
   const [saving, setSaving] = useState(false);
   const [lineType, setLineType] = useState<DraftLine["itemType"] | "membership_fee_collection">("membership_fee_collection");
   const [lineDescription, setLineDescription] = useState("");
@@ -164,6 +166,8 @@ export default function AdminBilling() {
   );
   const [productSearch, setProductSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
+  const debouncedMemberSearch = useDebouncedValue(memberSearch);
+  const beginMemberSearch = useLatestRequest(JSON.stringify([createOpen, customerMode, memberId, memberSearch]));
   const [memberResultsFor, setMemberResultsFor] = useState<string | null>(null);
   const [productResultsFor, setProductResultsFor] = useState<string | null>(null);
   const [successInvoice, setSuccessInvoice] = useState<InvoiceRow | null>(null);
@@ -173,17 +177,21 @@ export default function AdminBilling() {
   // Membership fee collection state
   const [memberFees, setMemberFees] = useState<MembershipFee[]>([]);
   const [selectedFeeIds, setSelectedFeeIds] = useState<number[]>([]);
+  const [requestedFeeId, setRequestedFeeId] = useState<number>();
   const [memberFeesLoading, setMemberFeesLoading] = useState(false);
   const [feeCollectionError, setFeeCollectionError] = useState("");
 
   // Load member's unpaid membership fees when member is selected
   useEffect(() => {
-    if (!memberId || lineType !== "membership_fee_collection") {
+    if (!createOpen || !memberId || lineType !== "membership_fee_collection") {
+      setMemberFeesLoading(false);
       setMemberFees([]);
       setSelectedFeeIds([]);
       return;
     }
     let alive = true;
+    setMemberFees([]);
+    setSelectedFeeIds([]);
     setMemberFeesLoading(true);
     setFeeCollectionError("");
     // Use the SECURITY DEFINER RPC instead of selecting membership_fees
@@ -200,28 +208,21 @@ export default function AdminBilling() {
           return;
         }
         const outstandingFees = (data?.outstanding_fees ?? []) as MembershipFee[];
-        const fees = outstandingFees.map((fee) => ({
+        const fees = outstandingFees.filter((fee) => fee.amount_minor > fee.paid_amount_minor).map((fee) => ({
           ...fee,
           currency_code: fee.currency_code ?? settings.currency_code,
         }));
         setMemberFees(fees);
-        // Auto-select the first unpaid fee (oldest)
-        if (fees.length > 0) {
-          setSelectedFeeIds([fees[0].id]);
+        const initialFee = requestedFeeId === undefined
+          ? fees[0]
+          : fees.find((fee) => fee.id === requestedFeeId);
+        setSelectedFeeIds(initialFee ? [initialFee.id] : []);
+        if (requestedFeeId !== undefined && !initialFee) {
+          setCreateError("The requested fee period is no longer payable. Review the current outstanding periods.");
         }
       });
     return () => { alive = false; };
-  }, [memberId, lineType, settings.currency_code]);
-
-  // Auto-set payment amount for membership fee collection
-  useEffect(() => {
-    if (lineType === "membership_fee_collection" && selectedFeeIds.length > 0) {
-      const totalMinor = memberFees
-        .filter((f) => selectedFeeIds.includes(f.id))
-        .reduce((sum, f) => sum + (f.amount_minor - f.paid_amount_minor), 0);
-      setPaymentAmount(minorToInput(totalMinor, settings.currency_minor_unit));
-    }
-  }, [selectedFeeIds, memberFees, lineType, settings.currency_minor_unit]);
+  }, [createOpen, memberId, lineType, requestedFeeId, settings.currency_code]);
 
   const billEmail = useBillEmail([...invoices, ...(detail ? [detail] : [])], settings.bill_sender_email, setMessage);
   const beginRequest = useLatestRequest(JSON.stringify([search, dateFrom, dateTo, page, paymentFilter, statusFilter]));
@@ -231,8 +232,8 @@ export default function AdminBilling() {
     setResultsLoading(true);
     let invoiceQuery = supabase.from("invoices").select("*, invoice_email_deliveries(status)", { count: "exact" });
     if (debouncedSearch.trim()) {
-      const term = debouncedSearch.trim().replace(/[,%()]/g, " ");
-      invoiceQuery = invoiceQuery.or(`invoice_number.ilike.%${term}%,customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%`);
+      const term = normalizeNameSearch(debouncedSearch);
+      invoiceQuery = invoiceQuery.filter("customer_name", "imatch", namePrefixPattern(term));
     }
     if (paymentFilter !== "all") invoiceQuery = invoiceQuery.eq("payment_status", paymentFilter);
     if (statusFilter !== "all") invoiceQuery = invoiceQuery.eq("invoice_status", statusFilter);
@@ -263,24 +264,18 @@ export default function AdminBilling() {
     return () => window.clearTimeout(timeout);
   }, [dateFrom, dateTo, page, paymentFilter, search, debouncedSearch, statusFilter]);
   useEffect(() => {
-    if (!createOpen || customerMode !== "member") return;
-    let alive = true;
-    const timeout = window.setTimeout(async () => {
-      const state = location.state as LocationState | null;
-      let query = supabase.from("members").select("*").is("deleted_at", null).eq("is_active", true);
-      if (state?.memberId && !memberSearch.trim()) query = query.eq("id", state.memberId);
-      else {
-        const term = memberSearch.trim().replace(/[,%()]/g, " ");
-        if (!term) { setMembers([]); return; }
-        query = query.or(`full_name.ilike.%${term}%,member_id.ilike.%${term}%,phone.ilike.%${term}%`);
-      }
-      const { data, error } = await query.order("full_name").limit(8);
-      if (!alive) return;
-      if (error) { setMembers([]); setMemberResultsFor(memberSearch); setCreateError(error.message); }
-      else { setMembers((data ?? []) as MemberRow[]); setMemberResultsFor(memberSearch); }
-    }, 350);
-    return () => { alive = false; window.clearTimeout(timeout); };
-  }, [createOpen, customerMode, location.state, memberSearch]);
+    const term = normalizeNameSearch(debouncedMemberSearch);
+    if (!createOpen || customerMode !== "member" || memberId || !term || memberSearch !== debouncedMemberSearch) return;
+    const isCurrent = beginMemberSearch();
+    void supabase.from("members").select("*").is("deleted_at", null).eq("is_active", true)
+      .filter("full_name", "imatch", namePrefixPattern(term)).order("full_name").order("id").limit(8)
+      .then(({ data, error }) => {
+        if (!isCurrent()) return;
+        setMembers((data ?? []) as MemberRow[]);
+        setMemberResultsFor(memberSearch);
+        if (error) setCreateError(error.message);
+      });
+  }, [createOpen, customerMode, memberId, memberSearch, debouncedMemberSearch]);
   useEffect(() => {
     if (!createOpen || lineType !== "product") return;
     let alive = true;
@@ -297,35 +292,6 @@ export default function AdminBilling() {
     }, 350);
     return () => { alive = false; window.clearTimeout(timeout); };
   }, [createOpen, lineType, productSearch, productCustomerType]);
-  useEffect(() => {
-    const state = location.state as LocationState | null;
-    if (!loading && state?.memberId) {
-      const timeout = window.setTimeout(async () => {
-        const { data: member, error } = await supabase.from("members").select("*").eq("id", state.memberId).is("deleted_at", null).eq("is_active", true).maybeSingle();
-        if (error) { setMessage(error.message); return; }
-        if (member) {
-          setMembers([member as MemberRow]);
-          setMemberId(String(member.id));
-          setCustomerName(member.full_name);
-          setCustomerPhone(member.phone);
-          setCustomerEmail(member.email ?? "");
-          setDueDate(today);
-          setNotes("");
-          setLines([]);
-          setProductCustomerType("general");
-          setDiscount("0");
-          setPaymentAmount("0");
-          setLineType("membership_fee_collection");
-          setLineDescription(
-            `${member.membership_type.charAt(0).toUpperCase() + member.membership_type.slice(1)} membership fee`,
-          );
-          setCreateOpen(true);
-          window.history.replaceState({}, document.title);
-        }
-      }, 0);
-      return () => window.clearTimeout(timeout);
-    }
-  }, [loading, location.state, today]);
   const pageSize = 10;
   const pageCount = Math.max(1, Math.ceil(invoiceCount / pageSize));
   const pageInvoices = invoices;
@@ -340,21 +306,23 @@ export default function AdminBilling() {
     return { ...line, unitPriceMinor: currentPrice };
   }) : [];
   const billLines = lineType === "product" ? currentLines : lineType === "membership_fee_collection" ? [] : automaticPrice !== null && lineDescription.trim() ? [{ key: "automatic", itemType: lineType, productId: null, variantId: null, description: lineDescription.trim(), quantity: 1, unitPriceMinor: automaticPrice, discountMinor: 0 } satisfies DraftLine] : [];
-  const membershipFeeTotalMinor = lineType === "membership_fee_collection"
-    ? memberFees.filter((f) => selectedFeeIds.includes(f.id)).reduce((sum, f) => sum + (f.amount_minor - f.paid_amount_minor), 0)
-    : 0;
   const totals = calculateInvoiceTotals(
     billLines,
     majorToMinor(discount, settings.currency_minor_unit) ?? 0,
     settings.tax_enabled,
     settings.tax_rate_basis_points,
   );
-  // For membership fee collection, use the calculated fee total
+  const selectedFeeLines = memberFees.filter((fee) => selectedFeeIds.includes(fee.id)).map((fee): DraftLine => ({
+    key: String(fee.id), itemType: "membership", productId: null, variantId: null,
+    description: formatBillingPeriodFromDueDate(fee.due_date), quantity: 1,
+    unitPriceMinor: fee.amount_minor - fee.paid_amount_minor, discountMinor: 0,
+  }));
   const effectiveTotals = lineType === "membership_fee_collection"
-    ? { ...totals, totalMinor: membershipFeeTotalMinor, subtotalMinor: membershipFeeTotalMinor }
+    ? calculateInvoiceTotals(selectedFeeLines, 0, settings.tax_enabled, settings.tax_rate_basis_points)
     : totals;
-  const openCreate = useCallback((member?: MemberRow) => {
-    setCustomerMode(member ? "member" : "walkin");
+  const openCreate = useCallback((member?: MemberRow, feeId?: number) => {
+    setRequestedFeeId(feeId);
+    setCustomerMode("member");
     setMemberId(member ? String(member.id) : "");
     setCustomerName(member?.full_name ?? "");
     setCustomerPhone(member?.phone ?? "");
@@ -367,7 +335,18 @@ export default function AdminBilling() {
     setPaymentAmount("0");
     setPaymentTouched(false);
     setSelectedPlanId("");
-    setMemberSearch("");
+    setMemberSearch(member ? `${member.full_name} (${member.member_id})` : "");
+    setMembers([]);
+    setMemberResultsFor(null);
+    setMemberFees([]);
+    setSelectedFeeIds([]);
+    setFeeCollectionError("");
+    setPaymentMethod("cash");
+    setLineType("membership_fee_collection");
+    setLineDescription("");
+    setLinePrice("");
+    setLineVariant("");
+    setProductSearch("");
     setCreateError("");
     setCreateOpen(true);
     if (member) {
@@ -377,8 +356,22 @@ export default function AdminBilling() {
       );
     }
   }, [today]);
+  const { memberId: redirectedMemberId, feeId: redirectedFeeId } = (location.state as LocationState | null) ?? {};
   useEffect(() => {
-    if (loading) return;
+    if (loading || !redirectedMemberId) return;
+    let active = true;
+    void supabase.from("members").select("*").eq("id", redirectedMemberId)
+      .is("deleted_at", null).eq("is_active", true).maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (data) openCreate(data as MemberRow, redirectedFeeId);
+        else setMessage(error?.message ?? "The selected member is unavailable.");
+        navigate(location.pathname, { replace: true, state: null });
+      });
+    return () => { active = false; };
+  }, [loading, redirectedMemberId, redirectedFeeId, openCreate, navigate, location.pathname]);
+  useEffect(() => {
+    if (loading || redirectedMemberId) return;
     const mode = searchParams.get("mode");
     if (
       mode !== "shop" &&
@@ -399,8 +392,9 @@ export default function AdminBilling() {
       }
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [loading, openCreate, searchParams]);
+  }, [loading, openCreate, searchParams, redirectedMemberId]);
   const selectMember = (value: string) => {
+    setRequestedFeeId(undefined);
     setMemberId(value);
     const member = members.find((m) => m.id === Number(value));
     if (member) {
@@ -465,6 +459,7 @@ export default function AdminBilling() {
 
     // Handle membership fee collection separately
     if (lineType === "membership_fee_collection") {
+      if (submittingFee.current || memberFeesLoading) return;
       if (selectedFeeIds.length === 0) {
         setCreateError("Select at least one fee period to collect.");
         return;
@@ -477,6 +472,7 @@ export default function AdminBilling() {
         setCreateError("Select a payment method.");
         return;
       }
+      submittingFee.current = true;
       setSaving(true);
       try {
         const { data, error } = await supabase.rpc("record_membership_fee_payment_multi", {
@@ -493,7 +489,9 @@ export default function AdminBilling() {
         setCreateOpen(false);
         setSelectedFeeIds([]);
         setMemberFees([]);
-        setMessage(`Membership fees collected successfully. Invoice: ${data.invoice_number}`);
+        const issuedNumber = data.invoice_number ?? (await supabase.from("invoices")
+          .select("invoice_number").eq("id", data.invoice_id).maybeSingle()).data?.invoice_number;
+        setMessage(issuedNumber ? `Membership fees collected successfully. Invoice: ${issuedNumber}` : "Membership fees collected successfully.");
         await load();
       } catch (error) {
         setCreateError(
@@ -502,6 +500,7 @@ export default function AdminBilling() {
             : "Could not collect membership fees. Check the local Supabase connection and try again.",
         );
       } finally {
+        submittingFee.current = false;
         setSaving(false);
       }
       return;
@@ -752,7 +751,7 @@ export default function AdminBilling() {
         </div>
         <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(240px,1.25fr)_minmax(390px,1.6fr)_minmax(165px,.65fr)_minmax(165px,.65fr)] xl:items-end">
           <AdminField label="Search bills">
-            <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><AdminInput className="pl-9" placeholder="Invoice, member or phone" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></div>
+            <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><AdminInput className="pl-9" placeholder="Search by customer name" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></div>
           </AdminField>
           <div>
             <div className="mb-1.5 text-xs font-semibold text-slate-300">Billing date range (BS)</div>
@@ -926,7 +925,7 @@ export default function AdminBilling() {
               </b>
               <div className="flex gap-2">
                 <AdminButton variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</AdminButton>
-                <AdminButton variant="primary" disabled={saving || !billNumber.ready} onClick={() => void createInvoice()}>
+                <AdminButton variant="primary" disabled={saving || memberFeesLoading || !billNumber.ready} onClick={() => void createInvoice()}>
                   {saving ? "Completing..." : "Create Bill"}
                 </AdminButton>
               </div>
@@ -950,8 +949,13 @@ export default function AdminBilling() {
             <div className="mt-3 grid grid-cols-2 gap-3">
               <button
                 type="button"
+                aria-pressed={customerMode === "member"}
                 onClick={() => {
+                  if (customerMode === "member") return;
                   setCustomerMode("member");
+                  setMemberSearch("");
+                  setCustomerPhone("");
+                  setCustomerEmail("");
                   setCustomerName("");
                 }}
                 className={`min-h-16 rounded-lg border p-3 text-sm font-bold ${customerMode === "member" ? "border-amber-400 bg-amber-400/10 text-white" : "border-slate-800 text-slate-400"}`}
@@ -960,8 +964,12 @@ export default function AdminBilling() {
               </button>
               <button
                 type="button"
+                aria-pressed={customerMode === "walkin"}
                 onClick={() => {
+                  if (customerMode === "walkin") return;
                   setCustomerMode("walkin");
+                  setCustomerPhone("");
+                  setCustomerEmail("");
                   setMemberId("");
                   setCustomerName("Walk-in Customer");
                 }}
@@ -972,8 +980,8 @@ export default function AdminBilling() {
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {customerMode === "member" ? (
-                <AdminField label="Search member by name or ID">
-                  <AdminInput placeholder="Start typing a name or member ID" value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberId(""); setCustomerName(""); }} />
+                <AdminField label="Search member by name">
+                  <AdminInput placeholder="Start typing a name" value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberId(""); setCustomerName(""); setCustomerPhone(""); setCustomerEmail(""); setMemberResultsFor(null); }} />
                   {memberSearch.trim() && !memberId ? (
                     <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 p-1">
                       {memberResultsFor !== memberSearch ? <p className="p-2 text-sm text-slate-400">Searching members...</p> : members.length === 0 ? <p className="p-2 text-sm text-slate-400">No members found.</p> : null}
@@ -993,6 +1001,12 @@ export default function AdminBilling() {
                   />
                 </AdminField>
               )}
+              {customerMode === "member" && memberId ? (
+                <div className="space-y-1 text-sm text-slate-300">
+                  {customerPhone ? <p>{customerPhone}</p> : null}
+                  {customerEmail ? <p>{customerEmail}</p> : null}
+                </div>
+              ) : null}
               {customerMode === "walkin" ? (
                 <AdminField label="Phone" hint="Optional">
                   <AdminInput
@@ -1111,6 +1125,8 @@ export default function AdminBilling() {
                     </div>
                   ) : feeCollectionError ? (
                     <AdminNotice tone="danger">Failed to load fee periods: {feeCollectionError}</AdminNotice>
+                  ) : !memberId ? (
+                    <AdminEmptyState title="Select a gym member" description="Choose a member to review their outstanding fee periods." />
                   ) : memberFees.length === 0 ? (
                     <AdminEmptyState title="No unpaid membership fees" description="This member has no outstanding membership fees." />
                   ) : (

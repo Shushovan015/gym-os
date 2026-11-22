@@ -7,7 +7,7 @@ Storage, RLS, RPCs, and one Edge Function).
 
 Development and daily use are intentionally separate:
 
-- Development: `npm run dev` starts Vite with HMR on port 5173.
+- Development: `npm run dev:local` starts local Supabase, the backup companion and Vite with HMR on port 5173.
 - Daily gym use: `OPEN GYM APP.bat` serves the compiled `dist` application on
   `http://127.0.0.1:4173/admin` without Vite development mode or HMR.
 
@@ -86,10 +86,15 @@ header to open the separate content workspace at `/studio`. Both workspaces
 use the same administrator account. Previous website editor URLs under
 `/admin` redirect to their Studio equivalents.
 
-The local backup service runs only on `127.0.0.1:4174`. It independently checks
-the Supabase access token and the trusted `profiles.role` database value for
-every privileged request. Database credentials and privileged keys are never
-sent to React.
+The Windows launcher, `npm run start:local`, and `npm run dev:local` start the
+backup companion on loopback port 4174. The frontend forwards same-origin
+backup requests to the companion. Settings shows whether the Supabase API,
+Docker database, Storage volume, and backup destination are available. The
+companion verifies the signed-in user's administrator role through Supabase
+for each privileged request.
+
+Hosted Supabase uses its project database backups and a separate Storage
+export. The Windows companion only operates on a local Docker stack.
 
 ### Automatic backup
 
@@ -121,11 +126,18 @@ Admin -> Settings -> Backup & Restore -> Choose Backup File
 The selected package is validated before restore. The system then creates a
 mandatory `pre-restore-*.zip` safety backup, enters maintenance mode, restores
 the database and Storage files, restarts the affected services, and checks
-health and database integrity. A restore is cancelled if its safety backup
-cannot be created. Legacy `.dump` files remain supported but contain database
-data only, not uploaded Storage object files.
+database and Storage connectivity. If the database restore fails, its
+transaction rolls back and Storage is recovered from the safety backup.
+PostgreSQL custom-format `.dump` files restore database contents only. SQL
+exports from the old gym application use the separate Legacy Import workflow.
 
 ### Emergency Windows restore
+
+For a replacement PC, install the app and start a fresh local Supabase
+installation using the same application release and PostgreSQL major version.
+Copy an off-PC ZIP to the new machine and run the emergency restore. Sign in
+with an administrator account from the restored backup. Set up separately any
+machine-specific environment variables, third-party credentials, and services.
 
 Create a desktop shortcut to `scripts\restore-gym-backup.bat` and name it
 `RESTORE GYM BACKUP`. It starts the required local services, opens a file
@@ -134,7 +146,7 @@ creates a safety backup, restores, and runs `npm run supabase:verify`.
 
 ### Backup locations and off-PC copies
 
-- Local: `backups\`
+- Local: `backups\`. Set `GYM_BACKUP_DIR` in `.env.local` to use a different writable directory.
 - Optional external drive or encrypted cloud-sync folder: set
   `GYM_BACKUP_SECONDARY_DIR` in `.env.local`, for example `E:\GymBackups`.
 - Maximum restore upload size defaults to 2048 MB. Change
@@ -146,7 +158,7 @@ copy is reported, but a verified local backup still counts as successful.
 Full package structure:
 
 ```text
-gym-backup-YYYY-MM-DD-HHmmss.zip
+gym-backup-YYYY-MM-DD-HHmmss-xxxxxxxx.zip
 |-- database.dump
 |-- storage\
 `-- backup-info.json
