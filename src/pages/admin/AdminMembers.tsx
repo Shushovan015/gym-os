@@ -83,6 +83,14 @@ type MembershipFilter = "all" | MembershipStatus | "expiring";
 type PaymentFilter = "all" | PaymentStatus;
 type SortKey = "updated_desc" | "name_asc" | "end_date_asc" | "created_desc";
 type MembershipPlan = { id: number; title: string; is_active: boolean };
+type MemberInvoicePayment = {
+  id: number;
+  invoice_number: string | null;
+  payment_date: string;
+  amount_minor: number;
+  currency_code: string;
+  is_reversal: boolean;
+};
 
 type CsvParsedRow = MemberForm & {
   rowNumber: number;
@@ -299,6 +307,7 @@ export default function AdminMembers() {
   const [detailMember, setDetailMember] = useState<MemberRow | null>(null);
   const [memberAttendance, setMemberAttendance] = useState<AttendanceRow[]>([]);
   const [memberFeeStatus, setMemberFeeStatus] = useState<MemberMembershipFeeStatus | null>(null);
+  const [invoicePayments, setInvoicePayments] = useState<MemberInvoicePayment[]>([]);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [csvRows, setCsvRows] = useState<CsvParsedRow[]>([]);
   const [csvName, setCsvName] = useState("");
@@ -643,15 +652,18 @@ const loadMembers = async () => {
     setLoadingProfile(true);
     setMemberAttendance([]);
     setMemberFeeStatus(null);
+    setInvoicePayments([]);
     if (usePhpApi) {
       try {
-        const [{ records }, fees] = await Promise.all([
+        const [{ records }, fees, { payments }] = await Promise.all([
           phpGet<{ records: AttendanceRow[] }>(`/attendance/history?memberId=${member.id}`),
           phpGet<MemberMembershipFeeStatus>(`/members/fees?id=${member.id}`),
+          phpGet<{ payments: MemberInvoicePayment[] }>(`/membership/payment-history?id=${member.id}`),
         ]);
         if (isCurrent()) {
           setMemberAttendance(records);
           setMemberFeeStatus(fees);
+          setInvoicePayments(payments);
         }
       } catch (error) {
         if (isCurrent()) setMessage(error instanceof Error ? error.message : "Profile load failed.");
@@ -1482,6 +1494,24 @@ const loadMembers = async () => {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {usePhpApi && invoicePayments.length > 0 && (
+                      <div>
+                        <h4 className="mb-2 text-sm font-semibold text-slate-400">Recent invoice payments</h4>
+                        <ul className="space-y-2">
+                          {invoicePayments.slice(0, 6).map((payment) => (
+                            <li key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/55 p-3">
+                              <div>
+                                <div className="font-semibold text-white">{payment.invoice_number ? `Bill ${payment.invoice_number}` : "Invoice payment"}</div>
+                                <div className="text-xs text-slate-400">{formatDisplayDate(payment.payment_date)}</div>
+                              </div>
+                              <AdminBadge tone={payment.is_reversal ? "warning" : "success"}>
+                                {payment.is_reversal ? "Reversed" : "Received"} {formatMembershipFeeAmount(payment.amount_minor, payment.currency_code)}
+                              </AdminBadge>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </>

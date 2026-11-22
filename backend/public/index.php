@@ -11,6 +11,7 @@ require __DIR__ . '/../src/MembershipBilling.php';
 require __DIR__ . '/../src/Stock.php';
 require __DIR__ . '/../src/Catalog.php';
 require __DIR__ . '/../src/ProductBilling.php';
+require __DIR__ . '/../src/BillingOverview.php';
 
 function respond(int $status, array $body): never
 {
@@ -47,6 +48,7 @@ $routes = [
     '/api/membership/payments' => 'POST',
     '/api/membership/payment-history' => 'GET',
     '/api/invoices/receipt' => 'GET',
+    '/api/invoices' => 'GET',
     '/api/invoices/products/issue' => 'POST',
     '/api/invoices/products/cancel' => 'POST',
     '/api/membership/cancel-invoice' => 'POST',
@@ -135,6 +137,10 @@ try {
         [$status, $result] = $path === '/api/invoices/receipt'
             ? $billing->receipt($_GET['id'] ?? null)
             : $billing->history($_GET['id'] ?? null);
+        respond($status, $result);
+    }
+    if ($path === '/api/invoices') {
+        [$status, $result] = (new BillingOverview($db))->invoices($_GET);
         respond($status, $result);
     }
     if ($path === '/api/members/upload-photo') {

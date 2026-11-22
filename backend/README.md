@@ -48,6 +48,8 @@ All endpoints require an administrator session. Writes require the CSRF header. 
 
 `GET /api/membership/payment-history?id=123` reads recent payment records for the member. `GET /api/invoices/receipt?id=123` returns the issued receipt, items and payments. Both require administrator access. Financial mutations affect existing fee periods only.
 
+`GET /api/invoices` returns the invoice list and Nepal-local billing summary. It accepts `search`, `invoiceStatus`, `paymentStatus`, inclusive ISO dates `from` and `to`, and `limit` and `offset`. The list identifies invoices issued by the PHP product and membership flows so a client can choose the matching cancellation action.
+
 `POST /api/membership/cancel-invoice` accepts `invoiceId` and `reason` for invoices issued by the PHP membership payment endpoint. It requires administrator access and CSRF. It restores the allocated fee balances and records a linked reversal in the same transaction. Retrying returns the original reversal.
 
 ### Inventory adjustments

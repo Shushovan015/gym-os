@@ -21,7 +21,12 @@ final class MembershipBilling
             FROM invoice_payments p JOIN invoices i ON i.id = p.invoice_id WHERE i.member_ref = ?
             ORDER BY p.payment_date DESC, p.id DESC LIMIT 200');
         $query->execute([$id]);
-        return [200, ['payments' => $query->fetchAll(PDO::FETCH_ASSOC)]];
+        $payments = $query->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($payments as &$payment) {
+            $payment['is_reversal'] = (bool) $payment['is_reversal'];
+        }
+        unset($payment);
+        return [200, ['payments' => $payments]];
     }
 
     public function receipt(mixed $invoice): array

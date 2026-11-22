@@ -12,6 +12,7 @@
 | Complete PHP frontend integration and standalone runtime | FAIL | Supabase remains in the frontend. Billing, Inventory and other admin screens still require migration. |
 | Membership fee ledger reads | PASS | MariaDB fixture verifies persisted statuses, partial balance, totals, due date, empty ledger and viewer denial. |
 | Membership payments and receipts | PASS | MariaDB 10.11 and HTTP tests cover full, partial and multi-month allocations, oversize and already-paid rejection, same-key replay and payload conflicts, concurrent invoice numbers, integer tax, financial reconciliation, receipt and history endpoints, and rollback after a database-injected audit failure. |
+| Billing overview and member payment history | PASS | PHP invoice listing, filters, pagination and summary are covered by HTTP tests. The React Members profile reads and displays invoice transactions and reversals from PHP. The Billing workspace itself remains pending. |
 | Membership due-date updates | PASS | Outstanding dates, overdue state and January 31 clamping in leap and non-leap years. |
 | Membership payment reversals | PASS | Concurrent cancellation returns one reversal, selected allocations are restored, other payments remain intact, and the route rejects missing CSRF and viewer sessions. PHP-issued membership invoices only. |
 | Inventory stock adjustments and history | PASS | MariaDB verifies exact fractional quantities, serialized concurrent deductions, insufficient-stock rejection and matching movement history. HTTP tests verify administrator and CSRF restrictions. |
@@ -24,4 +25,4 @@
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Continue with membership collection in `AdminBilling.tsx`. Connect its member and fee selectors, invoice list and summary, receipt data and payment history to PHP. Submit payments with a stable idempotency key that survives a failed response. Test a payment and retry before enabling Billing in the preview.
+The checkpoint is for development only. Continue with membership collection in `AdminBilling.tsx`. Use `GET /api/invoices` for its list and summary, connect its active member and fee selectors and receipt drawer, and submit to `POST /api/membership/payments` with a stable idempotency key that survives a failed response. Test a payment and retry from React before enabling Billing in the preview. Product checkout and general invoice management still need their own UI and API coverage.

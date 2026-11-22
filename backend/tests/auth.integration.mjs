@@ -62,7 +62,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
     if (cookie) headers.Cookie = cookie;
     if (csrf && includeCsrf) headers["X-CSRF-Token"] = csrf;
     if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
-    const response = await fetch(`http://127.0.0.1:${port}/api/${path.includes("/") || path.startsWith("members?") ? path : "auth/" + path}`, {
+    const response = await fetch(`http://127.0.0.1:${port}/api/${path.includes("/") || path.includes("?") ? path : "auth/" + path}`, {
       headers,
       method: body === undefined ? "GET" : "POST",
       body: body === undefined || body instanceof FormData ? body : JSON.stringify(body),
@@ -155,6 +155,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal(cancelled.invoice.invoice_status, "cancelled");
   assert.equal(cancelled.payments.length, 2);
   assert.equal(cancelled.payments[1].reverses_payment_id, payment.payment_id);
+  const transactions = await request(`membership/payment-history?id=${member.id}`, 200);
+  assert.deepEqual(transactions.payments.map(({ is_reversal }) => is_reversal), [true, false]);
   const restoredLedger = await request(ledger, 200);
   assert.deepEqual(restoredLedger.summary, feeStatus.summary);
   assert.deepEqual(
@@ -193,7 +195,15 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("invoices/products/issue", 422, productInvoice);
   const sale = await request("invoices/products/issue", 201, productInvoice, true, paymentKey());
   assert.equal(sale.total_minor, 188);
+  const invoiceList = "invoices?search=Test%20buyer&invoiceStatus=issued&paymentStatus=paid&limit=1";
+  const overview = await request(invoiceList, 200);
+  assert.equal(overview.invoices[0].id, sale.invoice_id);
+  assert.equal(overview.invoices[0].php_product, true);
+  assert.ok(overview.summary.revenue_today >= 188);
+  assert.deepEqual((await request(invoiceList + `&offset=${overview.count}`, 200)).invoices, []);
+  await request("invoices?from=2025-02-29", 422);
   await request("invoices/products/cancel", 200, { invoiceId: sale.invoice_id, reason: "Returned" });
+  assert.ok(!(await request(invoiceList, 200)).invoices.some(({ id }) => id === sale.invoice_id));
   assert.deepEqual((await request(catalogPath + "&offset=1", 200)).products, []);
   assert.ok((await request("inventory/suppliers", 200)).suppliers.some(({ id }) => id === supplier.id));
   await request("inventory/catalog/delete", 409, { entity: "product", id: product.id });
@@ -292,6 +302,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(photoPath, 403);
   await request(history, 403);
   await request(grid, 403);
+  await request(invoiceList, 403);
   await request("attendance/holiday", 403, holidayBody);
   await request(attendance, 403, { ...mark, date: "2024-02-29" });
   await request("logout", 200, {});
