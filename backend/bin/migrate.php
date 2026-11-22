@@ -58,6 +58,8 @@ $tables = [
     'schema_migrations', 'admin_accounts', 'login_limits', 'audit_events',
     'members', 'member_status_history', 'attendance_holidays', 'attendance_holiday_templates',
     'attendance_records', 'admin_settings', 'member_write_lock', 'invoices', 'invoice_payments', 'membership_fees',
+    'invoice_items', 'invoice_number_sequences', 'membership_payment_allocations', 'membership_payment_requests', 'payment_audit_events',
+    'inventory_suppliers', 'shop_items', 'inventory_product_variants', 'stock_movements',
 ];
 $engine = $db->prepare('SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?');
 foreach ($tables as $table) {
@@ -77,6 +79,20 @@ $requiredKeys = [
     'invoice_payments.reverses_payment_id' => 'invoice_payments.id',
     'membership_fees.member_id' => 'members.id',
     'membership_fees.invoice_id' => 'invoices.id',
+    'invoice_items.invoice_id' => 'invoices.id',
+    'membership_payment_allocations.payment_id' => 'invoice_payments.id',
+    'membership_payment_allocations.fee_id' => 'membership_fees.id',
+    'membership_payment_allocations.invoice_item_id' => 'invoice_items.id',
+    'membership_payment_requests.payment_id' => 'invoice_payments.id',
+    'payment_audit_events.payment_id' => 'invoice_payments.id',
+    'payment_audit_events.member_id' => 'members.id',
+    'shop_items.supplier_id' => 'inventory_suppliers.id',
+    'invoice_items.product_id' => 'shop_items.id',
+    'invoice_items.variant_id' => 'inventory_product_variants.id',
+    'inventory_product_variants.product_id' => 'shop_items.id',
+    'stock_movements.variant_id' => 'inventory_product_variants.id',
+    'stock_movements.invoice_id' => 'invoices.id',
+    'stock_movements.supplier_id' => 'inventory_suppliers.id',
 ];
 foreach ($requiredKeys as $source => $target) {
     if (($foreignKeys[$source] ?? null) !== $target) {

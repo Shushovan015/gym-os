@@ -7,6 +7,8 @@ require __DIR__ . '/../src/Attendance.php';
 require __DIR__ . '/../src/Members.php';
 require __DIR__ . '/../src/MemberPhotos.php';
 require __DIR__ . '/../src/MembershipFees.php';
+require __DIR__ . '/../src/MembershipBilling.php';
+require __DIR__ . '/../src/Stock.php';
 
 function respond(int $status, array $body): never
 {
@@ -36,6 +38,12 @@ $routes = [
     '/api/members' => 'GET',
     '/api/members/details' => 'GET',
     '/api/members/fees' => 'GET',
+    '/api/membership/payments' => 'POST',
+    '/api/membership/payment-history' => 'GET',
+    '/api/invoices/receipt' => 'GET',
+    '/api/membership/cancel-invoice' => 'POST',
+    '/api/inventory/stock' => 'POST',
+    '/api/inventory/stock-history' => 'GET',
     '/api/members/save' => 'POST',
     '/api/members/change' => 'POST',
     '/api/members/photo' => 'GET',
@@ -82,6 +90,17 @@ try {
         [$status, $result] = (new MembershipFees($db))->status($_GET['id'] ?? null);
         respond($status, $result);
     }
+    if ($path === '/api/inventory/stock-history') {
+        [$status, $result] = (new Stock($db))->history($_GET['variantId'] ?? null);
+        respond($status, $result);
+    }
+    if ($path === '/api/membership/payment-history' || $path === '/api/invoices/receipt') {
+        $billing = new MembershipBilling($db);
+        [$status, $result] = $path === '/api/invoices/receipt'
+            ? $billing->receipt($_GET['id'] ?? null)
+            : $billing->history($_GET['id'] ?? null);
+        respond($status, $result);
+    }
     if ($path === '/api/members/upload-photo') {
         [$status, $result] = (new MemberPhotos($db))->upload($_POST['memberId'] ?? null, $_FILES['photo'] ?? null, $user['id']);
         respond($status, $result);
@@ -102,6 +121,18 @@ try {
         }
         if ($path === '/api/attendance/change') {
             [$status, $result] = (new Attendance($db))->change($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/membership/payments') {
+            [$status, $result] = (new MembershipBilling($db))->pay($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/membership/cancel-invoice') {
+            [$status, $result] = (new MembershipBilling($db))->cancel($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/inventory/stock') {
+            [$status, $result] = (new Stock($db))->adjust($input, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/members/save' || $path === '/api/members/change') {

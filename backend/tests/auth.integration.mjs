@@ -58,8 +58,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
 
   let cookie;
   let csrf;
-  async function request(path, expected, body, includeCsrf = true) {
-    const headers = {};
+  async function request(path, expected, body, includeCsrf = true, headers = {}) {
     if (cookie) headers.Cookie = cookie;
     if (csrf && includeCsrf) headers["X-CSRF-Token"] = csrf;
     if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
@@ -127,6 +126,43 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal(feeStatus.summary.next_due_date, "2024-02-29");
   assert.deepEqual(feeStatus.outstanding_fees.map(({ status }) => status), ["partial", "unpaid"]);
   assert.equal(feeStatus.paid_fees.length, 1);
+  const paymentBody = {
+    memberId: member.id,
+    feeIds: [feeStatus.outstanding_fees[0].id],
+    amountMinor: 12000,
+    paymentMethod: "cash",
+  };
+  const paymentKey = () => ({ "Idempotency-Key": randomUUID() });
+  const key = paymentKey();
+  await request("membership/payments", 403, paymentBody, false, key);
+  const payment = await request("membership/payments", 201, paymentBody, true, key);
+  assert.deepEqual(await request("membership/payments", 200, paymentBody, true, key), payment);
+  const receiptPath = `invoices/receipt?id=${payment.invoice_id}`;
+  const receipt = await request(receiptPath, 200);
+  assert.equal(receipt.invoice.invoice_number, payment.invoice_number);
+  assert.equal(receipt.items[0].line_total_minor, 12000);
+  assert.equal(receipt.payments[0].id, payment.payment_id);
+  assert.equal((await request(`membership/payment-history?id=${member.id}`, 200)).payments[0].id, payment.payment_id);
+  const cancellation = { invoiceId: payment.invoice_id, reason: "Duplicate collection" };
+  await request("membership/cancel-invoice", 403, cancellation, false);
+  const reversal = await request("membership/cancel-invoice", 200, cancellation);
+  assert.deepEqual(await request("membership/cancel-invoice", 200, cancellation), reversal);
+  const cancelled = await request(receiptPath, 200);
+  assert.equal(cancelled.invoice.invoice_status, "cancelled");
+  assert.equal(cancelled.payments.length, 2);
+  assert.equal(cancelled.payments[1].reverses_payment_id, payment.payment_id);
+  const restoredLedger = await request(ledger, 200);
+  assert.deepEqual(restoredLedger.summary, feeStatus.summary);
+  assert.deepEqual(
+    restoredLedger.outstanding_fees.map(({ updated_at, ...fee }) => fee),
+    feeStatus.outstanding_fees.map(({ updated_at, ...fee }) => fee),
+  );
+  const variantId = Number(php("backend/tests/billing-worker.php", ["stock-fixture"], "null"));
+  const stock = { variantId, type: "opening", quantityDelta: "12.125" };
+  const stockHistory = `inventory/stock-history?variantId=${variantId}`;
+  await request("inventory/stock", 403, stock, false);
+  assert.equal((await request("inventory/stock", 201, stock)).current_quantity, "12.125");
+  assert.equal((await request(stockHistory, 200)).movements[0].quantity_delta, "12.125");
   await request("members/save", 409, profile);
   await request("members/save", 422, { id: member.id, payment_status: "paid" });
   await request("members/save", 422, { id: member.id, end_date: "2024-02-28" });
@@ -177,6 +213,11 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin", 403);
   await request(details, 403);
   await request(ledger, 403);
+  await request(receiptPath, 403);
+  await request("membership/payments", 403, paymentBody, true, paymentKey());
+  await request("membership/cancel-invoice", 403, cancellation);
+  await request("inventory/stock", 403, stock);
+  await request(stockHistory, 403);
   await request("members/save", 403, profile);
   await request(photoPath, 403);
   await request(history, 403);
