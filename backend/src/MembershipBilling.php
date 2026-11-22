@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/InvoiceNumbers.php';
+
 final class MembershipBilling
 {
     private const MAX_AMOUNT = 9007199254740991;
@@ -252,7 +254,7 @@ final class MembershipBilling
         $rate = $settings['tax_enabled'] ? (int) $settings['tax_rate_basis_points'] : 0;
         $tax = intdiv($subtotal, 10000) * $rate + intdiv(($subtotal % 10000) * $rate + 5000, 10000);
         $total = self::add($subtotal, $tax);
-        $number = $this->nextNumber((int) $settings['invoice_start_number']);
+        $number = InvoiceNumbers::allocate($this->db, (int) $settings['invoice_start_number']);
         $this->db->prepare("INSERT INTO invoices (
             invoice_number, member_ref, customer_name, customer_phone, customer_email, billing_date, due_date,
             invoice_status, payment_status, currency_code, subtotal_minor, tax_minor, total_minor, paid_minor,
@@ -282,23 +284,6 @@ final class MembershipBilling
             throw new DomainException('The amount is outside the supported currency range.');
         }
         return $left + $right;
-    }
-
-    private function nextNumber(int $minimum): string
-    {
-        $next = $this->db->query('SELECT next_number FROM invoice_number_sequences WHERE id = 1 FOR UPDATE')->fetchColumn();
-        if ($next === false) {
-            throw new RuntimeException('Invoice numbering is not initialized.');
-        }
-        $exists = $this->db->prepare('SELECT id FROM invoices WHERE invoice_number = ?');
-        for ($candidate = max((int) $next, $minimum); $candidate <= self::MAX_AMOUNT; $candidate++) {
-            $exists->execute([(string) $candidate]);
-            if ($exists->fetchColumn() === false) {
-                $this->db->prepare('UPDATE invoice_number_sequences SET next_number = ? WHERE id = 1')->execute([$candidate + 1]);
-                return (string) $candidate;
-            }
-        }
-        throw new DomainException('Invoice numbers are exhausted.');
     }
 
     private function allocate(array $fees, int $subtotal, int $tax, int $invoice, int $payment, string $actor): array

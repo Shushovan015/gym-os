@@ -14,12 +14,13 @@
 | Membership due-date updates | PASS | Outstanding dates, overdue state and January 31 clamping in leap and non-leap years. |
 | Membership payment reversals | PASS | Concurrent cancellation returns one reversal, selected allocations are restored, other payments remain intact, and the route rejects missing CSRF and viewer sessions. PHP-issued membership invoices only. |
 | Inventory stock adjustments and history | PASS | MariaDB verifies exact fractional quantities, serialized concurrent deductions, insufficient-stock rejection and matching movement history. HTTP tests verify administrator and CSRF restrictions. |
-| Fee generation, general billing and stock-linked invoice cancellation | NOT TESTED | Fee generation, inventory-linked billing, legacy reversal reconciliation and PDF receipts pending. |
-| Catalog and supplier administration | NOT TESTED | Schema installed. Catalog write and listing APIs pending. |
+| Product invoice issue and cancellation | PASS | MariaDB verifies price and quantity snapshots, combined stock deduction and restoration for multiple lines of one variant, concurrent cancellation and issuance, idempotency, and transaction rollback. Scope is PHP-issued product invoices. |
+| Fee generation, general billing and legacy reversals | NOT TESTED | Fee generation, mixed invoices, legacy reversal reconciliation and PDF receipts pending. |
+| Catalog and supplier administration | PASS | HTTP tests cover product and variant creation, editing, deletion, SKU conflicts, filtered pagination, stock valuation, low stock, suppliers and role checks. |
 | Reporting, public content and Website Studio | NOT TESTED | PHP API and frontend switch pending. |
 | Existing media, documents, SMTP and notifications | NOT TESTED | Object migration and services pending. |
 | Backup, restore, legacy import and production reconciliation | NOT TESTED | Disposable rehearsal pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Continue with catalog CRUD and the inventory list used by AdminInventory and AdminBilling. Then implement product invoice issue and cancellation in one transaction using the numbering row, invoice items, variants and stock movement ledger. Port the latest cancellation logic to aggregate all sold quantities per variant. Test two sale lines for one variant with different prices, concurrent insufficient stock, and a retried cancellation before switching the frontend.
+The checkpoint is for development only. Continue by connecting the existing React login, route guard and sign-out to PHP sessions, then migrate Members and Attendance before switching Billing and Inventory. Preserve the legacy runtime while those routes are being ported.

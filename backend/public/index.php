@@ -9,6 +9,8 @@ require __DIR__ . '/../src/MemberPhotos.php';
 require __DIR__ . '/../src/MembershipFees.php';
 require __DIR__ . '/../src/MembershipBilling.php';
 require __DIR__ . '/../src/Stock.php';
+require __DIR__ . '/../src/Catalog.php';
+require __DIR__ . '/../src/ProductBilling.php';
 
 function respond(int $status, array $body): never
 {
@@ -41,9 +43,15 @@ $routes = [
     '/api/membership/payments' => 'POST',
     '/api/membership/payment-history' => 'GET',
     '/api/invoices/receipt' => 'GET',
+    '/api/invoices/products/issue' => 'POST',
+    '/api/invoices/products/cancel' => 'POST',
     '/api/membership/cancel-invoice' => 'POST',
     '/api/inventory/stock' => 'POST',
     '/api/inventory/stock-history' => 'GET',
+    '/api/inventory/catalog' => 'GET',
+    '/api/inventory/suppliers' => 'GET',
+    '/api/inventory/catalog/save' => 'POST',
+    '/api/inventory/catalog/delete' => 'POST',
     '/api/members/save' => 'POST',
     '/api/members/change' => 'POST',
     '/api/members/photo' => 'GET',
@@ -94,6 +102,11 @@ try {
         [$status, $result] = (new Stock($db))->history($_GET['variantId'] ?? null);
         respond($status, $result);
     }
+    if ($path === '/api/inventory/catalog' || $path === '/api/inventory/suppliers') {
+        $catalog = new Catalog($db);
+        [$status, $result] = $path === '/api/inventory/catalog' ? $catalog->listing($_GET) : $catalog->suppliers();
+        respond($status, $result);
+    }
     if ($path === '/api/membership/payment-history' || $path === '/api/invoices/receipt') {
         $billing = new MembershipBilling($db);
         [$status, $result] = $path === '/api/invoices/receipt'
@@ -110,7 +123,7 @@ try {
         if ($type !== 'application/json') {
             respond(415, ['error' => 'JSON is required.']);
         }
-        $limit = str_starts_with($path, '/api/members/') ? 65536 : 4096;
+        $limit = $path === '/api/auth/login' ? 4096 : 65536;
         $body = file_get_contents('php://input', false, null, 0, $limit + 1);
         if ($body === false || strlen($body) > $limit) {
             respond(413, ['error' => 'Request body is too large.']);
@@ -131,8 +144,21 @@ try {
             [$status, $result] = (new MembershipBilling($db))->cancel($input, $user['id']);
             respond($status, $result);
         }
+        if ($path === '/api/invoices/products/issue' || $path === '/api/invoices/products/cancel') {
+            $billing = new ProductBilling($db);
+            [$status, $result] = $path === '/api/invoices/products/issue'
+                ? $billing->issue($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id'])
+                : $billing->cancel($input, $user['id']);
+            respond($status, $result);
+        }
         if ($path === '/api/inventory/stock') {
             [$status, $result] = (new Stock($db))->adjust($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/inventory/catalog/save' || $path === '/api/inventory/catalog/delete') {
+            $catalog = new Catalog($db);
+            [$status, $result] = $path === '/api/inventory/catalog/save'
+                ? $catalog->save($input, $user['id']) : $catalog->delete($input, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/members/save' || $path === '/api/members/change') {

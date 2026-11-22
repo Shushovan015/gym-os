@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/database.php';
 require __DIR__ . '/../src/MembershipBilling.php';
 require __DIR__ . '/../src/Stock.php';
+require __DIR__ . '/../src/ProductBilling.php';
 
 if (PHP_SAPI !== 'cli' || !preg_match('/^mysql:host=127\.0\.0\.1;port=\d+;dbname=gym_migration_test;charset=utf8mb4$/D', getenv('GYM_DB_DSN') ?: '')) {
     exit(2);
@@ -14,10 +15,41 @@ $actor = '00000000-0000-0000-0000-000000000001';
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 switch ($mode) {
     case 'stock-fixture':
-        $db->exec("INSERT INTO shop_items (title, category, inventory_enabled) VALUES ('Fixture', 'Fixture', 1)");
+        $db->exec("INSERT INTO shop_items (title, category, inventory_enabled, selling_price_minor, wholesale_price_minor)
+            VALUES ('Fixture', 'Fixture', 1, 1200, 800)");
         $product = (int) $db->lastInsertId();
         $db->prepare('INSERT INTO inventory_product_variants (product_id, sku) VALUES (?, ?)')->execute([$product, bin2hex(random_bytes(16))]);
         echo $db->lastInsertId();
+        break;
+    case 'product-issue':
+        try {
+            echo json_encode((new ProductBilling($db))->issue($input['invoice'], $input['key'], $actor), JSON_THROW_ON_ERROR);
+        } catch (PDOException $error) {
+            if ($error->getCode() !== '45000' || ($error->errorInfo[2] ?? '') !== 'test stock failure') {
+                throw $error;
+            }
+            echo '[500,{}]';
+        }
+        break;
+    case 'product-cancel':
+        echo json_encode((new ProductBilling($db))->cancel(['invoiceId' => $input, 'reason' => 'Test cancellation'], $actor), JSON_THROW_ON_ERROR);
+        break;
+    case 'product-receipt':
+        echo json_encode((new MembershipBilling($db))->receipt((string) $input), JSON_THROW_ON_ERROR);
+        break;
+    case 'stock-inject':
+        $variant = filter_var($input, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($variant === false) {
+            exit(2);
+        }
+        $db->exec("CREATE OR REPLACE TRIGGER billing_test_stock_failure BEFORE INSERT ON stock_movements FOR EACH ROW
+            BEGIN IF NEW.variant_id = $variant AND NEW.movement_type = 'sale'
+            THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'test stock failure'; END IF; END");
+        echo 'true';
+        break;
+    case 'stock-clear':
+        $db->exec('DROP TRIGGER IF EXISTS billing_test_stock_failure');
+        echo 'true';
         break;
     case 'stock':
         echo json_encode((new Stock($db))->adjust($input, $actor), JSON_THROW_ON_ERROR);

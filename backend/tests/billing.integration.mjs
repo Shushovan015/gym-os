@@ -142,3 +142,70 @@ test("membership billing allocates and reconciles integer payments atomically", 
   assert.equal(history.movements[0].previous_quantity, "2.250");
   assert.equal(history.movements[0].resulting_quantity, "0.750");
 });
+
+test("stock-linked invoices preserve line prices and reverse the combined sale once", async () => {
+  const fixture = async () => {
+    const variantId = await work("stock-fixture", null);
+    assert.equal((await work("stock", { variantId, type: "opening", quantityDelta: "5.500" }))[0], 201);
+    return variantId;
+  };
+  const a = await fixture();
+  const b = await fixture();
+  const invoice = {
+    customerName: "Counter customer",
+    lines: [
+      { variantId: a, quantity: "1.125", customerType: "general" },
+      { variantId: a, quantity: "2.250", customerType: "wholesale" },
+      { variantId: b, quantity: "0.500", customerType: "general" },
+    ],
+  };
+  const issue = (body, key = randomUUID()) => work("product-issue", { invoice: body, key });
+  const key = randomUUID();
+  const duplicate = await Promise.all([issue(invoice, key), issue(invoice, key)]);
+  assert.deepEqual(duplicate.map(([status]) => status).sort(), [200, 201]);
+  assert.deepEqual(duplicate[0][1], duplicate[1][1]);
+  assert.equal((await issue({ ...invoice, customerName: "Different customer" }, key))[0], 409);
+  const issued = duplicate[0][1];
+  assert.equal(issued.total_minor, 3750);
+  const [, receipt] = await work("product-receipt", issued.invoice_id);
+  assert.deepEqual(receipt.items.map(({ quantity, unit_price_minor }) => [quantity, unit_price_minor]),
+    [["1.125", 1200], ["2.250", 800], ["0.500", 1200]]);
+  assert.equal(receipt.payments.length, 1);
+  assert.equal(receipt.payments[0].amount_minor, 3750);
+  const stock = async (id) => (await work("stock-history", id))[1].movements;
+  assert.equal((await stock(a))[0].quantity_delta, "-3.375");
+  assert.equal((await stock(a))[0].resulting_quantity, "2.125");
+
+  const cancellations = await Promise.all([work("product-cancel", issued.invoice_id), work("product-cancel", issued.invoice_id)]);
+  assert.deepEqual(cancellations[0], cancellations[1]);
+  assert.equal(cancellations[0][0], 200);
+  const restored = await stock(a);
+  assert.equal(restored[0].quantity_delta, "3.375");
+  assert.equal(restored[0].resulting_quantity, "5.500");
+  assert.equal(restored.filter(({ movement_type }) => movement_type === "cancellation_reversal").length, 1);
+  assert.equal((await stock(b))[0].resulting_quantity, "5.500");
+  const [, cancelled] = await work("product-receipt", issued.invoice_id);
+  assert.equal(cancelled.invoice.invoice_status, "cancelled");
+  assert.equal(cancelled.payments.length, 2);
+  assert.equal(cancelled.payments[1].reverses_payment_id, issued.payment_id);
+  assert.equal(cancelled.payments[1].amount_minor, 3750);
+
+  const contested = { ...invoice, lines: [{ variantId: a, quantity: "4" }] };
+  const concurrent = await Promise.all([issue(contested), issue(contested)]);
+  assert.deepEqual(concurrent.map(([status]) => status).sort(), [201, 409]);
+  assert.equal((await stock(a))[0].resulting_quantity, "1.500");
+  assert.equal((await issue({ ...contested, lines: [{ variantId: b, quantity: "-1" }] }))[0], 422);
+
+  const failure = { ...invoice, lines: [{ variantId: b, quantity: "1" }] };
+  const before = await stock(b);
+  const retryKey = randomUUID();
+  await work("stock-inject", b);
+  try {
+    assert.equal((await issue(failure, retryKey))[0], 500);
+    assert.deepEqual(await stock(b), before);
+  } finally {
+    await work("stock-clear", null);
+  }
+  assert.equal((await issue(failure, retryKey))[0], 201);
+  assert.equal((await stock(b))[0].resulting_quantity, "4.500");
+});

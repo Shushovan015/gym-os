@@ -163,6 +163,40 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("inventory/stock", 403, stock, false);
   assert.equal((await request("inventory/stock", 201, stock)).current_quantity, "12.125");
   assert.equal((await request(stockHistory, 200)).movements[0].quantity_delta, "12.125");
+  const category = randomUUID();
+  const saveCatalog = (entity, fields, expected = 201, id) =>
+    request("inventory/catalog/save", expected, { entity, fields, id });
+  const supplier = await saveCatalog("supplier", { name: category });
+  const product = await saveCatalog("product", {
+    title: "Protein powder", category, supplier_id: supplier.id, inventory_enabled: true,
+    cost_price_minor: 400, selling_price_minor: 750, low_stock_threshold: "2",
+  });
+  const sku = randomUUID();
+  const variant = await saveCatalog("variant", { product_id: product.id, sku });
+  await saveCatalog("variant", { product_id: product.id, sku }, 409);
+  await saveCatalog("variant", { current_quantity: "400" }, 422, variant.id);
+  await saveCatalog("variant", { name: "Vanilla" }, 200, variant.id);
+  await saveCatalog("product", { title: "Protein" }, 200, product.id);
+  await request("inventory/stock", 201, { variantId: variant.id, type: "opening", quantityDelta: "1.250" });
+  const catalogPath = `inventory/catalog?category=${category}&search=${sku}&stock=low&active=active&limit=1`;
+  const catalog = await request(catalogPath, 200);
+  assert.equal(Number(catalog.summary.count), 1);
+  assert.equal(Number(catalog.summary.value_minor), 500);
+  assert.equal(catalog.products[0].title, "Protein");
+  assert.equal(catalog.products[0].variants[0].name, "Vanilla");
+  assert.equal(catalog.products[0].availability, "in_stock");
+  const productInvoice = { customerName: "Test buyer", lines: [{ variantId: variant.id, quantity: "0.250" }] };
+  await request("invoices/products/issue", 422, productInvoice);
+  const sale = await request("invoices/products/issue", 201, productInvoice, true, paymentKey());
+  assert.equal(sale.total_minor, 188);
+  await request("invoices/products/cancel", 200, { invoiceId: sale.invoice_id, reason: "Returned" });
+  assert.deepEqual((await request(catalogPath + "&offset=1", 200)).products, []);
+  assert.ok((await request("inventory/suppliers", 200)).suppliers.some(({ id }) => id === supplier.id));
+  await request("inventory/catalog/delete", 409, { entity: "product", id: product.id });
+  const spare = await saveCatalog("product", { title: "Spare", category });
+  const spareVariant = await saveCatalog("variant", { product_id: spare.id, sku: randomUUID() });
+  await request("inventory/catalog/delete", 200, { entity: "variant", id: spareVariant.id });
+  await request("inventory/catalog/delete", 200, { entity: "product", id: spare.id });
   await request("members/save", 409, profile);
   await request("members/save", 422, { id: member.id, payment_status: "paid" });
   await request("members/save", 422, { id: member.id, end_date: "2024-02-28" });
@@ -218,6 +252,9 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("membership/cancel-invoice", 403, cancellation);
   await request("inventory/stock", 403, stock);
   await request(stockHistory, 403);
+  await request(catalogPath, 403);
+  await saveCatalog("product", { title: "Unauthorized", category }, 403);
+  await request("invoices/products/issue", 403, productInvoice, true, paymentKey());
   await request("members/save", 403, profile);
   await request(photoPath, 403);
   await request(history, 403);

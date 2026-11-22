@@ -81,14 +81,14 @@ final class Stock
         }
     }
 
-    private static function thousandths(string $quantity): int
+    public static function thousandths(string $quantity): int
     {
         [$whole, $fraction] = array_pad(explode('.', ltrim($quantity, '-'), 2), 2, '');
         $value = (int) $whole * 1000 + (int) str_pad($fraction, 3, '0');
         return str_starts_with($quantity, '-') ? -$value : $value;
     }
 
-    private static function decimal(int $quantity): string
+    public static function decimal(int $quantity): string
     {
         return ($quantity < 0 ? '-' : '') . intdiv(abs($quantity), 1000) . '.' . sprintf('%03d', abs($quantity) % 1000);
     }
