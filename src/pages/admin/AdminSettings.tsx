@@ -19,6 +19,7 @@ import type { AdminSettings as AdminSettingsType, MembershipType } from "./admin
 import { defaultAdminSettings, WEEKDAYS } from "./adminUtils";
 import { membershipTypes } from "./adminTypes";
 import BackupRestorePanel from "./BackupRestorePanel";
+import PhpBackupPanel from "./PhpBackupPanel";
 
 type SettingsErrors = Partial<Record<keyof AdminSettingsType, string>>;
 type PhpSettings = { settings: AdminSettingsType; smtpConfigured: boolean };
@@ -197,7 +198,7 @@ export default function AdminSettings() {
       {message ? <AdminNotice tone={message === "Settings saved." ? "success" : "danger"}>{message}</AdminNotice> : null}
       {isDirty ? <AdminNotice tone="warning">You have unsaved settings changes.</AdminNotice> : null}
 
-      {usePhpApi ? <AdminNotice tone="warning" title="Backup and restore">Backup and restore are still being migrated for PHP.</AdminNotice> : <BackupRestorePanel />}
+      {usePhpApi ? <PhpBackupPanel /> : <BackupRestorePanel />}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-6">

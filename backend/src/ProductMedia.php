@@ -65,7 +65,6 @@ final class ProductMedia
         if (!$image) throw new DomainException('The image could not be decoded.');
         $key = bin2hex(random_bytes(24)) . '.' . $extension;
         $path = $this->directory() . DIRECTORY_SEPARATOR . $key;
-        $this->db->prepare('INSERT INTO product_media_files (file_key) VALUES (?)')->execute([$key]);
         if ($extension !== 'jpg') {
             imagealphablending($image, false);
             imagesavealpha($image, true);
@@ -77,7 +76,14 @@ final class ProductMedia
         };
         if (!$written || !is_file($path) || filesize($path) < 1 ||
             (PHP_OS_FAMILY !== 'Windows' && !chmod($path, 0600))) {
+            if (is_file($path)) unlink($path);
             throw new RuntimeException('Could not save the product image.');
+        }
+        try {
+            $this->db->prepare('INSERT INTO product_media_files (file_key) VALUES (?)')->execute([$key]);
+        } catch (Throwable $error) {
+            unlink($path);
+            throw $error;
         }
         return self::PREFIX . $key;
     }

@@ -24,6 +24,8 @@ require __DIR__ . '/../src/PricingContent.php';
 require __DIR__ . '/../src/TestimonialContent.php';
 require __DIR__ . '/../src/ShopContent.php';
 require __DIR__ . '/../src/AdminSettings.php';
+require __DIR__ . '/../src/GymBackup.php';
+require __DIR__ . '/../src/BackupDownloads.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -61,6 +63,8 @@ $routes = [
     '/api/members/details' => 'GET',
     '/api/admin/settings' => 'GET',
     '/api/admin/settings/save' => 'POST',
+    '/api/admin/backups' => 'GET',
+    '/api/admin/backups/download' => 'GET',
     '/api/members/plans' => 'GET',
     '/api/members/fees' => 'GET',
     '/api/membership/payments' => 'POST',
@@ -187,6 +191,13 @@ try {
     }
     if ($path === '/api/admin/settings') {
         respond(200, (new AdminSettings($db))->read());
+    }
+    if ($path === '/api/admin/backups') {
+        respond(200, (new BackupDownloads($db))->listing());
+    }
+    if ($path === '/api/admin/backups/download') {
+        (new BackupDownloads($db))->stream($_GET['file'] ?? null, $user['id']);
+        respond(404, ['error' => 'Backup archive was not found.']);
     }
     if ($path === '/api/members/plans') {
         $plans = $db->query("SELECT id, title FROM pricing_items WHERE kind = 'plan' AND is_active = 1 ORDER BY sort_order, id")

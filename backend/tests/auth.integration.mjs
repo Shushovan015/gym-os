@@ -46,8 +46,13 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   const smtp = await startSmtp(t);
   const mediaDirectory = mkdtempSync(join(tmpdir(), "gym-member-photos-"));
   const catalogMediaDirectory = mkdtempSync(join(tmpdir(), "gym-catalog-photos-"));
+  const backupDirectory = mkdtempSync(join(tmpdir(), "gym-encrypted-backups-"));
   t.after(() => rmSync(mediaDirectory, { recursive: true, force: true }));
   t.after(() => rmSync(catalogMediaDirectory, { recursive: true, force: true }));
+  t.after(() => rmSync(backupDirectory, { recursive: true, force: true }));
+  const archiveName = "gym-20260515-120000-0123456789abcdef.zip";
+  writeFileSync(join(backupDirectory, archiveName), "Opaque backup fixture");
+  writeFileSync(join(backupDirectory, "private.txt"), "Private file fixture");
   const server = spawn("php", [...phpArgs, "-S", `127.0.0.1:${port}`, "-t", "backend/public", "backend/tests/router.php"], {
     cwd: root,
     env: {
@@ -56,6 +61,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
       GYM_AUTH_TEST_ADDRESS: "2001:db8:" + randomBytes(12).toString("hex").match(/.{4}/g).join(":"),
       GYM_PRIVATE_MEDIA_DIR: mediaDirectory,
       GYM_PRODUCT_MEDIA_DIR: catalogMediaDirectory,
+      GYM_BACKUP_DIR: backupDirectory,
       GYM_SMTP_TEST: "1",
       GYM_SMTP_HOST: "127.0.0.1",
       GYM_SMTP_PORT: String(smtp.port),
@@ -114,6 +120,9 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("studio/testimonials", 401);
   await request("studio/proshop", 401);
   await request("admin/settings", 401);
+  const downloadPath = `admin/backups/download?file=${archiveName}`;
+  await request("admin/backups", 401);
+  await request(downloadPath, 401);
   await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
@@ -126,6 +135,16 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin", 401);
   cookie = authenticatedCookie;
   await request("admin", 200);
+  const backupListing = await request("admin/backups", 200);
+  assert.equal(backupListing.configured, true);
+  assert.deepEqual(backupListing.archives.map(({ name }) => name), [archiveName]);
+  await request("admin/backups/download?file=..%2Fprivate.txt", 404);
+  const downloadedArchive = await fetch(`http://127.0.0.1:${port}/api/${downloadPath}`, { headers: { Cookie: cookie } });
+  assert.equal(downloadedArchive.status, 200);
+  assert.equal(downloadedArchive.headers.get("cache-control"), "no-store");
+  assert.equal(downloadedArchive.headers.get("content-type"), "application/zip");
+  assert.equal(downloadedArchive.headers.get("content-disposition"), `attachment; filename="${archiveName}"`);
+  assert.equal(await downloadedArchive.text(), "Opaque backup fixture");
   const contactSave = "studio/contact/save";
   const contactFields = ("hero_badge hero_title hero_description hero_image cta_primary_text cta_primary_link " +
     "cta_secondary_text cta_secondary_link phone email hours location map_embed_url visit_text form_note info_title " +
@@ -776,6 +795,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(shopSave, 403, { action: "delete", id: product.id });
   await request("admin/settings", 403);
   await request(settingsSave, 403, revisedSettings);
+  await request("admin/backups", 403);
+  await request(downloadPath, 403);
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);
