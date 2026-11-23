@@ -58,6 +58,12 @@ The PHP Billing preview saves a payment snapshot using `POST /api/billing/attemp
 
 Imported invoices identified by `legacy_source` can use `POST /api/invoices/products/cancel` when their payment rows reconcile with the amount received and their product lines reconcile with the recorded stock movements. Historical membership allocations and member-linked invoices lacking line items require reconciliation before cancellation.
 
+### Invoice email
+
+Run `composer install --working-dir=backend --no-dev --prefer-dist` before launching the PHP API. Deploy the generated `backend/vendor` directory outside the document root with the rest of the PHP source. Configure the `GYM_SMTP_*` environment variables in the PHP process. Enable OpenSSL and use the provider's authenticated outgoing SMTP settings with `tls` for STARTTLS or `ssl` for implicit TLS. Confirm the hosting account permits outgoing SMTP and keep credentials outside version control.
+
+Billing only sends issued invoices for a member with a saved email address. Staff confirm that exact address. Ten new attempts per operator are allowed per fifteen-minute window. A rejected attempt can be retried after checking the configuration. An uncertain or stale attempt stays blocked until staff can document acceptance using the provider logs and the displayed message identifier. Import historical sent and uncertain statuses before enabling SMTP on migrated invoices.
+
 `GET /api/invoices/training-plans` lists active personal-training plans. `POST /api/invoices/services/issue` uses the same customer, payment, date and idempotency fields as product checkout, plus a `service` with `kind`, `unitPriceMinor`, optional `discountMinor`, and either a training `planId` or a miscellaneous `description`. The existing PHP invoice cancellation endpoint also reverses payments on PHP-issued service invoices.
 
 `GET /api/admin/dashboard` supplies Nepal-local dashboard metrics, charts and follow-up lists. It accepts a `period` of 7, 30 or 90 days and an optional `horizon` of 7, 15 or 30 days. Today’s collections sum persisted payment rows on issued invoices by Nepal payment date, subtracting reversals. The outstanding-bills card uses issued invoices dated within the selected period. Membership cards keep the existing lifecycle and payment-status rules.

@@ -1,0 +1,9 @@
+{
+  "name": "aa-health-club/backend",
+  "description": "A&A Health Club shared-hosting API",
+  "require": {
+    "php": "^8.2",
+    "ext-openssl": "*",
+    "phpmailer/phpmailer": "^7.2"
+  }
+}

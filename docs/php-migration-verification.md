@@ -17,7 +17,8 @@
 | Personal-training and miscellaneous charges | PASS | PHP preview routes both through the existing transactional invoice issuer, numbering and retry records. MariaDB tests cover plan lookup, partial payment, discounts, receipt items, replay, and reversal without stock changes. React exercises miscellaneous checkout. |
 | Payment attempt recovery | PASS | Authenticated, operator-owned MariaDB snapshots survive a Billing remount or sign-in renewal. Recovery displays the original receipt without resubmitting a committed payment. Integration tests verify one invoice, one payment, correct allocations, concurrent execution, rollback, CSRF, and actor isolation. |
 | Legacy invoice cancellation | PASS | Imported invoices with reconciled payment and stock evidence can be cancelled through Billing. Tests verify linked payment reversal and exactly one stock restoration under concurrent cancellation, and reject inconsistent histories. Ambiguous historical membership bills require reconciliation. |
-| Billing feature parity | NOT TESTED | SMTP bill email and product image uploads remain pending in PHP mode. |
+| SMTP invoice email | PASS | PHP uses PHPMailer with administrator/CSRF checks, saved-member recipient confirmation, persistent attempts, and a rate limit. Loopback SMTP tests cover acceptance, duplicates, rejection, a dropped DATA acknowledgement and manual reconciliation. Live SMTP and historical delivery-status import remain unverified. |
+| Billing feature parity | NOT TESTED | Product image uploads and unreconciled historical invoices remain pending. |
 | Membership due-date updates | PASS | Outstanding dates, overdue state and January 31 clamping in leap and non-leap years. |
 | Membership payment reversals | PASS | Concurrent cancellation returns one reversal, selected allocations are restored, other payments remain intact, and the route rejects missing CSRF and viewer sessions. PHP-issued membership invoices only. |
 | Inventory stock adjustments and history | PASS | MariaDB verifies exact fractional quantities, serialized concurrent deductions, insufficient-stock rejection and matching movement history. HTTP tests verify administrator and CSRF restrictions. |
@@ -33,4 +34,4 @@
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Next, port the bill email delivery workflow to PHP SMTP. Preserve recipient verification, invoice eligibility and duplicate-delivery protection. Test SMTP acceptance, rejection, and uncertain delivery against a disposable mail server before enabling the PHP Billing send control. Product media still requires parity work.
+The checkpoint is for development only. Next, implement product and variant media staging, publication, replacement and cleanup. Then connect the existing Reports views to PHP.

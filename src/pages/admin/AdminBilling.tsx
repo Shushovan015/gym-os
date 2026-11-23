@@ -276,7 +276,7 @@ export default function AdminBilling() {
     return () => { alive = false; };
   }, [createOpen, memberId, lineType, requestedFeeId, settings.currency_code]);
 
-  const billEmail = useBillEmail([...invoices, ...(detail ? [detail] : [])], settings.bill_sender_email, setMessage, !usePhpApi);
+  const billEmail = useBillEmail([...invoices, ...(detail ? [detail] : [])], settings.bill_sender_email, setMessage);
   const beginRequest = useLatestRequest(JSON.stringify([search, dateFrom, dateTo, page, paymentFilter, statusFilter]));
   const load = async () => {
     if (search !== debouncedSearch) return;

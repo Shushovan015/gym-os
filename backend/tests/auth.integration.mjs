@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout } from "node:timers/promises";
 import { test } from "node:test";
+import { startSmtp } from "./fake-smtp.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const phpArgs = process.env.GYM_PHP_EXTENSION_DIR
@@ -42,6 +43,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   php("backend/bin/account.php", ["create", randomUUID(), viewer, "viewer"], password);
 
   const port = await testPort();
+  const smtp = await startSmtp(t);
   const mediaDirectory = mkdtempSync(join(tmpdir(), "gym-member-photos-"));
   t.after(() => rmSync(mediaDirectory, { recursive: true, force: true }));
   const server = spawn("php", [...phpArgs, "-S", `127.0.0.1:${port}`, "-t", "backend/public", "backend/tests/router.php"], {
@@ -51,6 +53,11 @@ test("authentication, members, private photos and attendance on MariaDB", async 
       GYM_AUTH_TEST: "1",
       GYM_AUTH_TEST_ADDRESS: "2001:db8:" + randomBytes(12).toString("hex").match(/.{4}/g).join(":"),
       GYM_PRIVATE_MEDIA_DIR: mediaDirectory,
+      GYM_SMTP_TEST: "1",
+      GYM_SMTP_HOST: "127.0.0.1",
+      GYM_SMTP_PORT: String(smtp.port),
+      GYM_SMTP_ENCRYPTION: "test",
+      GYM_SMTP_FROM: "billing@example.test",
     },
     stdio: "ignore",
   });
@@ -159,6 +166,47 @@ test("authentication, members, private photos and attendance on MariaDB", async 
     paymentMethod: "cash",
   };
   const paymentKey = () => ({ "Idempotency-Key": randomUUID() });
+  const recipient = `${randomUUID()}@example.test`;
+  const emailMember = (await request("members/save", 201, {
+    ...profile, member_id: randomUUID(), phone: String(Date.now()), email: recipient,
+  })).member;
+  const mailBill = async () => {
+    const { invoice_id: invoiceId } = await request("invoices/services/issue", 201, {
+      memberId: emailMember.id, service: { kind: "miscellaneous", description: "Printable charge", unitPriceMinor: 12345 },
+    }, true, paymentKey());
+    return { invoiceId, expectedEmail: recipient };
+  };
+  const mail = await mailBill();
+  const sendMail = "invoices/email/send";
+  await request(sendMail, 409, { ...mail, expectedEmail: "different@example.test" });
+  await request(sendMail, 403, mail, false);
+  const mailResults = await Promise.all([request(sendMail, 200, mail), request(sendMail, 200, mail)]);
+  assert.equal(mailResults[0].delivery.status, "sent");
+  assert.equal(mailResults[1].delivery.id, mailResults[0].delivery.id);
+  assert.equal(smtp.messages.length, 1);
+  assert.match(smtp.messages[0], /filename="?invoice\.html"?/);
+  assert.match(smtp.messages[0], /NPR 123\.45/);
+  assert.match(smtp.messages[0], new RegExp(`\\b${recipient.replace(".", "\\.")}\\b`));
+  const retryMail = await mailBill();
+  smtp.behavior = "reject";
+  const failed = (await request(sendMail, 200, retryMail)).delivery;
+  assert.equal(failed.status, "failed");
+  assert.equal((await request(sendMail, 200, retryMail)).delivery.id, failed.id);
+  smtp.behavior = "accept";
+  assert.equal((await request(sendMail, 200, { ...retryMail, retryId: failed.id })).delivery.status, "sent");
+  const uncertain = await mailBill();
+  smtp.behavior = "drop";
+  const unknown = (await request(sendMail, 200, uncertain)).delivery;
+  assert.equal(unknown.status, "uncertain");
+  const mailCount = smtp.messages.length;
+  assert.equal((await request(sendMail, 200, { ...uncertain, retryId: unknown.id })).delivery.status, "uncertain");
+  assert.equal(smtp.messages.length, mailCount);
+  const mailStatus = (await request(`invoices/email?id=${uncertain.invoiceId}`, 200)).delivery;
+  assert.equal(mailStatus.message_token, unknown.message_token);
+  assert.equal((await request("invoices/email/reconcile", 200, {
+    invoiceId: uncertain.invoiceId, evidence: "SMTP fixture queue confirmed acceptance",
+  })).delivery.status, "sent");
+  smtp.behavior = "accept";
   const key = paymentKey();
   await request("membership/payments", 403, paymentBody, false, key);
   const payment = await request("membership/payments", 201, paymentBody, true, key);
@@ -423,6 +471,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);
+  await request(sendMail, 403, mail);
   await request("invoices/payments", 403, balanceBody, true, paymentKey());
   await request("invoices/services/issue", 403, trainingBill, true, paymentKey());
   await request(inventoryPage, 403);

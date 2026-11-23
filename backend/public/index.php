@@ -14,6 +14,8 @@ require __DIR__ . '/../src/ProductBilling.php';
 require __DIR__ . '/../src/BillingOverview.php';
 require __DIR__ . '/../src/Dashboard.php';
 require __DIR__ . '/../src/BillingAttempts.php';
+require __DIR__ . '/../src/InvoiceMailTransport.php';
+require __DIR__ . '/../src/InvoiceMail.php';
 require __DIR__ . '/../src/InvoiceBalancePayments.php';
 
 function respond(int $status, array $body): never
@@ -55,6 +57,9 @@ $routes = [
     '/api/admin/dashboard' => 'GET',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
+    '/api/invoices/email' => 'GET',
+    '/api/invoices/email/send' => 'POST',
+    '/api/invoices/email/reconcile' => 'POST',
     '/api/invoices/payments' => 'POST',
     '/api/invoices/products/issue' => 'POST',
     '/api/invoices/services/issue' => 'POST',
@@ -171,6 +176,10 @@ try {
         [$status, $result] = (new BillingAttempts($db))->retrieve($user['id']);
         respond($status, $result);
     }
+    if ($path === '/api/invoices/email') {
+        [$status, $result] = (new InvoiceMail($db))->status($_GET['id'] ?? null);
+        respond($status, $result);
+    }
     if ($path === '/api/members/upload-photo') {
         [$status, $result] = (new MemberPhotos($db))->upload($_POST['memberId'] ?? null, $_FILES['photo'] ?? null, $user['id']);
         respond($status, $result);
@@ -203,6 +212,12 @@ try {
         }
         if ($path === '/api/billing/attempt/change') {
             [$status, $result] = (new BillingAttempts($db))->change($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/invoices/email/send' || $path === '/api/invoices/email/reconcile') {
+            session_write_close();
+            $mail = new InvoiceMail($db);
+            [$status, $result] = $path === '/api/invoices/email/send' ? $mail->send($input, $user['id']) : $mail->reconcile($input, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/membership/cancel-invoice') {
