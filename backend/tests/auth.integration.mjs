@@ -112,6 +112,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("studio/trainers", 401);
   await request("studio/pricing", 401);
   await request("studio/testimonials", 401);
+  await request("studio/proshop", 401);
   await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
@@ -355,11 +356,37 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   });
   const sku = randomUUID();
   const variant = await saveCatalog("variant", { product_id: product.id, sku });
+  const shopSave = "studio/proshop/save";
+  const shopFields = ("hero_badge hero_title hero_description hero_image hero_primary_cta_text hero_primary_cta_link " +
+    "hero_secondary_cta_text hero_secondary_cta_link catalog_title catalog_description inquiry_button_text inquiry_link_default " +
+    "bottom_cta_title bottom_cta_description bottom_primary_cta_text bottom_primary_cta_link bottom_secondary_cta_text bottom_secondary_cta_link").split(" ");
+  const shopContent = Object.fromEntries(shopFields.map((field) => [field, ""]));
+  Object.assign(shopContent, { hero_title: "Fixture shop", items_per_page: 8, summary_cards: [], inquiry_link_default: "/contact" });
+  await request(shopSave, 403, { action: "content", content: shopContent }, false);
+  await request(shopSave, 200, { action: "content", content: shopContent });
+  const shopItem = { title: "Protein", category, price: "NPR 500", description: "Fixture product", image: "", badge: "",
+    inquire_link: "/contact", sort_order: -20, is_featured: true, is_active: true };
+  await request(shopSave, 422, { action: "item", id: product.id, item: { ...shopItem, inquire_link: "javascript:alert(1)" } });
+  await request(shopSave, 200, { action: "item", id: product.id, item: shopItem });
+  const readPublicShop = async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/public/shop`);
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const emptyShop = await readPublicShop();
+  assert.deepEqual(emptyShop.content, shopContent);
+  assert.deepEqual(emptyShop.items.find(({ id }) => id === product.id), { id: product.id, ...shopItem, availability: "out_of_stock" });
+  assert.equal((await request("studio/proshop", 200)).items.find(({ id }) => id === product.id).price, "NPR 500");
+  await request(shopSave, 409, { action: "delete", id: product.id });
   await saveCatalog("variant", { product_id: product.id, sku }, 409);
   await saveCatalog("variant", { current_quantity: "400" }, 422, variant.id);
   await saveCatalog("variant", { name: "Vanilla" }, 200, variant.id);
   await saveCatalog("product", { title: "Protein" }, 200, product.id);
   await request("inventory/stock", 201, { variantId: variant.id, type: "opening", quantityDelta: "1.250" });
+  assert.equal((await readPublicShop()).items.find(({ id }) => id === product.id).availability, "available");
+  await request(shopSave, 200, { action: "item", id: product.id, item: { ...shopItem, is_active: false } });
+  assert.ok(!(await readPublicShop()).items.some(({ id }) => id === product.id));
+  await request(shopSave, 200, { action: "item", id: product.id, item: shopItem });
   const catalogPath = `inventory/catalog?category=${category}&search=${sku}&stock=low&active=active&limit=1`;
   const catalog = await request(catalogPath, 200);
   assert.equal(Number(catalog.summary.count), 1);
@@ -716,6 +743,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(pricingSave, 403, { action: "delete", id: planId });
   await request("studio/testimonials", 403);
   await request(testimonialSave, 403, { action: "delete", id: testimonialId });
+  await request("studio/proshop", 403);
+  await request(shopSave, 403, { action: "delete", id: product.id });
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

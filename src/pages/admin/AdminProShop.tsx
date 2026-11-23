@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 
 type Row = {
   id: number;
@@ -135,14 +136,20 @@ export default function AdminProShop() {
   );
 
   const load = async () => {
-    const [{ data: itemData }, { data: pageData }] = await Promise.all([
+    const { items: itemData, content: pageData } = usePhpApi
+      ? await phpGet<{ items: Row[]; content: Partial<PageContent> | null }>("/studio/proshop")
+      : await Promise.all([
       supabase
         .from("shop_items")
         .select("*")
         .order("category", { ascending: true })
         .order("sort_order", { ascending: true }),
       supabase.from("shop_page_content").select("*").eq("id", 1).maybeSingle(),
-    ]);
+    ]).then(([items, page]) => {
+      const issue = items.error ?? page.error;
+      if (issue) throw new Error(issue.message);
+      return { items: items.data as Row[], content: page.data as Partial<PageContent> | null };
+    });
 
     setRows((itemData as Row[]) || []);
 
@@ -159,7 +166,7 @@ export default function AdminProShop() {
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setPageMsg(issue.message));
   }, []);
 
   const resetForm = () => {
@@ -192,18 +199,17 @@ export default function AdminProShop() {
         return;
       }
 
-      if (editingId) {
-        const { error } = await supabase.from("shop_items").update(payload).eq("id", editingId);
-        if (error) throw new Error(error.message);
-        setMsg("Product updated.");
+      if (usePhpApi) {
+        await phpPost("/studio/proshop/save", { action: "item", id: editingId, item: payload });
       } else {
-        const { error } = await supabase.from("shop_items").insert(payload);
+        const table = supabase.from("shop_items");
+        const { error } = editingId ? await table.update(payload).eq("id", editingId) : await table.insert(payload);
         if (error) throw new Error(error.message);
-        setMsg("Product created.");
       }
 
       resetForm();
       await load();
+      setMsg(editingId ? "Product updated." : "Product created.");
     } catch (err: any) {
       setMsg(err?.message || "Something went wrong.");
     } finally {
@@ -231,14 +237,20 @@ export default function AdminProShop() {
   const onDelete = async (id: number) => {
     const ok = window.confirm("Delete this product?");
     if (!ok) return;
-    const { error } = await supabase.from("shop_items").delete().eq("id", id);
-    if (error) {
-      setMsg(error.code === "23503"
-        ? "This product is linked to inventory or billing. Edit the product and turn off its public visibility instead."
-        : error.message);
-      return;
+    try {
+      if (usePhpApi) await phpPost("/studio/proshop/save", { action: "delete", id });
+      else {
+        const { error } = await supabase.from("shop_items").delete().eq("id", id);
+        if (error) throw new Error(error.code === "23503"
+          ? "This product is linked to inventory or billing. Edit the product and turn off its public visibility instead."
+          : error.message);
+      }
+      if (editingId === id) resetForm();
+      await load();
+      setMsg("Product deleted.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not delete product.");
     }
-    await load();
   };
 
   const updateSummaryCard = (index: number, key: keyof SummaryCard, value: string) => {
@@ -281,10 +293,19 @@ export default function AdminProShop() {
         .filter((card) => card.label && card.value),
     };
 
-    const { error } = await supabase.from("shop_page_content").upsert(payload, { onConflict: "id" });
-    setPageMsg(error ? error.message : "ProShop page content saved.");
-    setPageSaving(false);
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/proshop/save", { action: "content", content: payload });
+      else {
+        const { error } = await supabase.from("shop_page_content").upsert(payload, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+      await load();
+      setPageMsg("ProShop page content saved.");
+    } catch (issue) {
+      setPageMsg(issue instanceof Error ? issue.message : "Could not save Pro Shop content.");
+    } finally {
+      setPageSaving(false);
+    }
   };
 
   return (
@@ -429,8 +450,8 @@ export default function AdminProShop() {
         <form onSubmit={submit} className="rounded-2xl bg-black/35 p-6 space-y-3">
           <h2 className="text-xl font-black text-white">{editingId ? "Edit" : "Add"} Product</h2>
 
-          <Label>Product Title</Label>
-          <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+          <label htmlFor="shop-product-title" className="text-xs font-semibold text-zinc-300">Product Title</label>
+          <input id="shop-product-title" className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
 
           <Label>Category</Label>
           <input

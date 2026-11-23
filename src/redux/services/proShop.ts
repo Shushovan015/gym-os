@@ -1,6 +1,8 @@
 import { supabase } from "@src/Client/supabase";
+import { phpGet, usePhpApi } from "@src/Client/phpApi";
 
 export const fetchProShop = async () => {
+  if (usePhpApi) return phpGet("/public/shop");
   const [{ data: items, error: itemsError }, { data: content, error: contentError }, { data: availability }] =
     await Promise.all([
       supabase

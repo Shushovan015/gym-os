@@ -22,6 +22,7 @@ require __DIR__ . '/../src/FacilitiesContent.php';
 require __DIR__ . '/../src/TrainersContent.php';
 require __DIR__ . '/../src/PricingContent.php';
 require __DIR__ . '/../src/TestimonialContent.php';
+require __DIR__ . '/../src/ShopContent.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -85,6 +86,9 @@ $routes = [
     '/api/studio/pricing/save' => 'POST',
     '/api/studio/testimonials' => 'GET',
     '/api/studio/testimonials/save' => 'POST',
+    '/api/public/shop' => 'GET',
+    '/api/studio/proshop' => 'GET',
+    '/api/studio/proshop/save' => 'POST',
     '/api/studio/footer/save' => 'POST',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
@@ -121,6 +125,9 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/public/shop') {
+        respond(200, (new ShopContent(database()))->read(false));
+    }
     if ($path === '/api/public/pricing') {
         respond(200, (new PricingContent(database()))->read(false));
     }
@@ -254,6 +261,9 @@ try {
     if ($path === '/api/studio/testimonials') {
         respond(200, ['items' => (new TestimonialContent($db))->read(true)]);
     }
+    if ($path === '/api/studio/proshop') {
+        respond(200, (new ShopContent($db))->read(true));
+    }
     if ($path === '/api/studio/media/upload') {
         [$status, $result] = (new ProductMedia($db))->upload($_FILES['photo'] ?? null, $user['id'], 'studio.image.upload');
         respond($status, $result);
@@ -314,6 +324,10 @@ try {
         }
         if ($path === '/api/studio/testimonials/save') {
             [$status, $result] = (new TestimonialContent($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/studio/proshop/save') {
+            [$status, $result] = (new ShopContent($db))->save($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {

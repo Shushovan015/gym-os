@@ -36,10 +36,11 @@
 | Website Studio Trainers | PASS | PHP stores profiles, trainer page content and the personal-training plans shared with Billing. HTTP tests cover hidden profiles and photos, published trainer cards on Home, administrator access, CSRF and invoicing a plan saved through Studio. React verifies a saved plan renders on the public Trainers page. |
 | Website Studio Pricing | PASS | The editor and public Pricing page use the existing MariaDB membership catalog. HTTP tests verify that a published plan is available on Pricing and in the Members plan picker, that inactive plans are excluded, and that editor write access requires an administrator and CSRF. React verifies that a saved plan and price appear publicly. |
 | Website Studio Testimonials | PASS | Studio edits and photos use PHP. The HTTP tests check publication on Home, private inactive stories and photos, deletion, CSRF and role enforcement. React verifies that a saved story appears on Home. |
-| Remaining public content and Website Studio | NOT TESTED | Pro Shop still needs an editor and public read path. The About page is static and has no existing editor. |
+| Website Studio Pro Shop | PASS | The editor writes public product fields to the existing inventory catalog. The anonymous catalog publishes active items and a stock label without quantities, costs or supplier details. Tests cover visibility, stock changes, protected deletion and the React editor-to-public flow. |
+| About and Contact inquiries | PARTIAL | About is a static public page with no existing editor. The Contact editor, public Contact and FAQs run on PHP. The inquiry form remains the existing client-side form with phone and email contact options. |
 | Existing media, documents, SMTP and notifications | NOT TESTED | Object migration and services pending. |
 | Backup, restore, legacy import and production reconciliation | NOT TESTED | Disposable rehearsal pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Next, migrate the Pro Shop Studio editor and public catalog using the existing MariaDB inventory. Verify availability without exposing quantities, supplier records or cost prices.
+The checkpoint is for development only. Next, migrate operational Settings with server-side validation and verify invoice numbering, tax, attendance settings and role enforcement.
