@@ -16,6 +16,7 @@ require __DIR__ . '/../src/Dashboard.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
+require __DIR__ . '/../src/ProductMedia.php';
 require __DIR__ . '/../src/InvoiceBalancePayments.php';
 
 function respond(int $status, array $body): never
@@ -74,6 +75,8 @@ $routes = [
     '/api/inventory/catalog/save' => 'POST',
     '/api/inventory/catalog/delete' => 'POST',
     '/api/inventory/catalog/activation' => 'POST',
+    '/api/inventory/media/upload' => 'POST',
+    '/api/media/product' => 'GET',
     '/api/members/save' => 'POST',
     '/api/members/change' => 'POST',
     '/api/members/photo' => 'GET',
@@ -88,6 +91,15 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/media/product') {
+        $db = database();
+        $media = new ProductMedia($db);
+        $key = $_GET['key'] ?? null;
+        $media->stream($key, false);
+        Auth::startSession();
+        if (((new Auth($db))->user()['role'] ?? null) === 'admin') $media->stream($key, true);
+        respond(404, ['error' => 'Image not found.']);
+    }
     Auth::startSession();
     if ($method === 'POST' && !Auth::acceptsCsrf($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)) {
         respond(403, ['error' => 'Invalid CSRF token.']);
@@ -182,6 +194,10 @@ try {
     }
     if ($path === '/api/members/upload-photo') {
         [$status, $result] = (new MemberPhotos($db))->upload($_POST['memberId'] ?? null, $_FILES['photo'] ?? null, $user['id']);
+        respond($status, $result);
+    }
+    if ($path === '/api/inventory/media/upload') {
+        [$status, $result] = (new ProductMedia($db))->upload($_FILES['photo'] ?? null, $user['id']);
         respond($status, $result);
     }
     if ($method === 'POST' && $path !== '/api/auth/logout') {

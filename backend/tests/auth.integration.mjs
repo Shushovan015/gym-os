@@ -1,7 +1,7 @@
 ﻿import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,11 +12,11 @@ import { startSmtp } from "./fake-smtp.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const phpArgs = process.env.GYM_PHP_EXTENSION_DIR
-  ? ["-d", `extension_dir=${process.env.GYM_PHP_EXTENSION_DIR}`, "-d", "extension=pdo_mysql"]
+  ? ["-d", `extension_dir=${process.env.GYM_PHP_EXTENSION_DIR}`, "-d", "extension=pdo_mysql", "-d", "extension=gd", "-d", "extension=fileinfo"]
   : [];
 
-function php(script, args, input) {
-  const result = spawnSync("php", [...phpArgs, script, ...args], { cwd: root, input, encoding: "utf8" });
+function php(script, args, input, env = process.env) {
+  const result = spawnSync("php", [...phpArgs, script, ...args], { cwd: root, input, encoding: "utf8", env });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   return result.stdout;
 }
@@ -45,7 +45,9 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   const port = await testPort();
   const smtp = await startSmtp(t);
   const mediaDirectory = mkdtempSync(join(tmpdir(), "gym-member-photos-"));
+  const catalogMediaDirectory = mkdtempSync(join(tmpdir(), "gym-catalog-photos-"));
   t.after(() => rmSync(mediaDirectory, { recursive: true, force: true }));
+  t.after(() => rmSync(catalogMediaDirectory, { recursive: true, force: true }));
   const server = spawn("php", [...phpArgs, "-S", `127.0.0.1:${port}`, "-t", "backend/public", "backend/tests/router.php"], {
     cwd: root,
     env: {
@@ -53,6 +55,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
       GYM_AUTH_TEST: "1",
       GYM_AUTH_TEST_ADDRESS: "2001:db8:" + randomBytes(12).toString("hex").match(/.{4}/g).join(":"),
       GYM_PRIVATE_MEDIA_DIR: mediaDirectory,
+      GYM_PRODUCT_MEDIA_DIR: catalogMediaDirectory,
       GYM_SMTP_TEST: "1",
       GYM_SMTP_HOST: "127.0.0.1",
       GYM_SMTP_PORT: String(smtp.port),
@@ -361,6 +364,44 @@ test("authentication, members, private photos and attendance on MariaDB", async 
     return form;
   };
   const photo = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jKnEAAAAASUVORK5CYII=", "base64");
+  const catalogUpload = "inventory/media/upload";
+  const catalogBytes = Buffer.from(php("backend/tests/billing-worker.php", ["media-fixture"], "null"), "base64");
+  const catalogPhoto = () => {
+    const image = new FormData();
+    image.set("photo", new Blob([catalogBytes], { type: "application/octet-stream" }), "untrusted.php");
+    return image;
+  };
+  const publicFetch = (path) => fetch(`http://127.0.0.1:${port}${path}`);
+  await request(catalogUpload, 403, catalogPhoto(), false);
+  const invalidPhoto = new FormData();
+  invalidPhoto.set("photo", new Blob(["<?php echo 1; ?>"], { type: "image/png" }), "fake.png");
+  await request(catalogUpload, 422, invalidPhoto);
+  const firstMedia = (await request(catalogUpload, 201, catalogPhoto())).url;
+  assert.match(firstMedia, /[a-f0-9]{48}\.png$/);
+  assert.equal((await publicFetch(firstMedia)).status, 404);
+  assert.equal((await publicFetch("/api/media/product?key=..%2Findex.php")).status, 404);
+  await request("inventory/catalog/save", 200, { entity: "product", id: product.id, fields: { image: firstMedia } });
+  const visibleImage = await publicFetch(firstMedia);
+  assert.equal(visibleImage.status, 200);
+  assert.equal(visibleImage.headers.get("content-type"), "image/png");
+  assert.equal(visibleImage.headers.get("x-content-type-options"), "nosniff");
+  const replacement = (await request(catalogUpload, 201, catalogPhoto())).url;
+  await request("inventory/catalog/save", 200, { entity: "variant", id: variant.id, fields: { image: replacement } });
+  await request("inventory/catalog/save", 200, { entity: "product", id: product.id, fields: { image: "" } });
+  assert.equal((await publicFetch(firstMedia)).status, 404);
+  assert.equal((await publicFetch(replacement)).status, 200);
+  const keyOf = (url) => new URL(url, "https://fixture.example.test").searchParams.get("key");
+  for (const url of [firstMedia, replacement]) php("backend/tests/billing-worker.php", ["media-age"], JSON.stringify(keyOf(url)));
+  const mediaEnv = { ...process.env, GYM_PRODUCT_MEDIA_DIR: catalogMediaDirectory };
+  php("backend/bin/product-media.php", ["cleanup"], undefined, mediaEnv);
+  assert.equal(existsSync(join(catalogMediaDirectory, keyOf(firstMedia))), false);
+  assert.equal(existsSync(join(catalogMediaDirectory, keyOf(replacement))), true);
+  const legacyUrl = "https://fixtures.example.test/shop/legacy.png";
+  await request("inventory/catalog/save", 200, { entity: "product", id: product.id, fields: { image: legacyUrl } });
+  const legacyFile = join(mediaDirectory, "migration-fixture.png");
+  writeFileSync(legacyFile, catalogBytes);
+  const migratedPhoto = php("backend/bin/product-media.php", ["import", "product", String(product.id), legacyUrl, legacyFile], undefined, mediaEnv).trim();
+  assert.equal((await publicFetch(migratedPhoto)).status, 200);
   await request("members/upload-photo", 403, buildUpload(photo), false);
   await request("members/upload-photo", 422, buildUpload("invalid image"));
   const upload = await request("members/upload-photo", 201, buildUpload(photo));
@@ -468,6 +509,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("invoices/products/issue", 403, productInvoice, true, paymentKey());
   await request("members/save", 403, profile);
   await request(photoPath, 403);
+  await request(catalogUpload, 403, catalogPhoto());
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

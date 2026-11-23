@@ -16,7 +16,7 @@ final class Catalog
             'product_id' => 'required_id', 'name' => 'required', 'sku' => 'required', 'barcode' => 'short',
             'size' => 'short', 'color' => 'short', 'flavour' => 'short', 'package_size' => 'short',
             'cost_price_minor' => 'nullable_money', 'selling_price_minor' => 'nullable_money',
-            'wholesale_price_minor' => 'nullable_money', 'low_stock_threshold' => 'nullable_quantity', 'is_active' => 'bool',
+            'wholesale_price_minor' => 'nullable_money', 'low_stock_threshold' => 'nullable_quantity', 'is_active' => 'bool', 'image' => 'nullable',
         ], ['product_id', 'sku']],
         'supplier' => ['inventory_suppliers', [
             'name' => 'required', 'contact_person' => 'short', 'phone' => 'short', 'email' => 'short',
@@ -246,6 +246,9 @@ final class Catalog
             $fields['deactivated_at'] = $fields['is_active'] ? null : gmdate('Y-m-d H:i:s');
         }
         return $this->mutate(function () use ($id, $entity, $table, $fields, $actor, $opening): array {
+            if (array_key_exists('image', $fields) && !(new ProductMedia($this->db))->validateReference($fields['image'])) {
+                return [422, ['error' => 'Select a valid uploaded image or an HTTPS image URL.']];
+            }
             if ($id === null) {
                 $names = implode(', ', array_keys($fields));
                 $markers = implode(', ', array_fill(0, count($fields), '?'));

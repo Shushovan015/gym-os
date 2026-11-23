@@ -8,6 +8,7 @@ export type InventoryProduct = {
 };
 
 export type InventoryVariant = {
+  image?: string | null;
   id: number; product_id: number; name: string; sku: string; barcode: string | null; size: string | null;
   color: string | null; flavour: string | null; package_size: string | null; cost_price_minor: number | null;
   selling_price_minor: number | null; wholesale_price_minor: number | null; current_quantity: number; low_stock_threshold: number | null;

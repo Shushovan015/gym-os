@@ -15,6 +15,17 @@ $mode = $argv[1] ?? '';
 $actor = '00000000-0000-0000-0000-000000000001';
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 switch ($mode) {
+    case 'media-fixture':
+        $image = imagecreatetruecolor(2, 2);
+        ob_start();
+        imagepng($image);
+        echo base64_encode(ob_get_clean());
+        break;
+    case 'media-age':
+        $db->prepare('UPDATE product_media_files SET created_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 DAY WHERE file_key = ?')
+            ->execute([$input]);
+        echo 'true';
+        break;
     case 'legacy-fixture':
         $db->beginTransaction();
         $db->exec("INSERT INTO shop_items (title, category, inventory_enabled) VALUES ('Imported stock', 'Fixture', 1)");

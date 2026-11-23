@@ -43,3 +43,36 @@ it("loads the stock page through PHP and posts an exact purchase quantity", asyn
   fireEvent.click(within(dialog).getByRole("button", { name: "Add 1.125" }));
   expect(await screen.findByText("Stock recorded. New stock: 3.875.")).toBeInTheDocument();
 });
+
+it("stages a product photo and publishes its URL when the product is saved", async () => {
+  const photoUrl = "/api/media/product?key=fixture.png";
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+  const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.startsWith("/api/inventory/variants?")) return json({
+      total: 0, categories: [], rows: [], summary: { units: 0, low: 0, out: 0, cost: 0, retail: 0 },
+    });
+    if (url === "/api/inventory/suppliers") return json({ suppliers: [] });
+    if (url === "/api/auth/session") return json({ csrfToken: "csrf" });
+    if (url === "/api/inventory/media/upload") {
+      expect((options?.body as FormData).get("photo")).toBeInstanceOf(File);
+      expect(new Headers(options?.headers).get("X-CSRF-Token")).toBe("csrf");
+      return json({ url: photoUrl });
+    }
+    if (url === "/api/inventory/catalog/save") {
+      expect(JSON.parse(String(options?.body))).toMatchObject({
+        entity: "product", fields: { title: "Fixture product", category: "Equipment", image: photoUrl },
+      });
+      return json({ id: 9 });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<MemoryRouter initialEntries={["/admin/inventory?action=add-product"]}><AdminInventory /></MemoryRouter>);
+  const dialog = await screen.findByRole("dialog", { name: "Add Product" });
+  fireEvent.change(within(dialog).getByPlaceholderText("Example: Whey Protein"), { target: { value: "Fixture product" } });
+  fireEvent.change(within(dialog).getByPlaceholderText("Example: Protein"), { target: { value: "Equipment" } });
+  fireEvent.change(within(dialog).getByLabelText("Product photo"), { target: { files: [new File(["fixture"], "photo.png", { type: "image/png" })] } });
+  expect(await within(dialog).findByAltText("Product preview")).toHaveAttribute("src", photoUrl);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add Product" }));
+  expect(await screen.findByText("Product added.")).toBeInTheDocument();
+});

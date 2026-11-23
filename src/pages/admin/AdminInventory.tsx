@@ -66,6 +66,7 @@ type ProductForm = {
   supplierId: string;
 };
 type VariantForm = {
+  image: string;
   name: string;
   sku: string;
   barcode: string;
@@ -97,6 +98,7 @@ const emptyProduct: ProductForm = {
   supplierId: "",
 };
 const emptyVariant: VariantForm = {
+  image: "",
   name: "Default",
   sku: "",
   barcode: "",
@@ -492,7 +494,7 @@ export default function AdminInventory() {
       const { product_id, ...fields } = payload;
       try {
         await phpPost("/inventory/catalog/save", { entity: "variant", id: editingVariant?.id,
-          fields: { ...fields, ...(editingVariant ? {} : { product_id }),
+          fields: { ...fields, image: variantForm.image.trim() || null, ...(editingVariant ? {} : { product_id }),
             low_stock_threshold: threshold === null ? null : String(threshold) } });
         setVariantProduct(null);
         setEditingVariant(null);
@@ -594,13 +596,26 @@ export default function AdminInventory() {
     );
     await load();
   };
-  const uploadProductPhoto = async (file: File) => {
-    if (usePhpApi) return;
+  const uploadProductPhoto = async (file: File, variant = false) => {
     if (!file.type.startsWith("image/")) {
       setMessage("Choose an image file such as JPG, PNG or WebP.");
       return;
     }
     setUploadingPhoto(true);
+    if (usePhpApi) {
+      const form = new FormData();
+      form.set("photo", file);
+      try {
+        const { url } = await phpPost<{ url: string }>("/inventory/media/upload", form);
+        if (variant) setVariantForm((current) => ({ ...current, image: url }));
+        else setProductForm((current) => ({ ...current, image: url }));
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Photo upload failed.");
+      } finally {
+        setUploadingPhoto(false);
+      }
+      return;
+    }
     const extension = file.name.split(".").pop() || "jpg";
     const path = `products/${crypto.randomUUID()}.${extension}`;
     const { error } = await supabase.storage
@@ -1068,6 +1083,7 @@ export default function AdminInventory() {
                                 setEditingVariant(variant);
                                 setVariantProduct(product);
                                 setVariantForm({
+                                  image: variant.image ?? "",
                                   name: variant.name,
                                   sku: variant.sku,
                                   barcode: variant.barcode ?? "",
@@ -1150,7 +1166,7 @@ export default function AdminInventory() {
             >
               Cancel
             </AdminButton>
-            <AdminButton variant="primary" onClick={() => void saveProduct()}>
+            <AdminButton variant="primary" disabled={uploadingPhoto} onClick={() => void saveProduct()}>
               {editing ? "Save changes" : "Add Product"}
             </AdminButton>
           </div>
@@ -1329,8 +1345,8 @@ export default function AdminInventory() {
                 <div className="space-y-2">
                   <AdminInput
                     type="file"
-                    accept="image/*"
-                    disabled={uploadingPhoto || usePhpApi}
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={uploadingPhoto}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) void uploadProductPhoto(file);
@@ -1343,6 +1359,8 @@ export default function AdminInventory() {
                       className="h-28 w-28 rounded-lg object-cover"
                     />
                   ) : null}
+                  {usePhpApi && productForm.image && <AdminButton type="button" variant="secondary"
+                    onClick={() => setProductForm((current) => ({ ...current, image: "" }))}>Remove photo</AdminButton>}
                 </div>
               </AdminField>
               <AdminField label="Public image URL" hint="Optional fallback">
@@ -1402,7 +1420,7 @@ export default function AdminInventory() {
           setEditingVariant(null);
         }}
         footer={
-          <AdminButton variant="primary" onClick={() => void saveVariant()}>
+          <AdminButton variant="primary" disabled={uploadingPhoto} onClick={() => void saveVariant()}>
             {editingVariant ? "Save Option" : "Add Option"}
           </AdminButton>
         }
@@ -1420,6 +1438,16 @@ export default function AdminInventory() {
               }
             />
           </AdminField>
+          {usePhpApi && <AdminField label="Variant photo">
+            <AdminInput type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingPhoto}
+              onChange={(event) => { const photo = event.target.files?.[0]; if (photo) void uploadProductPhoto(photo, true); }} />
+            {variantForm.image && <>
+              <img src={variantForm.image} alt="Variant preview" className="h-28 w-28 rounded-lg object-cover" />
+              <AdminButton type="button" variant="secondary" onClick={() => setVariantForm((current) => ({ ...current, image: "" }))}>
+                Remove variant photo
+              </AdminButton>
+            </>}
+          </AdminField>}
           <div className="grid gap-3 sm:grid-cols-2">
             <AdminField label="Flavour">
               <AdminInput
