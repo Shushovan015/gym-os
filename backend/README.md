@@ -92,6 +92,10 @@ Restore first into an isolated database with a different name and empty media di
 
 Maintain retention outside the web root and keep at least one recent verified off-server copy before pruning. Daily or weekly scheduling is optional and depends on the host's CLI PHP access. Keep the backup password, SMTP configuration, deployment configuration and session secrets in a separate protected recovery plan.
 
+### Database reconciliation
+
+For a database rehearsal, run `php backend/bin/reconcile.php snapshot` on a known-good MariaDB source and save its JSON outside the web root. Run `php backend/bin/reconcile.php compare EXPECTED_JSON` against the target. The command reports which groups differ and exits nonzero on a mismatch. The snapshot compares counts, financial totals by currency, date ranges, stock quantities, staff role counts and the invoice sequence. Run `php backend/bin/reconcile.php review` for invoice/payment discrepancies, invalid reversal links and legacy records held for review. These commands read the database without changing records.
+
 ### React migration preview
 
 Set `VITE_GYM_BACKEND=php` and `GYM_PHP_DEV_URL=http://127.0.0.1:8082` in the Vite process environment. Use a disposable database and the test router on loopback. Set `GYM_AUTH_TEST=1` and `GYM_AUTH_TEST_ADDRESS=127.0.0.1` in the PHP process, then run `php -S 127.0.0.1:8082 -t backend/public backend/tests/router.php`. Start Vite and open the login on `localhost`. Use a local Supabase configuration for the remaining public routes. The preview uses PHP for login, session checks, sign-out, Dashboard, Members, Attendance, Billing and Inventory. Other private screens are blocked in this mode while their APIs are being connected. CSV import, fee generation, pricing administration, unreconciled legacy cancellations remain outside the preview.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -13,7 +13,7 @@ const phpArgs = process.env.GYM_PHP_EXTENSION_DIR
 function php(env, script, arguments_, expected = 0) {
   const result = spawnSync("php", [...phpArgs, `backend/${script}.php`, ...arguments_], { env, encoding: "utf8" });
   assert.equal(result.status, expected, result.stderr || result.error?.message || result.stdout);
-  return expected === 0 ? result.stdout.trim() : result.stderr.trim();
+  return (result.stdout || result.stderr).trim();
 }
 
 test("encrypts a database and uploaded images and restores them into an isolated blank database", (t) => {
@@ -42,6 +42,12 @@ test("encrypts a database and uploaded images and restores them into an isolated
   assert.equal(original.invoice.balance_minor, 800);
   assert.equal(original.payment.amount_minor, 400);
   assert.equal(original.stock.current_quantity, "1.125");
+  const expectedSnapshotPath = join(sandbox, "expected-gym.json");
+  const expectedSnapshot = JSON.parse(php(source, "bin/reconcile", ["snapshot"]));
+  assert.equal(expectedSnapshot.counts.members, "1");
+  assert.equal(expectedSnapshot.invoices[0].balance_minor, "800");
+  assert.equal(expectedSnapshot.payments[0].amount_minor, "400");
+  writeFileSync(expectedSnapshotPath, JSON.stringify(expectedSnapshot));
 
   const { archive } = JSON.parse(php(source, "bin/backup", ["create"]));
   assert.deepEqual(readdirSync(common.GYM_BACKUP_DIR), [archive.split(/[\\/]/).at(-1)]);
@@ -54,6 +60,8 @@ test("encrypts a database and uploaded images and restores them into an isolated
   php(source, "tests/backup-fixture", ["break-reference"]);
   let broken;
   try {
+    const review = JSON.parse(php(source, "bin/reconcile", ["review"]));
+    assert.ok(review.invoicePaymentDiscrepancies.some(({ id }) => id === 201));
     broken = JSON.parse(php(source, "bin/backup", ["create"])).archive;
   } finally {
     php(source, "tests/backup-fixture", ["repair-reference"]);
@@ -65,6 +73,10 @@ test("encrypts a database and uploaded images and restores them into an isolated
   assert.deepEqual(JSON.parse(php(target, "bin/backup", ["restore", archive, "gym_restore_fixture"])), { tables: check.tables, media: 2 });
   php(target, "bin/migrate", ["verify"]);
   assert.deepEqual(JSON.parse(php(target, "tests/backup-fixture", ["inspect"])), original);
+  assert.deepEqual(JSON.parse(php(target, "bin/reconcile", ["compare", expectedSnapshotPath])), { match: true, differences: [] });
+  expectedSnapshot.counts.members = "2";
+  writeFileSync(expectedSnapshotPath, JSON.stringify(expectedSnapshot));
+  assert.deepEqual(JSON.parse(php(target, "bin/reconcile", ["compare", expectedSnapshotPath], 1)), { match: false, differences: ["counts"] });
   for (const variable of ["GYM_PRIVATE_MEDIA_DIR", "GYM_PRODUCT_MEDIA_DIR"]) {
     const [key] = readdirSync(source[variable]);
     assert.deepEqual(readFileSync(join(target[variable], key)), readFileSync(join(source[variable], key)));
