@@ -1,0 +1,18 @@
+Options -Indexes
+DirectoryIndex index.html
+RewriteEngine On
+
+# Permit certificate challenges, but deny other hidden paths.
+RewriteRule "(^|/)\.(?!well-known(?:/|$))" - [F,END]
+RewriteRule "^api(?:/.*)?$" api/index.php [END]
+RewriteRule "^assets/" - [END]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule "^" index.html [END]
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Content-Security-Policy "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" "expr=%{REQUEST_URI} !~ m#^/api(?:/|$)#"
+</IfModule>

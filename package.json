@@ -7,6 +7,8 @@
     "dev": "vite",
     "dev:local": "node scripts/dev-local.mjs",
     "build": "tsc -b && vite build",
+    "build:php": "tsc -b && vite build --mode php",
+    "package:php": "npm run build:php && node scripts/package-php.mjs",
     "setup:local": "node scripts/setup-local.mjs",
     "start:local": "node scripts/serve-local.mjs",
     "lint": "eslint .",

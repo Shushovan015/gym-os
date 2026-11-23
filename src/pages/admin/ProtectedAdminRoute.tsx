@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { supabase } from "@src/Client/supabase";
 import { phpSession, usePhpApi } from "@src/Client/phpApi";
 
 export default function ProtectedAdminRoute() {
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
-  const { pathname } = useLocation();
 
   useEffect(() => {
     if (usePhpApi) {
@@ -46,13 +45,5 @@ export default function ProtectedAdminRoute() {
 
   if (loading) return <div className="p-6 text-white">Checking admin access...</div>;
   if (!allowed) return <Navigate to="/admin/login" replace />;
-  if (usePhpApi && !["/admin", "/admin/members", "/admin/attendance", "/admin/holidays", "/admin/billing", "/admin/inventory", "/admin/reports", "/admin/settings", "/admin/legacy-import", "/studio", "/studio/contact", "/studio/footer", "/studio/home", "/studio/facilities", "/studio/trainers", "/studio/pricing", "/studio/testimonials", "/studio/proshop"].includes(pathname.replace(/\/$/, ""))) {
-    return (
-      <div className="min-h-screen bg-slate-950 p-6 text-slate-100">
-        <p>This workspace is still being migrated.</p>
-        <Link className="mt-3 inline-block text-sky-300 underline" to="/admin/members">Open Members</Link>
-      </div>
-    );
-  }
   return <Outlet />;
 }

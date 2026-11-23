@@ -9,7 +9,7 @@
 | React Attendance workspace | PASS | PHP preview loads paginated Nepal calendar ranges, holiday dates and activation filters. MariaDB tests cover leap day, year boundaries, duplicate changes, inactive members and authorization. React tests cover loading and errors, month changes, search, mark, remove, restore and reload. The separate Holiday Manager remains pending. |
 | Private portrait storage | PASS | Multipart upload and byte-for-byte download, invalid image, invalid key, CSRF, viewer and anonymous denial. |
 | React authentication and Members preview | PASS | React flow test covers PHP login, CSRF, the protected route and the existing Members screen's PHP reads. Backend HTTP tests cover member edits, settings, plan loading and portraits. PHP mode is opt-in. |
-| Complete PHP frontend integration and standalone runtime | FAIL | All identified admin and public data screens have PHP paths. The standalone build and Apache package still need verification. |
+| Standalone PHP package and Apache runtime | PASS | The PHP build excludes the Supabase SDK and credentials. The packaged Apache site passed Chromium sign-in and public, admin and Studio route checks over local HTTPS with all non-local page requests blocked. |
 | Membership fee ledger reads | PASS | MariaDB fixture verifies persisted statuses, partial balance, totals, due date, empty ledger and viewer denial. |
 | Membership payments and receipts | PASS | MariaDB 10.11 and HTTP tests cover full, partial and multi-month allocations, oversize and already-paid rejection, same-key replay and payload conflicts, concurrent invoice numbers, integer tax, financial reconciliation, receipt and history endpoints, and rollback after a database-injected audit failure. |
 | Billing overview and member payment history | PASS | PHP invoice listing, filters, pagination and summary are covered by HTTP tests. The React Members profile and Billing receipts read and display payments and reversals from PHP. |
@@ -46,6 +46,6 @@
 | CSV member import and member webhook | PASS | The existing CSV dialog uses a transactional PHP upsert. Tests cover duplicate rollback, inactive new records, repeat imports, preserved fee-ledger metadata and secured notifications to a local test webhook. React verifies the import from the existing dialog. |
 | Production PostgreSQL import and reconciliation | NOT TESTED | Production export, account recovery, media transfer and financial reconciliation remain pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
-| DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
+| DirectAdmin/cPanel hosting account | NOT TESTED | The package and TLS routing passed a local Apache rehearsal. The provider account, secure storage and outbound mail settings still require staging verification. See [shared-hosting instructions](php-shared-hosting.md). |
 
-The checkpoint is for development only. Next, build the PHP-only frontend, package the private backend and Apache public entry point, and rehearse the routes with non-local browser network requests blocked.
+The checkpoint is for development only. Next, load an offline PostgreSQL export into an isolated MariaDB target through a reviewed field mapping and compare the migrated data before any hosting cutover.
