@@ -22,7 +22,7 @@ import BackupRestorePanel from "./BackupRestorePanel";
 import PhpBackupPanel from "./PhpBackupPanel";
 
 type SettingsErrors = Partial<Record<keyof AdminSettingsType, string>>;
-type PhpSettings = { settings: AdminSettingsType; smtpConfigured: boolean };
+type PhpSettings = { settings: AdminSettingsType; smtpConfigured: boolean; memberWebhookConfigured: boolean };
 
 const n8nWebhookConfigured = Boolean((import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_URL as string | undefined)?.trim());
 const n8nSecretConfigured = Boolean((import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_SECRET as string | undefined)?.trim());
@@ -66,16 +66,18 @@ export default function AdminSettings() {
   const [message, setMessage] = useState("");
   const [loadWarning, setLoadWarning] = useState("");
   const [smtpConfigured, setSmtpConfigured] = useState(false);
+  const [memberWebhookConfigured, setMemberWebhookConfigured] = useState(false);
 
   useEffect(() => {
     let alive = true;
     if (usePhpApi) {
-      void phpGet<PhpSettings>("/admin/settings").then(({ settings, smtpConfigured: ready }) => {
+      void phpGet<PhpSettings>("/admin/settings").then(({ settings, smtpConfigured: ready, memberWebhookConfigured: webhook }) => {
         if (!alive) return;
         const next = { ...defaultAdminSettings, ...settings };
         setForm(next);
         setSaved(next);
         setSmtpConfigured(ready);
+        setMemberWebhookConfigured(webhook);
       }).catch((issue: Error) => {
         if (alive) setLoadWarning(issue.message);
       }).finally(() => {
@@ -162,6 +164,7 @@ export default function AdminSettings() {
       const data = usePhpApi
         ? await phpPost<PhpSettings>("/admin/settings/save", payload).then((response) => {
           setSmtpConfigured(response.smtpConfigured);
+          setMemberWebhookConfigured(response.memberWebhookConfigured);
           return response.settings;
         })
         : await supabase.from("admin_settings").upsert(payload, { onConflict: "id" }).select("*").single()
@@ -299,12 +302,16 @@ export default function AdminSettings() {
         <div className="space-y-6">
           <AdminCard>
             <AdminSectionTitle title="Notification status" />
-            {usePhpApi ? (
+            {usePhpApi ? (<>
               <div className="mt-5 flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 <span className="text-sm text-slate-300">Invoice email (SMTP)</span>
                 <AdminBadge tone={smtpConfigured ? "success" : "muted"}>{smtpConfigured ? "Configured" : "Not configured"}</AdminBadge>
               </div>
-            ) : <>
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                <span className="text-sm text-slate-300">Member webhook</span>
+                <AdminBadge tone={memberWebhookConfigured ? "success" : "muted"}>{memberWebhookConfigured ? "Configured" : "Not configured"}</AdminBadge>
+              </div>
+            </>) : <>
             <div className="mt-5 space-y-3">
               <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 <div className="flex items-center gap-2 text-sm text-slate-300">

@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +45,20 @@ test("authentication, members, private photos and attendance on MariaDB", async 
 
   const port = await testPort();
   const smtp = await startSmtp(t);
+  const webhookEvents = [];
+  const webhookSecret = randomBytes(24).toString("hex");
+  const webhook = createHttpServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    if (request.method !== "POST" || request.headers["x-gym-secret"] !== webhookSecret) {
+      response.writeHead(400, { Connection: "close" }).end();
+      return;
+    }
+    webhookEvents.push(JSON.parse(body));
+    response.writeHead(204, { Connection: "close" }).end();
+  });
+  await new Promise((resolve, reject) => webhook.once("error", reject).listen(0, "127.0.0.1", resolve));
+  t.after(() => webhook.close());
   const mediaDirectory = mkdtempSync(join(tmpdir(), "gym-member-photos-"));
   const catalogMediaDirectory = mkdtempSync(join(tmpdir(), "gym-catalog-photos-"));
   const backupDirectory = mkdtempSync(join(tmpdir(), "gym-encrypted-backups-"));
@@ -67,6 +82,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
       GYM_SMTP_PORT: String(smtp.port),
       GYM_SMTP_ENCRYPTION: "test",
       GYM_SMTP_FROM: "billing@example.test",
+      GYM_MEMBERS_WEBHOOK_URL: `http://127.0.0.1:${webhook.address().port}/fixture`,
+      GYM_MEMBERS_WEBHOOK_SECRET: webhookSecret,
     },
     stdio: "ignore",
   });
@@ -756,7 +773,9 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   const settingsSave = "admin/settings/save";
   const currentSettings = await request("admin/settings", 200);
   assert.equal(currentSettings.smtpConfigured, true);
-  assert.deepEqual(Object.keys(currentSettings).sort(), ["settings", "smtpConfigured"]);
+  assert.equal(currentSettings.memberWebhookConfigured, true);
+  assert.deepEqual(Object.keys(currentSettings).sort(), ["memberWebhookConfigured", "settings", "smtpConfigured"]);
+  assert.ok(!JSON.stringify(currentSettings).includes(webhookSecret));
   const historicalReceiptPath = `invoices/receipt?id=${replayed.invoice_id}`;
   const historicalInvoice = (await request(historicalReceiptPath, 200)).invoice;
   const currentNumber = Number(historicalInvoice.invoice_number);
@@ -829,6 +848,31 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.match((await request(importPath, 200, changedBill)).review.find(({ id, entity }) => id === legacyId && entity === "bill").reason,
     /differs from the earlier import/);
   assert.deepEqual(await request(`invoices/receipt?id=${importedBill.id}`, 200), legacyReceipt);
+  const csvPath = "members/import-csv";
+  const csvCode = randomUUID();
+  const csvName = `CSV fixture ${csvCode}`;
+  const csvSearch = `members?search=${encodeURIComponent(csvName)}`;
+  const csvRow = { member_id: csvCode, full_name: csvName, phone: "+977" + randomBytes(6).toString("hex"),
+    membership_status: "active", membership_type: "monthly", payment_status: "paid", payment_due_date: null };
+  await request(csvPath, 403, { rows: [csvRow] }, false);
+  await request(csvPath, 422, { rows: [csvRow, csvRow] });
+  assert.equal((await request(csvSearch, 200)).count, 0);
+  assert.deepEqual(await request(csvPath, 200, { rows: [csvRow] }),
+    { imported: 1, protectedPaymentProfiles: 0, notification: "delivered" });
+  const [csvMember] = (await request(csvSearch, 200)).members;
+  assert.equal(csvMember.is_active, false);
+  assert.equal(csvMember.payment_status, "paid");
+  assert.equal((await request(`members/fees?id=${csvMember.id}`, 200)).summary.total_due, 0);
+  assert.equal((await request(csvPath, 200, { rows: [csvRow] })).imported, 1);
+  assert.equal((await request(csvSearch, 200)).count, 1);
+  const fundedMember = (await request(`members/details?id=${staged.memberId}`, 200)).member;
+  const protectedProfile = { member_id: fundedMember.member_id, full_name: fundedMember.full_name, phone: fundedMember.phone,
+    membership_type: fundedMember.membership_type, membership_status: fundedMember.membership_status, payment_status: "paid", payment_due_date: null };
+  assert.equal((await request(csvPath, 200, { rows: [protectedProfile] })).protectedPaymentProfiles, 1);
+  assert.equal((await request(`members/details?id=${staged.memberId}`, 200)).member.payment_status, fundedMember.payment_status);
+  assert.ok(webhookEvents.some(({ event_type, source, member_ids, count }) => event_type === "members_imported"
+    && source === "admin_csv_import" && member_ids[0] === csvCode && count === 1));
+  assert.ok(webhookEvents.some(({ event_type }) => event_type === "member_created"));
   php("backend/bin/account.php", ["reset", id], randomBytes(24).toString("hex"));
   await request("admin", 401);
   await request("session", 200);
@@ -871,6 +915,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin/backups", 403);
   await request(downloadPath, 403);
   await request(importPath, 403, legacyBundle);
+  await request(csvPath, 403, { rows: [csvRow] });
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

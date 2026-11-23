@@ -80,3 +80,30 @@ it("signs in with PHP and loads the existing Members view through PHP endpoints"
   expect(screen.getByText("Bill 123")).toBeInTheDocument();
   expect(screen.getByText(`Reversed ${formatMembershipFeeAmount(10000, "NPR")}`)).toBeInTheDocument();
 });
+
+it("imports the existing CSV format through PHP", async () => {
+  const fetchMock = vi.fn(async (path: string, options?: RequestInit) => {
+    if (path === "/api/auth/session") return json({ user: admin, csrfToken: "authenticated-csrf" });
+    if (path === "/api/admin/settings") return json({ settings: {}, memberWebhookConfigured: true });
+    if (path === "/api/members/plans") return json({ plans: [] });
+    if (path.startsWith("/api/members?")) {
+      return json({ members: [], count: 0, summary: { active: 0, enabled: 0, payment_follow_up: 0, deleted: 0 } });
+    }
+    if (path === "/api/members/import-csv") {
+      expect(new Headers(options?.headers).get("X-CSRF-Token")).toBe("authenticated-csrf");
+      expect(JSON.parse(String(options?.body)).rows).toMatchObject([{ member_id: "CSV-1", full_name: "Fixture Personal Record", payment_status: "unpaid" }]);
+      return json({ imported: 1, protectedPaymentProfiles: 0, notification: "delivered" });
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<MemoryRouter><AdminMembers /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: "CSV import" }));
+  const csv = "member_id,full_name,email,phone,membership_type,membership_status,start_date,end_date,last_visit_date,payment_status,payment_due_date,notes\n"
+    + "CSV-1,Fixture Personal Record,,+9779800000000,monthly,active,,,,unpaid,,";
+  const file = new File([csv], "fixture.csv");
+  Object.defineProperty(file, "text", { value: async () => csv });
+  fireEvent.change(screen.getByLabelText("CSV file"), { target: { files: [file] } });
+  fireEvent.click(await screen.findByRole("button", { name: "Import 1 rows" }));
+  expect(await screen.findByText("Imported 1 members. Webhook notified.")).toBeInTheDocument();
+});

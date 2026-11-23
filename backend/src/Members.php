@@ -160,7 +160,68 @@ final class Members
         }
     }
 
-    private function saveLocked(?int $id, array $profile, ?array $current, string $actor): array
+    public function importCsv(array $input, string $actor): array
+    {
+        $rows = $input['rows'] ?? null;
+        if (!is_array($rows) || !array_is_list($rows) || $rows === [] || count($rows) > 2000) {
+            return [422, ['error' => 'Supply between 1 and 2,000 CSV member rows.']];
+        }
+        $fields = array_flip([...array_diff(self::PROFILE_FIELDS, ['address']), 'payment_status', 'payment_due_date']);
+        $seen = $ids = [];
+        $protectedPayments = 0;
+        $this->db->beginTransaction();
+        try {
+            $this->lockIdentity();
+            $find = $this->db->prepare('SELECT * FROM members WHERE member_id = ? FOR UPDATE');
+            $ledger = $this->db->prepare('SELECT 1 FROM membership_fees WHERE member_id = ? LIMIT 1 LOCK IN SHARE MODE');
+            $metadata = $this->db->prepare('UPDATE members SET payment_status = ?, payment_due_date = ? WHERE id = ?');
+            foreach ($rows as $index => $row) {
+                $rowNumber = $index + 2;
+                $code = is_string($row['member_id'] ?? null) ? trim($row['member_id']) : '';
+                $payment = $row['payment_status'] ?? null;
+                $due = $row['payment_due_date'] ?? null;
+                if (!is_array($row) || array_diff_key($row, $fields) !== [] || $code === '' || strlen($code) > 255
+                    || !in_array($payment, ['paid', 'unpaid', 'overdue'], true)
+                    || ($due !== null && (!is_string($due) || !preg_match('/^([1-9][0-9]{3})-([0-9]{2})-([0-9]{2})$/D', $due, $parts)
+                        || !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])))) {
+                    $this->db->rollBack();
+                    return [422, ['error' => "CSV row $rowNumber has invalid member fields or payment metadata."]];
+                }
+                if (isset($seen[$code])) {
+                    $this->db->rollBack();
+                    return [422, ['error' => "CSV row $rowNumber repeats a member ID."]];
+                }
+                $seen[$code] = true;
+                $find->execute([$code]);
+                $current = $find->fetch(PDO::FETCH_ASSOC) ?: null;
+                $find->closeCursor();
+                if ($current && $current['deleted_at'] !== null) {
+                    $this->db->rollBack();
+                    return [409, ['error' => "CSV row $rowNumber matches a deleted member. Restore the member before importing updates."]];
+                }
+                unset($row['payment_status'], $row['payment_due_date']);
+                [$status, $result] = $this->saveLocked($current ? (int) $current['id'] : null, $row, $current, $actor, false);
+                if ($status !== 200 && $status !== 201) {
+                    $this->db->rollBack();
+                    return [$status, ['error' => "CSV row $rowNumber. " . $result['error']]];
+                }
+                $id = $result['member']['id'];
+                $ledger->execute([$id]);
+                $hasLedger = $ledger->fetchColumn() !== false;
+                $ledger->closeCursor();
+                if ($hasLedger) $protectedPayments++;
+                else $metadata->execute([$payment, $due, $id]);
+                $ids[] = $code;
+            }
+            $this->db->commit();
+            return [200, ['imported' => count($ids), 'memberIds' => $ids, 'protectedPaymentProfiles' => $protectedPayments]];
+        } catch (Throwable $error) {
+            if ($this->db->inTransaction()) $this->db->rollBack();
+            throw $error;
+        }
+    }
+
+    private function saveLocked(?int $id, array $profile, ?array $current, string $actor, bool $activateNew = true): array
     {
         foreach ($profile as $field => &$value) {
             $nullable = in_array($field, ['email', 'notes', 'address', 'start_date', 'end_date', 'last_visit_date'], true);
@@ -198,7 +259,7 @@ final class Members
             return [409, ['error' => 'Member ID, phone or email is already in use.']];
         }
         if ($id === null) {
-            $profile['is_active'] = 1;
+            $profile['is_active'] = (int) $activateNew;
             $profile['payment_status'] = 'unpaid';
             $fields = implode(', ', array_keys($profile));
             $placeholders = implode(', ', array_fill(0, count($profile), '?'));

@@ -44,6 +44,8 @@ All endpoints require an administrator session. Writes require the CSRF header. 
 
 ### Membership billing
 
+Member edits and CSV imports can notify a server-configured HTTPS webhook through `GYM_MEMBERS_WEBHOOK_URL` and optional `GYM_MEMBERS_WEBHOOK_SECRET`. PHP sends member IDs and event metadata after the database commit. Settings reports configuration status. Keep the URL and secret in private PHP configuration.
+
 `POST /api/membership/payments` requires administrator access, CSRF and an `Idempotency-Key` of 16–128 URL-safe characters. Send `memberId`, `feeIds`, `paymentMethod` and optionally `amountMinor`, `paymentDate`, `reference` and `notes`. The amount is the pre-tax amount applied to fees, in integer minor units. Omit it to settle the selected balance. The API allocates oldest selected months first and adds configured tax to the receipt. A successful retry returns the original invoice and payment. Keep the same key and payload after a timeout. A new payment requires a new key.
 
 `GET /api/membership/payment-history?id=123` reads recent payment records for the member. `GET /api/invoices/receipt?id=123` returns the issued receipt, items and payments. Both require administrator access. Financial mutations affect existing fee periods only.

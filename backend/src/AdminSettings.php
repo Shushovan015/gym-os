@@ -15,7 +15,8 @@ final class AdminSettings
         $row = $this->db->query('SELECT * FROM admin_settings WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
         if ($row === false) throw new RuntimeException('Gym settings were not found.');
         foreach (self::FLAGS as $field) $row[$field] = (bool) $row[$field];
-        return ['settings' => $row, 'smtpConfigured' => (new InvoiceMailTransport())->config() !== null];
+        return ['settings' => $row, 'smtpConfigured' => (new InvoiceMailTransport())->config() !== null,
+            'memberWebhookConfigured' => MemberWebhook::configured()];
     }
 
     public function save(array $input, string $actor): array

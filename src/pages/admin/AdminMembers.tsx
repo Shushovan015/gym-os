@@ -313,6 +313,7 @@ export default function AdminMembers() {
   const [csvName, setCsvName] = useState("");
   const [importing, setImporting] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [phpWebhookConfigured, setPhpWebhookConfigured] = useState(false);
 
   const beginRequest = useLatestRequest(JSON.stringify([searchTerm, absentDays, createdSince, deletedFilter, activeFilter, membershipFilter, paymentFilter, planFilter, sortKey, currentPage]));
 const loadMembers = async () => {
@@ -381,12 +382,13 @@ const loadMembers = async () => {
     let alive = true;
     if (usePhpApi) {
       Promise.all([
-        phpGet<{ settings: AdminSettings }>("/admin/settings"),
+        phpGet<{ settings: AdminSettings; memberWebhookConfigured: boolean }>("/admin/settings"),
         phpGet<{ plans: MembershipPlan[] }>("/members/plans"),
-      ]).then(([{ settings }, { plans }]) => {
+      ]).then(([{ settings, memberWebhookConfigured }, { plans }]) => {
         if (alive) {
           setSettings({ ...defaultAdminSettings, ...settings });
           setMembershipPlans(plans);
+          setPhpWebhookConfigured(Boolean(memberWebhookConfigured));
         }
       }).catch((error) => {
         if (alive) setMessage(error instanceof Error ? error.message : "Could not load gym settings.");
@@ -829,10 +831,6 @@ const loadMembers = async () => {
 
   const importCsvRows = async () => {
     if (validCsvRows.length === 0 || importing) return;
-    if (usePhpApi) {
-      setMessage("CSV import is unavailable in the PHP migration preview.");
-      return;
-    }
     setImporting(true);
     // The database defaults newly imported members to inactive. Omit activation
     // and fields outside the CSV template so updates preserve existing values.
@@ -840,6 +838,26 @@ const loadMembers = async () => {
       const { address: _address, photo_url: _photoUrl, ...member } = toMemberPayload(row);
       return member;
     });
+    if (usePhpApi) {
+      try {
+        const result = await phpPost<{ imported: number; protectedPaymentProfiles: number; notification: string }>(
+          "/members/import-csv", { rows: payload },
+        );
+        setCsvRows([]);
+        setCsvName("");
+        setCsvOpen(false);
+        await loadMembers();
+        const payments = result.protectedPaymentProfiles ? ` Preserved ledger payment status for ${result.protectedPaymentProfiles} members.` : "";
+        const notification = result.notification === "delivered" ? " Webhook notified."
+          : result.notification === "failed" ? " Webhook delivery failed." : "";
+        setMessage(`Imported ${result.imported} members.${payments}${notification}`);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not import CSV members.");
+      } finally {
+        setImporting(false);
+      }
+      return;
+    }
     const { error } = await supabase.from("members").upsert(payload, { onConflict: "member_id" });
 
     if (error) {
@@ -1529,7 +1547,7 @@ const loadMembers = async () => {
       <AdminDialog
         open={csvOpen}
         title="CSV member import"
-        description="Imports valid rows and upserts by member_id. Existing n8n webhook behavior is preserved."
+        description="Imports valid rows and updates matching member IDs."
         onClose={() => setCsvOpen(false)}
         footer={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1548,8 +1566,8 @@ const loadMembers = async () => {
         }
       >
         <div className="space-y-4">
-          <AdminNotice tone={n8nMembersWebhookUrl ? "success" : "warning"}>
-            n8n webhook: {n8nMembersWebhookUrl ? "configured" : "not configured"}. Secret value is masked.
+          <AdminNotice tone={(usePhpApi ? phpWebhookConfigured : n8nMembersWebhookUrl) ? "success" : "warning"}>
+            Member webhook is {(usePhpApi ? phpWebhookConfigured : n8nMembersWebhookUrl) ? "configured" : "unconfigured"}.
           </AdminNotice>
           <AdminField label="CSV file">
             <AdminInput type="file" accept=".csv,text/csv" onChange={parseCsv} />

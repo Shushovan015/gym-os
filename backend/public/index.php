@@ -28,6 +28,7 @@ require __DIR__ . '/../src/GymBackup.php';
 require __DIR__ . '/../src/BackupDownloads.php';
 require __DIR__ . '/../src/LegacySqlImport.php';
 require __DIR__ . '/../src/HolidayManager.php';
+require __DIR__ . '/../src/MemberWebhook.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -124,6 +125,7 @@ $routes = [
     '/api/inventory/media/upload' => 'POST',
     '/api/media/product' => 'GET',
     '/api/members/save' => 'POST',
+    '/api/members/import-csv' => 'POST',
     '/api/members/change' => 'POST',
     '/api/members/photo' => 'GET',
     '/api/members/upload-photo' => 'POST',
@@ -311,6 +313,7 @@ try {
         $limit = match ($path) {
             '/api/auth/login' => 4096,
             '/api/admin/legacy-import' => 8 * 1024 * 1024,
+            '/api/members/import-csv' => 2 * 1024 * 1024,
             default => 65536,
         };
         $body = file_get_contents('php://input', false, null, 0, $limit + 1);
@@ -414,6 +417,18 @@ try {
             [$status, $result] = $path === '/api/members/save'
                 ? $members->save($input, $user['id'])
                 : $members->change($input, $user['id']);
+            if ($path === '/api/members/save' && ($status === 200 || $status === 201)) {
+                $event = $status === 201 ? 'member_created' : 'member_updated';
+                $result['notification'] = MemberWebhook::notify($event, 'admin_manual', [$result['member']['member_id']]);
+            }
+            respond($status, $result);
+        }
+        if ($path === '/api/members/import-csv') {
+            [$status, $result] = (new Members($db))->importCsv($input, $user['id']);
+            if ($status === 200) {
+                $result['notification'] = MemberWebhook::notify('members_imported', 'admin_csv_import', $result['memberIds']);
+                unset($result['memberIds']);
+            }
             respond($status, $result);
         }
         $status = $auth->login($input, $_SERVER['REMOTE_ADDR'] ?? '');
