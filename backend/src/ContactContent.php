@@ -32,20 +32,20 @@ final class ContactContent
         if ($id !== null && (!is_int($id) || $id < 1)) return [422, ['error' => 'Invalid FAQ ID.']];
 
         if ($action === 'content') {
-            $data = self::fields($input['content'] ?? null, self::FIELDS, 4000);
+            $data = WebsiteContentFields::text($input['content'] ?? null, self::FIELDS, 4000);
             $cards = $input['content']['summary_cards'] ?? null;
             if ($data === null || !is_array($cards) || !array_is_list($cards) || count($cards) > 30) {
                 return [422, ['error' => 'Invalid contact content or summary cards.']];
             }
             foreach ($data as $key => $value) {
                 if (($key === 'hero_image' || $key === 'map_embed_url' || str_ends_with($key, '_link'))
-                    && !self::validLink($value, $key === 'map_embed_url')) {
+                    && !WebsiteContentFields::validLink($value, $key === 'map_embed_url')) {
                     return [422, ['error' => 'Use a valid contact link or image URL and an HTTPS map embed.']];
                 }
             }
             $data['summary_cards'] = [];
             foreach ($cards as $card) {
-                $card = self::fields($card, ['label', 'value', 'icon'], 500);
+                $card = WebsiteContentFields::text($card, ['label', 'value', 'icon'], 500);
                 if ($card === null) return [422, ['error' => 'Invalid contact summary card.']];
                 $data['summary_cards'][] = $card;
             }
@@ -53,7 +53,7 @@ final class ContactContent
             $parameters = [json_encode($data, JSON_THROW_ON_ERROR)];
         } elseif ($action === 'faq') {
             $faq = $input['faq'] ?? null;
-            $text = self::fields($faq, ['question', 'answer'], 4000);
+            $text = WebsiteContentFields::text($faq, ['question', 'answer'], 4000);
             $sort = $faq['sort_order'] ?? null;
             $active = $faq['is_active'] ?? null;
             if ($text === null || trim($text['question']) === '' || strlen($text['question']) > 500
@@ -91,27 +91,5 @@ final class ContactContent
             throw $error;
         }
         return [200, ['saved' => true]];
-    }
-
-    private static function fields(mixed $input, array $keys, int $maxBytes): ?array
-    {
-        if (!is_array($input)) return null;
-        $result = [];
-        foreach ($keys as $key) {
-            $value = $input[$key] ?? null;
-            if (!is_string($value) || strlen($value) > $maxBytes) return null;
-            $result[$key] = $value;
-        }
-        return $result;
-    }
-
-    private static function validLink(string $value, bool $isEmbed): bool
-    {
-        if ($value === '') return true;
-        if (preg_match('/[\x00-\x20\x7f]/', $value) || str_contains($value, chr(92))) return false;
-        if (!$isEmbed && preg_match('~^(/[A-Za-z0-9_?\#-]|/$|\#|mailto:|tel:)~i', $value)) return true;
-        $url = parse_url($value);
-        return is_array($url) && isset($url['host']) && !isset($url['user']) && !isset($url['pass'])
-            && in_array(strtolower($url['scheme'] ?? ''), $isEmbed ? ['https'] : ['http', 'https'], true);
     }
 }

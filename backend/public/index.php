@@ -15,6 +15,8 @@ require __DIR__ . '/../src/BillingOverview.php';
 require __DIR__ . '/../src/Dashboard.php';
 require __DIR__ . '/../src/MonthlyReports.php';
 require __DIR__ . '/../src/ContactContent.php';
+require __DIR__ . '/../src/WebsiteContentFields.php';
+require __DIR__ . '/../src/FooterContent.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -62,6 +64,8 @@ $routes = [
     '/api/public/contact' => 'GET',
     '/api/studio/contact' => 'GET',
     '/api/studio/contact/save' => 'POST',
+    '/api/public/footer' => 'GET',
+    '/api/studio/footer/save' => 'POST',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
     '/api/invoices/email' => 'GET',
@@ -97,6 +101,9 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/public/footer') {
+        respond(200, (new FooterContent(database()))->read());
+    }
     if ($path === '/api/public/contact') {
         respond(200, (new ContactContent(database()))->read(false));
     }
@@ -232,6 +239,10 @@ try {
         }
         if ($path === '/api/studio/contact/save') {
             [$status, $result] = (new ContactContent($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/studio/footer/save') {
+            [$status, $result] = (new FooterContent($db))->save($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {

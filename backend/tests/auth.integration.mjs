@@ -144,6 +144,18 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.ok((await request("public/contact", 200)).faqs.some((entry) => entry.id === savedFaq.id && entry.is_active));
   await request(contactSave, 200, { action: "delete-faq", id: savedFaq.id });
   assert.ok((await request("public/contact", 200)).faqs.every((entry) => entry.id !== savedFaq.id));
+  const footerSave = "studio/footer/save";
+  const footer = {
+    brand_name: "Fixture gym", location: "Butwal", banner_title: "Fixture footer", banner_subtitle: "Train locally",
+    cta_text: "Contact", cta_link: "/contact", about_text: "Fixture gym details", hours_text: "Monday",
+    phone: "", email: "", copyright_text: "", bottom_tags: "Strength | Coaching",
+  };
+  await request(footerSave, 403, { content: footer }, false);
+  await request(footerSave, 422, { content: { ...footer, cta_link: "javascript:alert(1)" } });
+  await request(footerSave, 200, { content: footer });
+  cookie = undefined;
+  assert.deepEqual((await request("public/footer", 200)).content, footer);
+  cookie = authenticatedCookie;
   const dashboardPath = "admin/dashboard?period=7&horizon=15";
   const beforeDashboard = await request(dashboardPath, 200);
   const fixtureDashboard = JSON.parse(php("backend/tests/dashboard-fixture.php", []));
@@ -538,6 +550,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(reportPath, 403);
   await request("studio/contact", 403);
   await request(contactSave, 403, { action: "content", content: contact });
+  await request(footerSave, 403, { content: footer });
   await request("billing/attempt", 403);
   await request(details, 403);
   await request(ledger, 403);

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpPost, usePhpApi } from "@src/Client/phpApi";
+import { fetchFooter } from "@src/redux/services/footer";
 
 type FormState = {
   brand_name: string;
@@ -38,13 +40,8 @@ export default function AdminFooter() {
   const [msg, setMsg] = useState("");
 
   const load = async () => {
-    const { data, error } = await supabase
-      .from("footer_content")
-      .select("*")
-      .eq("id", 1)
-      .maybeSingle();
-
-    if (!error && data) {
+    const data = await fetchFooter<Partial<FormState>>();
+    if (data) {
       setForm({
         brand_name: data.brand_name ?? "",
         location: data.location ?? "",
@@ -63,7 +60,7 @@ export default function AdminFooter() {
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setMsg(issue.message));
   }, []);
 
   const submit = async (e: SyntheticEvent<HTMLFormElement>) => {
@@ -73,14 +70,19 @@ export default function AdminFooter() {
 
     const payload = { id: 1, ...form };
 
-    const { error } = await supabase
-      .from("footer_content")
-      .upsert(payload, { onConflict: "id" });
-
-    if (error) setMsg(error.message);
-    else setMsg("Footer content saved.");
-
-    setSaving(false);
+    try {
+      if (usePhpApi) await phpPost("/studio/footer/save", { content: form });
+      else {
+        const { error } = await supabase.from("footer_content").upsert(payload, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+      await load();
+      setMsg("Footer content saved.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not save footer content.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
