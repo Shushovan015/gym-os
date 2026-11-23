@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Banknote, Boxes, Download, ReceiptText, ShoppingCart, Users } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, usePhpApi } from "@src/Client/phpApi";
 import { fetchAllPages } from "@src/utils/fetchAllPages";
 import { formatMoney } from "@src/features/billing/currency";
 import type { InvoiceItemRow, InvoiceRow, PaymentMethod } from "@src/features/billing/types";
@@ -19,6 +20,15 @@ type PaymentRow = {
 };
 
 const nepaliMonths = ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
+type MonthlyReport = {
+  settings: Partial<AdminSettings>;
+  members: MemberRow[];
+  invoices: InvoiceRow[];
+  items: InvoiceItemRow[];
+  payments: PaymentRow[];
+  products: InventoryProduct[];
+  variants: InventoryVariant[];
+};
 const bsMonthName = (month: string) => `${nepaliMonths[Number(month.slice(5, 7)) - 1] ?? month} ${month.slice(0, 4)} BS`;
 const getBsMonthDates = (month: string, currentBsDate: string) => {
   const dates: Array<{ ad: string; bs: string; label: string }> = [];
@@ -32,6 +42,9 @@ const getBsMonthDates = (month: string, currentBsDate: string) => {
   return dates;
 };
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+const netSales = (item: InvoiceItemRow) => usePhpApi
+  ? item.line_total_minor - item.tax_minor
+  : Math.round(item.quantity * item.unit_price_minor) - item.discount_minor;
 
 function Breakdown({ title, rows, currency }: { title: string; rows: Array<{ label: string; value: number; count?: number }>; currency?: string }) {
   const max = Math.max(...rows.map((row) => Math.abs(row.value)), 1);
@@ -76,9 +89,28 @@ export default function AdminReports() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setError("");
     const reportDays = getBsMonthDates(month, currentBsDate);
     const startDate = reportDays[0]?.ad ?? getNepalTodayAdDate();
     const endDate = reportDays.at(-1)?.ad ?? startDate;
+    if (usePhpApi) {
+      const range = new URLSearchParams({ start: startDate, end: endDate });
+      void phpGet<MonthlyReport>(`/admin/reports?${range}`).then((data) => {
+        if (!alive) return;
+        setSettings({ ...defaultAdminSettings, ...data.settings });
+        setMembers(data.members);
+        setInvoices(data.invoices);
+        setItems(data.items);
+        setPayments(data.payments);
+        setProducts(data.products);
+        setVariants(data.variants);
+      }).catch((issue: unknown) => {
+        if (alive) setError(issue instanceof Error ? issue.message : "Could not load the monthly report.");
+      }).finally(() => {
+        if (alive) setLoading(false);
+      });
+      return () => { alive = false; };
+    }
     Promise.all([
       supabase.from("admin_settings").select("*").eq("id", 1).maybeSingle(),
       fetchAllPages<MemberRow>((from, to) => supabase.from("members").select("*").gte("created_at", `${startDate}T00:00:00`).lte("created_at", `${endDate}T23:59:59`).range(from, to)),
@@ -136,7 +168,7 @@ export default function AdminReports() {
     monthItems.forEach((item) => {
       const label = statusLabel(item.item_type);
       const current = categoryMap.get(label) ?? { value: 0, count: 0 };
-      current.value += Math.round(item.quantity * item.unit_price_minor) - item.discount_minor;
+      current.value += netSales(item);
       current.count += 1;
       categoryMap.set(label, current);
     });
@@ -157,7 +189,7 @@ export default function AdminReports() {
       const product = item.product_id ? productById.get(item.product_id) : undefined;
       const variant = item.variant_id ? variantById.get(item.variant_id) : undefined;
       const current = productMap.get(item.description) ?? { value: 0, count: 0, cost: 0 };
-      current.value += Math.round(item.quantity * item.unit_price_minor) - item.discount_minor;
+      current.value += netSales(item);
       current.count += item.quantity;
       current.cost += item.quantity * (item.unit_cost_minor ?? variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
       productMap.set(item.description, current);
@@ -178,7 +210,7 @@ export default function AdminReports() {
     const productDaily = calendarDays.map(({ ad: date, bs: displayDate, label }) => {
       const dayInvoiceIds = new Set(monthInvoices.filter((invoice) => invoice.billing_date === date).map((invoice) => invoice.id));
       const dayItems = monthItems.filter((item) => item.item_type === "product" && dayInvoiceIds.has(item.invoice_id));
-      const revenue = sum(dayItems.map((item) => Math.round(item.quantity * item.unit_price_minor) - item.discount_minor));
+      const revenue = sum(dayItems.map(netSales));
       const cost = sum(dayItems.map((item) => {
         const product = item.product_id ? productById.get(item.product_id) : undefined;
         const variant = item.variant_id ? variantById.get(item.variant_id) : undefined;
@@ -190,7 +222,7 @@ export default function AdminReports() {
         const variant = item.variant_id ? variantById.get(item.variant_id) : undefined;
         const current = detailMap.get(item.description) ?? { units: 0, revenue: 0, cost: 0 };
         current.units += item.quantity;
-        current.revenue += Math.round(item.quantity * item.unit_price_minor) - item.discount_minor;
+        current.revenue += netSales(item);
         current.cost += item.quantity * (item.unit_cost_minor ?? variant?.cost_price_minor ?? product?.cost_price_minor ?? 0);
         detailMap.set(item.description, current);
       });
@@ -206,7 +238,7 @@ export default function AdminReports() {
       outstanding: sum(monthInvoices.map((invoice) => invoice.balance_minor)),
       invoiceCount: monthInvoices.length,
       paidMembers: paidMemberIds.size,
-      newMembers: members.filter((member) => monthAdDates.has(member.created_at.slice(0, 10))).length,
+      newMembers: usePhpApi ? members.length : members.filter((member) => monthAdDates.has(member.created_at.slice(0, 10))).length,
       activeMembers: members.filter((member) => !member.deleted_at && member.membership_status === "active").length,
       unitsSold: sum(productRows.map((row) => row.count)),
       productRevenue: sum(productRows.map((row) => row.value)),
@@ -220,7 +252,7 @@ export default function AdminReports() {
       daily,
       productDaily,
     };
-  }, [invoices, items, members, month, payments, products, variants]);
+  }, [currentBsDate, invoices, items, members, month, payments, products, variants]);
 
   if (loading) return <AdminLoading label="Preparing monthly report..." />;
   if (error) return <AdminNotice tone="danger" title="Report could not be loaded">{error}</AdminNotice>;

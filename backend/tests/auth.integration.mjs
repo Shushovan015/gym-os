@@ -119,6 +119,9 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   const dashboardPath = "admin/dashboard?period=7&horizon=15";
   const beforeDashboard = await request(dashboardPath, 200);
   const fixtureDashboard = JSON.parse(php("backend/tests/dashboard-fixture.php", []));
+  const reportPath = `admin/reports?start=${fixtureDashboard.today}&end=${fixtureDashboard.today}`;
+  await request("admin/reports?start=2025-02-29&end=2025-02-29", 422);
+  await request("admin/reports?start=2090-01-01&end=2090-01-01", 422);
   const updatedDashboard = await request(dashboardPath, 200);
   assert.equal(updatedDashboard.today, fixtureDashboard.today);
   assert.equal(updatedDashboard.attendanceLabels.length, 7);
@@ -268,6 +271,9 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("invoices/products/issue", 422, productInvoice);
   const sale = await request("invoices/products/issue", 201, productInvoice, true, paymentKey());
   assert.equal(sale.total_minor, 188);
+  const productReport = await request(reportPath, 200);
+  assert.equal(productReport.invoices.find(({ id }) => id === sale.invoice_id).total_minor, 188);
+  assert.equal(productReport.items.find(({ invoice_id }) => invoice_id === sale.invoice_id).quantity, 0.25);
   const invoiceList = "invoices?search=Test%20buyer&invoiceStatus=issued&paymentStatus=paid&limit=1";
   const overview = await request(invoiceList, 200);
   assert.equal(overview.invoices[0].id, sale.invoice_id);
@@ -483,7 +489,12 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal(reconciled.payments, 1);
   assert.equal(reconciled.allocations, 2);
   assert.equal(reconciled.allocated, 1500);
+  const feeReport = await request(reportPath, 200);
+  assert.ok(feeReport.items.some((item) => item.invoice_id === replayed.invoice_id && item.item_type === "membership"));
+  assert.deepEqual(feeReport.payments.filter((payment) => payment.invoice_id === replayed.invoice_id).map(({ amount_minor }) => amount_minor), [1500]);
+  assert.ok(!feeReport.invoices.some(({ id }) => id === sale.invoice_id));
   await request("membership/cancel-invoice", 200, { invoiceId: replayed.invoice_id, reason: "Test reversal" });
+  assert.ok(!(await request(reportPath, 200)).payments.some((payment) => payment.invoice_id === replayed.invoice_id));
   assert.equal((await request("billing/attempt", 200)).attempt.result.invoice_status, "cancelled");
   await request(recoveryChange, 409, { action: "discard", key: recoveryKey });
   await request(recoveryChange, 200, { action: "dismiss", key: recoveryKey });
@@ -496,6 +507,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal((await request("login", 200, { email: viewer, password, role: "admin" })).user.role, "viewer");
   await request("admin", 403);
   await request(dashboardPath, 403);
+  await request(reportPath, 403);
   await request("billing/attempt", 403);
   await request(details, 403);
   await request(ledger, 403);

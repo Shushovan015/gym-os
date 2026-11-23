@@ -13,6 +13,7 @@ require __DIR__ . '/../src/Catalog.php';
 require __DIR__ . '/../src/ProductBilling.php';
 require __DIR__ . '/../src/BillingOverview.php';
 require __DIR__ . '/../src/Dashboard.php';
+require __DIR__ . '/../src/MonthlyReports.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -56,6 +57,7 @@ $routes = [
     '/api/invoices/receipt' => 'GET',
     '/api/invoices' => 'GET',
     '/api/admin/dashboard' => 'GET',
+    '/api/admin/reports' => 'GET',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
     '/api/invoices/email' => 'GET',
@@ -182,6 +184,10 @@ try {
     }
     if ($path === '/api/admin/dashboard') {
         [$status, $result] = (new Dashboard($db))->overview($_GET);
+        respond($status, $result);
+    }
+    if ($path === '/api/admin/reports') {
+        [$status, $result] = (new MonthlyReports($db))->load($_GET);
         respond($status, $result);
     }
     if ($path === '/api/billing/attempt') {
