@@ -9,7 +9,7 @@
 | React Attendance workspace | PASS | PHP preview loads paginated Nepal calendar ranges, holiday dates and activation filters. MariaDB tests cover leap day, year boundaries, duplicate changes, inactive members and authorization. React tests cover loading and errors, month changes, search, mark, remove, restore and reload. The separate Holiday Manager remains pending. |
 | Private portrait storage | PASS | Multipart upload and byte-for-byte download, invalid image, invalid key, CSRF, viewer and anonymous denial. |
 | React authentication and Members preview | PASS | React flow test covers PHP login, CSRF, the protected route and the existing Members screen's PHP reads. Backend HTTP tests cover member edits, settings, plan loading and portraits. PHP mode is opt-in. |
-| Complete PHP frontend integration and standalone runtime | FAIL | Website Studio, public content, Settings, backup and legacy import still depend on Supabase. |
+| Complete PHP frontend integration and standalone runtime | FAIL | PHP covers the public pages and Website Studio editors. Backup, legacy import and remaining legacy runtime code still depend on Supabase. |
 | Membership fee ledger reads | PASS | MariaDB fixture verifies persisted statuses, partial balance, totals, due date, empty ledger and viewer denial. |
 | Membership payments and receipts | PASS | MariaDB 10.11 and HTTP tests cover full, partial and multi-month allocations, oversize and already-paid rejection, same-key replay and payload conflicts, concurrent invoice numbers, integer tax, financial reconciliation, receipt and history endpoints, and rollback after a database-injected audit failure. |
 | Billing overview and member payment history | PASS | PHP invoice listing, filters, pagination and summary are covered by HTTP tests. The React Members profile and Billing receipts read and display payments and reversals from PHP. |
@@ -38,9 +38,10 @@
 | Website Studio Testimonials | PASS | Studio edits and photos use PHP. The HTTP tests check publication on Home, private inactive stories and photos, deletion, CSRF and role enforcement. React verifies that a saved story appears on Home. |
 | Website Studio Pro Shop | PASS | The editor writes public product fields to the existing inventory catalog. The anonymous catalog publishes active items and a stock label without quantities, costs or supplier details. Tests cover visibility, stock changes, protected deletion and the React editor-to-public flow. |
 | About and Contact inquiries | PARTIAL | About is a static public page with no existing editor. The Contact editor, public Contact and FAQs run on PHP. The inquiry form remains the existing client-side form with phone and email contact options. |
+| Operational Settings | PASS | PHP saves gym, membership, attendance, billing, tax and inventory settings. Tests verify persistence, administrator and CSRF restrictions, invoice number bounds and use of the saved tax rate on the next invoice. SMTP status shows only a configuration flag. Backup and restore remain pending in PHP. |
 | Existing media, documents, SMTP and notifications | NOT TESTED | Object migration and services pending. |
 | Backup, restore, legacy import and production reconciliation | NOT TESTED | Disposable rehearsal pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Next, migrate operational Settings with server-side validation and verify invoice numbering, tax, attendance settings and role enforcement.
+The checkpoint is for development only. Next, implement and rehearse a PHP/MariaDB database-and-media backup and restore against an isolated target before connecting the PHP Settings backup panel.

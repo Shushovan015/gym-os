@@ -113,6 +113,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("studio/pricing", 401);
   await request("studio/testimonials", 401);
   await request("studio/proshop", 401);
+  await request("admin/settings", 401);
   await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
@@ -708,6 +709,34 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(recoveryChange, 200, { action: "dismiss", key: recoveryKey });
   assert.equal((await request("billing/attempt", 200)).attempt, null);
   await request(recoveryChange, 409, prepareRecovery);
+  const settingsSave = "admin/settings/save";
+  const currentSettings = await request("admin/settings", 200);
+  assert.equal(currentSettings.smtpConfigured, true);
+  assert.deepEqual(Object.keys(currentSettings).sort(), ["settings", "smtpConfigured"]);
+  const historicalReceiptPath = `invoices/receipt?id=${replayed.invoice_id}`;
+  const historicalInvoice = (await request(historicalReceiptPath, 200)).invoice;
+  const currentNumber = Number(historicalInvoice.invoice_number);
+  const floor = currentNumber + 5;
+  const revisedSettings = { ...currentSettings.settings, gym_name: "Fixture Gym Settings",
+    invoice_start_number: floor, tax_enabled: true, tax_label: "Fixture Tax", tax_rate_basis_points: 1000,
+    weekly_closing_day: (currentSettings.settings.weekly_closing_day + 1) % 7 };
+  await request(settingsSave, 403, revisedSettings, false);
+  await request(settingsSave, 422, { ...revisedSettings, weekly_closing_day: 7 });
+  await request(settingsSave, 422, { ...revisedSettings, tax_rate_basis_points: 10001 });
+  await request(settingsSave, 409, { ...revisedSettings, invoice_start_number: currentNumber });
+  const savedSettings = (await request(settingsSave, 200, revisedSettings)).settings;
+  assert.equal(savedSettings.gym_name, revisedSettings.gym_name);
+  assert.equal(savedSettings.weekly_closing_day, revisedSettings.weekly_closing_day);
+  assert.equal((await request("admin/settings", 200)).settings.invoice_start_number, floor);
+  const settingsBill = await request("invoices/services/issue", 201, {
+    customerName: "Fixture settings buyer", service: { kind: "miscellaneous", description: "Fixture charge", unitPriceMinor: 5000 },
+  }, true, paymentKey());
+  const settingsReceipt = await request(`invoices/receipt?id=${settingsBill.invoice_id}`, 200);
+  assert.equal(Number(settingsReceipt.invoice.invoice_number), floor);
+  assert.equal(settingsReceipt.invoice.tax_minor, 500);
+  assert.equal(settingsReceipt.invoice.tax_label, "Fixture Tax");
+  assert.deepEqual((await request(historicalReceiptPath, 200)).invoice, historicalInvoice);
+  await request(settingsSave, 200, { ...currentSettings.settings, invoice_start_number: floor });
   php("backend/bin/account.php", ["reset", id], randomBytes(24).toString("hex"));
   await request("admin", 401);
   await request("session", 200);
@@ -745,6 +774,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(testimonialSave, 403, { action: "delete", id: testimonialId });
   await request("studio/proshop", 403);
   await request(shopSave, 403, { action: "delete", id: product.id });
+  await request("admin/settings", 403);
+  await request(settingsSave, 403, revisedSettings);
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { LockKeyhole, Save, ShieldCheck, UploadCloud } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 import {
   AdminBadge,
   AdminButton,
@@ -20,6 +21,7 @@ import { membershipTypes } from "./adminTypes";
 import BackupRestorePanel from "./BackupRestorePanel";
 
 type SettingsErrors = Partial<Record<keyof AdminSettingsType, string>>;
+type PhpSettings = { settings: AdminSettingsType; smtpConfigured: boolean };
 
 const n8nWebhookConfigured = Boolean((import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_URL as string | undefined)?.trim());
 const n8nSecretConfigured = Boolean((import.meta.env.VITE_N8N_MEMBERS_WEBHOOK_SECRET as string | undefined)?.trim());
@@ -42,11 +44,11 @@ function validateSettings(form: AdminSettingsType) {
   if (form.weekly_closing_day < 0 || form.weekly_closing_day > 6) errors.weekly_closing_day = "Select a valid weekly closing day.";
   if (![7, 15, 30].includes(form.expiry_warning_days)) errors.expiry_warning_days = "Choose 7, 15 or 30 days.";
   if (form.absent_after_days < 1 || form.absent_after_days > 60) errors.absent_after_days = "Use a value between 1 and 60 days.";
-if (!/^[A-Z0-9-]{1,12}$/.test(form.invoice_prefix)) errors.invoice_prefix = "Use 1-12 uppercase letters, numbers or hyphens.";
+  if (!/^[A-Z0-9-]{1,12}$/.test(form.invoice_prefix)) errors.invoice_prefix = "Use 1-12 uppercase letters, numbers or hyphens.";
   if (!/^[A-Z]{3}$/.test(form.currency_code)) errors.currency_code = "Use a three-letter currency code.";
   if (form.tax_rate_basis_points < 0 || form.tax_rate_basis_points > 10000) errors.tax_rate_basis_points = "Tax rate must be between 0% and 100%.";
   if (!Number.isSafeInteger(form.invoice_start_number) || form.invoice_start_number < 1 || form.invoice_start_number >= Number.MAX_SAFE_INTEGER) errors.invoice_start_number = "Enter a positive whole number.";
-  if (form.bill_sender_email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(form.bill_sender_email.trim())) errors.bill_sender_email = "Enter a valid Gmail or Google Workspace email address.";
+  if (!usePhpApi && form.bill_sender_email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(form.bill_sender_email.trim())) errors.bill_sender_email = "Enter a valid Gmail or Google Workspace email address.";
   return errors;
 }
 
@@ -62,9 +64,24 @@ export default function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [loadWarning, setLoadWarning] = useState("");
+  const [smtpConfigured, setSmtpConfigured] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    if (usePhpApi) {
+      void phpGet<PhpSettings>("/admin/settings").then(({ settings, smtpConfigured: ready }) => {
+        if (!alive) return;
+        const next = { ...defaultAdminSettings, ...settings };
+        setForm(next);
+        setSaved(next);
+        setSmtpConfigured(ready);
+      }).catch((issue: Error) => {
+        if (alive) setLoadWarning(issue.message);
+      }).finally(() => {
+        if (alive) setLoading(false);
+      });
+      return () => { alive = false; };
+    }
 
     supabase
       .from("admin_settings")
@@ -127,7 +144,7 @@ export default function AdminSettings() {
       default_membership_type: form.default_membership_type,
       date_display_preference: "bs",
       attendance_holiday_lock: form.attendance_holiday_lock,
-invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
+      invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
       invoice_start_number: form.invoice_start_number,
       bill_sender_email: form.bill_sender_email?.trim() || null,
       currency_code: form.currency_code.trim().toUpperCase(),
@@ -140,23 +157,26 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
       allow_negative_stock: form.allow_negative_stock,
     };
 
-    const { data, error } = await supabase
-      .from("admin_settings")
-      .upsert(payload, { onConflict: "id" })
-      .select("*")
-      .single();
-
-    setSaving(false);
-
-    if (error) {
-      setMessage(error.message);
-      return;
+    try {
+      const data = usePhpApi
+        ? await phpPost<PhpSettings>("/admin/settings/save", payload).then((response) => {
+          setSmtpConfigured(response.smtpConfigured);
+          return response.settings;
+        })
+        : await supabase.from("admin_settings").upsert(payload, { onConflict: "id" }).select("*").single()
+          .then(({ data: updated, error }) => {
+            if (error) throw new Error(error.message);
+            return updated as AdminSettingsType;
+          });
+      const next = { ...defaultAdminSettings, ...data };
+      setForm(next);
+      setSaved(next);
+      setMessage("Settings saved.");
+    } catch (issue) {
+      setMessage(issue instanceof Error ? issue.message : "Could not save settings.");
+    } finally {
+      setSaving(false);
     }
-
-    const next = { ...defaultAdminSettings, ...(data as AdminSettingsType) };
-    setForm(next);
-    setSaved(next);
-    setMessage("Settings saved.");
   };
 
   return (
@@ -166,7 +186,7 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
         title="Single-gym settings"
         description="Operational settings that affect this A&A Health Club admin workspace. Sensitive server keys are never shown here."
         actions={
-          <AdminButton type="button" variant="primary" onClick={save} disabled={saving || loading || !isDirty}>
+          <AdminButton type="button" variant="primary" onClick={save} disabled={saving || loading || !isDirty || Boolean(usePhpApi && loadWarning)}>
             <Save className="h-4 w-4" />
             {saving ? "Saving..." : "Save changes"}
           </AdminButton>
@@ -177,7 +197,7 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
       {message ? <AdminNotice tone={message === "Settings saved." ? "success" : "danger"}>{message}</AdminNotice> : null}
       {isDirty ? <AdminNotice tone="warning">You have unsaved settings changes.</AdminNotice> : null}
 
-      <BackupRestorePanel />
+      {usePhpApi ? <AdminNotice tone="warning" title="Backup and restore">Backup and restore are still being migrated for PHP.</AdminNotice> : <BackupRestorePanel />}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-6">
@@ -228,15 +248,15 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
 
           <AdminCard>
             <AdminSectionTitle title="Billing and inventory" description="Currency, tax, invoice numbering and stock safeguards." />
-<div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <AdminField label="Bill sender email" error={errors.bill_sender_email} hint="Your Gmail / Google Workspace address. Must match the server's GMAIL_USER. The App Password belongs only in the server environment file."><AdminInput type="email" value={form.bill_sender_email ?? ""} onChange={(event) => update("bill_sender_email", event.target.value)} placeholder="yourgym@gmail.com" /></AdminField>
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              {!usePhpApi && <AdminField label="Bill sender email" error={errors.bill_sender_email} hint="Your Gmail / Google Workspace address. Must match the server's GMAIL_USER. The App Password belongs only in the server environment file."><AdminInput type="email" value={form.bill_sender_email ?? ""} onChange={(event) => update("bill_sender_email", event.target.value)} placeholder="yourgym@gmail.com" /></AdminField>}
               <AdminField label="Invoice prefix" error={errors.invoice_prefix}><AdminInput value={form.invoice_prefix} onChange={(event) => update("invoice_prefix", event.target.value.toUpperCase())} /></AdminField>
               <AdminField label="Currency code" error={errors.currency_code}><AdminInput maxLength={3} value={form.currency_code} onChange={(event) => update("currency_code", event.target.value.toUpperCase())} /></AdminField>
               <AdminField label="Tax behavior"><AdminSelect options={[{value:"false",label:"Tax disabled"},{value:"true",label:"Tax enabled"}]} value={String(form.tax_enabled)} onChange={(event) => update("tax_enabled", event.target.value === "true")} /></AdminField>
               <AdminField label="Tax label"><AdminInput value={form.tax_label} onChange={(event) => update("tax_label", event.target.value)} /></AdminField>
               <AdminField label="Tax rate (%)" error={errors.tax_rate_basis_points}><AdminInput type="number" min={0} max={100} step="0.01" value={form.tax_rate_basis_points / 100} onChange={(event) => update("tax_rate_basis_points", Math.round(Number(event.target.value) * 100))} /></AdminField>
               <AdminField label="PAN / VAT number"><AdminInput value={form.pan_vat_number ?? ""} onChange={(event) => update("pan_vat_number", event.target.value)} /></AdminField>
-              <AdminField label="Bill Number" error={errors.invoice_start_number} hint="Next bill number to use. Set 1120 to make the next bill 1120. Cannot be set lower than already issued bills."><AdminInput type="number" min={1} max={Number.MAX_SAFE_INTEGER - 1} step={1} value={form.invoice_start_number} onChange={(event) => update("invoice_start_number", Number(event.target.value))} /></AdminField>
+              <AdminField label="Bill Number" error={errors.invoice_start_number} hint="Set the minimum bill number for future invoices."><AdminInput type="number" min={1} max={Number.MAX_SAFE_INTEGER - 1} step={1} value={form.invoice_start_number} onChange={(event) => update("invoice_start_number", Number(event.target.value))} /></AdminField>
               <AdminField label="Receipt footer"><AdminTextarea value={form.receipt_footer} onChange={(event) => update("receipt_footer", event.target.value)} /></AdminField>
               <AdminField label="Negative inventory"><AdminSelect options={[{value:"false",label:"Prevent negative stock"},{value:"true",label:"Allow negative stock"}]} value={String(form.allow_negative_stock)} onChange={(event) => update("allow_negative_stock", event.target.value === "true")} /></AdminField>
             </div>
@@ -277,7 +297,13 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
 
         <div className="space-y-6">
           <AdminCard>
-            <AdminSectionTitle title="Notification status" description="Read-only frontend configuration status." />
+            <AdminSectionTitle title="Notification status" />
+            {usePhpApi ? (
+              <div className="mt-5 flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                <span className="text-sm text-slate-300">Invoice email (SMTP)</span>
+                <AdminBadge tone={smtpConfigured ? "success" : "muted"}>{smtpConfigured ? "Configured" : "Not configured"}</AdminBadge>
+              </div>
+            ) : <>
             <div className="mt-5 space-y-3">
               <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 <div className="flex items-center gap-2 text-sm text-slate-300">
@@ -301,17 +327,21 @@ invoice_prefix: form.invoice_prefix.trim().toUpperCase(),
             <AdminNotice tone="warning" title="Secret handling">
               Browser-visible `VITE_` values are not server secrets. Keep Supabase service-role keys and true signing secrets out of frontend code.
             </AdminNotice>
+            </>}
           </AdminCard>
 
           <AdminCard>
             <AdminSectionTitle title="Admin account and security" />
             <div className="mt-5 space-y-3 text-sm text-slate-400">
-              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+              {usePhpApi ? <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                Access uses PHP sessions and MariaDB staff roles. Manage accounts with the server-side account command.
+              </div> : <><div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 Admin access is still enforced by Supabase Auth plus the `profiles.role = admin` check.
               </div>
               <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 RLS policies must stay enabled for member, attendance, holiday and settings tables.
               </div>
+              </>}
             </div>
           </AdminCard>
 

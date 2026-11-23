@@ -23,6 +23,7 @@ require __DIR__ . '/../src/TrainersContent.php';
 require __DIR__ . '/../src/PricingContent.php';
 require __DIR__ . '/../src/TestimonialContent.php';
 require __DIR__ . '/../src/ShopContent.php';
+require __DIR__ . '/../src/AdminSettings.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -59,6 +60,7 @@ $routes = [
     '/api/members' => 'GET',
     '/api/members/details' => 'GET',
     '/api/admin/settings' => 'GET',
+    '/api/admin/settings/save' => 'POST',
     '/api/members/plans' => 'GET',
     '/api/members/fees' => 'GET',
     '/api/membership/payments' => 'POST',
@@ -184,14 +186,7 @@ try {
         respond($status, $result);
     }
     if ($path === '/api/admin/settings') {
-        $settings = $db->query('SELECT * FROM admin_settings WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
-        if (!$settings) {
-            respond(404, ['error' => 'Gym settings were not found.']);
-        }
-        foreach (['attendance_holiday_lock', 'tax_enabled', 'allow_negative_stock'] as $field) {
-            $settings[$field] = (bool) $settings[$field];
-        }
-        respond(200, ['settings' => $settings]);
+        respond(200, (new AdminSettings($db))->read());
     }
     if ($path === '/api/members/plans') {
         $plans = $db->query("SELECT id, title FROM pricing_items WHERE kind = 'plan' AND is_active = 1 ORDER BY sort_order, id")
@@ -328,6 +323,10 @@ try {
         }
         if ($path === '/api/studio/proshop/save') {
             [$status, $result] = (new ShopContent($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/admin/settings/save') {
+            [$status, $result] = (new AdminSettings($db))->save($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {
