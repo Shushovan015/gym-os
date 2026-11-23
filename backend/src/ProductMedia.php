@@ -127,6 +127,7 @@ final class ProductMedia
             AND NOT EXISTS(SELECT 1 FROM facility_items WHERE image = CONCAT('/api/media/product?key=', f.file_key))
             AND NOT EXISTS(SELECT 1 FROM trainers WHERE image = CONCAT('/api/media/product?key=', f.file_key))
             AND NOT EXISTS(SELECT 1 FROM trainers WHERE intro_video_thumb = CONCAT('/api/media/product?key=', f.file_key))
+            AND NOT EXISTS(SELECT 1 FROM testimonials WHERE image = CONCAT('/api/media/product?key=', f.file_key))
             ORDER BY created_at LIMIT 500")->fetchAll(PDO::FETCH_COLUMN);
         $directory = $this->directory();
         $count = 0;
@@ -160,8 +161,9 @@ final class ProductMedia
             OR EXISTS(SELECT 1 FROM inventory_product_variants v JOIN shop_items p ON p.id = v.product_id WHERE v.image = ?$variant)
             OR EXISTS(SELECT 1 FROM facility_items WHERE image = ?$product)
             OR EXISTS(SELECT 1 FROM trainers WHERE image = ?$product)
-            OR EXISTS(SELECT 1 FROM trainers WHERE intro_video_thumb = ?$product)");
-        $query->execute([$url, $url, $url, $url, $url]);
+            OR EXISTS(SELECT 1 FROM trainers WHERE intro_video_thumb = ?$product)
+            OR EXISTS(SELECT 1 FROM testimonials WHERE image = ?$product)");
+        $query->execute([$url, $url, $url, $url, $url, $url]);
         return (bool) $query->fetchColumn();
     }
 

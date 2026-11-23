@@ -111,6 +111,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("studio/facilities", 401);
   await request("studio/trainers", 401);
   await request("studio/pricing", 401);
+  await request("studio/testimonials", 401);
   await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
@@ -538,6 +539,21 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.ok((await (await publicFetch("/api/public/home")).json()).trainers.some(({ id }) => id === trainerId));
   await request(trainersSave, 200, { action: "delete", entity: "trainer", id: trainerId });
   assert.equal((await publicFetch(trainerImage)).status, 404);
+  const testimonialSave = "studio/testimonials/save";
+  const testimonialImage = (await request(facilityUpload, 201, catalogPhoto())).url;
+  const testimonial = { name: randomUUID(), goal: "Strength", quote: "Fixture story", image: testimonialImage, sort_order: -99, is_active: false };
+  await request(testimonialSave, 403, { action: "item", item: testimonial }, false);
+  await request(testimonialSave, 422, { action: "item", item: { ...testimonial, quote: "" } });
+  await request(testimonialSave, 200, { action: "item", item: testimonial });
+  const testimonialId = (await request("studio/testimonials", 200)).items.find(({ name }) => name === testimonial.name).id;
+  const anonymousHome = async () => (await publicFetch("/api/public/home")).json();
+  assert.ok(!(await anonymousHome()).testimonials.some(({ id }) => id === testimonialId));
+  assert.equal((await publicFetch(testimonialImage)).status, 404);
+  await request(testimonialSave, 200, { action: "item", id: testimonialId, item: { ...testimonial, is_active: true } });
+  assert.equal((await publicFetch(testimonialImage)).headers.get("content-type"), "image/png");
+  assert.deepEqual((await anonymousHome()).testimonials.find(({ id }) => id === testimonialId), { id: testimonialId, ...testimonial, is_active: true });
+  await request(testimonialSave, 200, { action: "delete", id: testimonialId });
+  assert.equal((await publicFetch(testimonialImage)).status, 404);
   await request(catalogUpload, 403, catalogPhoto(), false);
   const invalidPhoto = new FormData();
   invalidPhoto.set("photo", new Blob(["<?php echo 1; ?>"], { type: "image/png" }), "fake.png");
@@ -698,6 +714,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(trainersSave, 403, { action: "item", entity: "plan", item: plan });
   await request("studio/pricing", 403);
   await request(pricingSave, 403, { action: "delete", id: planId });
+  await request("studio/testimonials", 403);
+  await request(testimonialSave, 403, { action: "delete", id: testimonialId });
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

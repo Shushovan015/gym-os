@@ -40,8 +40,7 @@ final class HomeContent
                 $trainer['specialties'] = json_decode($trainer['specialties'], true, flags: JSON_THROW_ON_ERROR);
             }
             unset($trainer);
-            $data['testimonials'] = $this->rows('SELECT id, name, goal, quote, image FROM testimonials
-                WHERE is_active = 1 ORDER BY sort_order, id');
+            $data['testimonials'] = (new TestimonialContent($this->db))->read(false);
         }
         return $data;
     }

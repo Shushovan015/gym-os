@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 
 type Row = {
   id: number;
@@ -40,19 +41,33 @@ export default function AdminTestimonials() {
   const [msg, setMsg] = useState("");
 
   const load = async () => {
+    if (usePhpApi) {
+      setRows((await phpGet<{ items: Row[] }>("/studio/testimonials")).items);
+      return;
+    }
     const { data, error } = await supabase
       .from("testimonials")
       .select("*")
       .order("sort_order", { ascending: true });
 
-    if (!error) setRows((data as Row[]) || []);
+    if (error) throw new Error(error.message);
+    setRows((data as Row[]) || []);
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setMsg(issue.message));
   }, []);
 
+  useEffect(() => {
+    if (preview.startsWith("blob:")) return () => URL.revokeObjectURL(preview);
+  }, [preview]);
+
   const uploadImage = async (file: File) => {
+    if (usePhpApi) {
+      const upload = new FormData();
+      upload.set("photo", file);
+      return (await phpPost<{ url: string }>("/studio/media/upload", upload)).url;
+    }
     const ext = file.name.split(".").pop() || "jpg";
     const path = `testimonials/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
@@ -65,7 +80,7 @@ export default function AdminTestimonials() {
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
     setImageFile(f);
-    if (f) setPreview(URL.createObjectURL(f));
+    setPreview(f ? URL.createObjectURL(f) : form.image);
   };
 
   const resetForm = () => {
@@ -89,18 +104,17 @@ export default function AdminTestimonials() {
 
       const payload = { ...form, image: imageUrl };
 
-      if (editingId) {
-        const { error } = await supabase.from("testimonials").update(payload).eq("id", editingId);
-        if (error) throw new Error(error.message);
-        setMsg("Updated successfully.");
+      if (usePhpApi) {
+        await phpPost("/studio/testimonials/save", { action: "item", id: editingId, item: payload });
       } else {
-        const { error } = await supabase.from("testimonials").insert(payload);
+        const table = supabase.from("testimonials");
+        const { error } = editingId ? await table.update(payload).eq("id", editingId) : await table.insert(payload);
         if (error) throw new Error(error.message);
-        setMsg("Created successfully.");
       }
 
       resetForm();
       await load();
+      setMsg(editingId ? "Updated successfully." : "Created successfully.");
     } catch (err: any) {
       setMsg(err?.message || "Something went wrong.");
     } finally {
@@ -127,8 +141,18 @@ export default function AdminTestimonials() {
     const ok = window.confirm("Delete this testimonial?");
     if (!ok) return;
 
-    const { error } = await supabase.from("testimonials").delete().eq("id", id);
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/testimonials/save", { action: "delete", id });
+      else {
+        const { error } = await supabase.from("testimonials").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+      if (editingId === id) resetForm();
+      await load();
+      setMsg("Testimonial deleted.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not delete testimonial.");
+    }
   };
 
   return (
