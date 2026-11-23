@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS contact_content (
+    id TINYINT UNSIGNED PRIMARY KEY CHECK (id = 1),
+    content JSON NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS contact_faqs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    question VARCHAR(500) NOT NULL,
+    answer TEXT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    INDEX (is_active, sort_order, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

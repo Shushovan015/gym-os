@@ -14,6 +14,7 @@ require __DIR__ . '/../src/ProductBilling.php';
 require __DIR__ . '/../src/BillingOverview.php';
 require __DIR__ . '/../src/Dashboard.php';
 require __DIR__ . '/../src/MonthlyReports.php';
+require __DIR__ . '/../src/ContactContent.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -58,6 +59,9 @@ $routes = [
     '/api/invoices' => 'GET',
     '/api/admin/dashboard' => 'GET',
     '/api/admin/reports' => 'GET',
+    '/api/public/contact' => 'GET',
+    '/api/studio/contact' => 'GET',
+    '/api/studio/contact/save' => 'POST',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
     '/api/invoices/email' => 'GET',
@@ -93,6 +97,9 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/public/contact') {
+        respond(200, (new ContactContent(database()))->read(false));
+    }
     if ($path === '/api/media/product') {
         $db = database();
         $media = new ProductMedia($db);
@@ -190,6 +197,9 @@ try {
         [$status, $result] = (new MonthlyReports($db))->load($_GET);
         respond($status, $result);
     }
+    if ($path === '/api/studio/contact') {
+        respond(200, (new ContactContent($db))->read(true));
+    }
     if ($path === '/api/billing/attempt') {
         [$status, $result] = (new BillingAttempts($db))->retrieve($user['id']);
         respond($status, $result);
@@ -219,6 +229,10 @@ try {
         $input = json_decode($body, true);
         if (!is_array($input) || array_is_list($input)) {
             respond(400, ['error' => 'Invalid request body.']);
+        }
+        if ($path === '/api/studio/contact/save') {
+            [$status, $result] = (new ContactContent($db))->save($input, $user['id']);
+            respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {
             [$status, $result] = (new BillingAttempts($db))->direct(substr($path, 4), $input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id']);

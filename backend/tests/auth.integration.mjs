@@ -106,6 +106,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   }
 
   await request("admin", 401);
+  await request("studio/contact", 401);
+  await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
   await request("login", 401, { email: admin, password: "wrong' OR 1=1" });
   const anonymousCookie = cookie;
@@ -116,6 +118,32 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin", 401);
   cookie = authenticatedCookie;
   await request("admin", 200);
+  const contactSave = "studio/contact/save";
+  const contactFields = ("hero_badge hero_title hero_description hero_image cta_primary_text cta_primary_link " +
+    "cta_secondary_text cta_secondary_link phone email hours location map_embed_url visit_text form_note info_title " +
+    "info_description form_title form_description form_button_text faq_title faq_description bottom_cta_title " +
+    "bottom_cta_description bottom_primary_cta_text bottom_primary_cta_link bottom_secondary_cta_text bottom_secondary_cta_link").split(" ");
+  const contact = Object.fromEntries(contactFields.map((key) => [key, ""]));
+  contact.hero_title = "Fixture gym contact";
+  contact.summary_cards = [{ label: "Location", value: "Butwal", icon: "MapPin" }];
+  await request(contactSave, 403, { action: "content", content: contact }, false);
+  await request(contactSave, 422, { action: "content", content: { ...contact, cta_primary_link: "javascript:alert(1)" } });
+  await request(contactSave, 200, { action: "content", content: contact });
+  assert.deepEqual((await request("studio/contact", 200)).content, contact);
+  const question = randomUUID();
+  const faq = { question, answer: "Fixture answer", sort_order: 12, is_active: false };
+  await request(contactSave, 200, { action: "faq", faq });
+  const savedFaq = (await request("studio/contact", 200)).faqs.find((entry) => entry.question === question);
+  assert.equal(savedFaq.is_active, false);
+  cookie = undefined;
+  const publicContact = await request("public/contact", 200);
+  assert.deepEqual(publicContact.content, contact);
+  assert.ok(publicContact.faqs.every((entry) => entry.id !== savedFaq.id));
+  cookie = authenticatedCookie;
+  await request(contactSave, 200, { action: "faq", id: savedFaq.id, faq: { ...faq, is_active: true } });
+  assert.ok((await request("public/contact", 200)).faqs.some((entry) => entry.id === savedFaq.id && entry.is_active));
+  await request(contactSave, 200, { action: "delete-faq", id: savedFaq.id });
+  assert.ok((await request("public/contact", 200)).faqs.every((entry) => entry.id !== savedFaq.id));
   const dashboardPath = "admin/dashboard?period=7&horizon=15";
   const beforeDashboard = await request(dashboardPath, 200);
   const fixtureDashboard = JSON.parse(php("backend/tests/dashboard-fixture.php", []));
@@ -508,6 +536,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin", 403);
   await request(dashboardPath, 403);
   await request(reportPath, 403);
+  await request("studio/contact", 403);
+  await request(contactSave, 403, { action: "content", content: contact });
   await request("billing/attempt", 403);
   await request(details, 403);
   await request(ledger, 403);

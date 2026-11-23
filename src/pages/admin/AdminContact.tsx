@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 
 type SummaryCard = {
   label: string;
@@ -114,10 +115,16 @@ export default function AdminContact() {
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
-    const [{ data: c }, { data: f }] = await Promise.all([
+    const { content: c, faqs: f } = usePhpApi
+      ? await phpGet<{ content: Partial<ContactForm> | null; faqs: FaqRow[] }>("/studio/contact")
+      : await Promise.all([
       supabase.from("contact_content").select("*").eq("id", 1).maybeSingle(),
       supabase.from("contact_faqs").select("*").order("sort_order", { ascending: true }),
-    ]);
+    ]).then(([page, questions]) => {
+      const issue = page.error ?? questions.error;
+      if (issue) throw new Error(issue.message);
+      return { content: page.data as Partial<ContactForm> | null, faqs: questions.data as FaqRow[] | null };
+    });
 
     if (c) {
       setContent({
@@ -133,7 +140,7 @@ export default function AdminContact() {
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setMsg(issue.message));
   }, []);
 
   const saveContent = async (e: SyntheticEvent<HTMLFormElement>) => {
@@ -153,22 +160,38 @@ export default function AdminContact() {
         .filter((card) => card.label && card.value),
     };
 
-    const { error } = await supabase.from("contact_content").upsert(payload, { onConflict: "id" });
-    setMsg(error ? error.message : "Contact content saved.");
-    setSaving(false);
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/contact/save", { action: "content", content: payload });
+      else {
+        const { error } = await supabase.from("contact_content").upsert(payload, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+      await load();
+      setMsg("Contact content saved.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not save contact content.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveFaq = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (faqEditId) {
-      await supabase.from("contact_faqs").update(faqForm).eq("id", faqEditId);
-    } else {
-      await supabase.from("contact_faqs").insert(faqForm);
+    try {
+      if (usePhpApi) await phpPost("/studio/contact/save", { action: "faq", id: faqEditId, faq: faqForm });
+      else {
+        const { error } = faqEditId
+          ? await supabase.from("contact_faqs").update(faqForm).eq("id", faqEditId)
+          : await supabase.from("contact_faqs").insert(faqForm);
+        if (error) throw new Error(error.message);
+      }
+      setFaqForm({ question: "", answer: "", sort_order: 0, is_active: true });
+      setFaqEditId(null);
+      await load();
+      setMsg("FAQ saved.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not save FAQ.");
     }
-    setFaqForm({ question: "", answer: "", sort_order: 0, is_active: true });
-    setFaqEditId(null);
-    load();
   };
 
   const onEditFaq = (row: FaqRow) => {
@@ -182,8 +205,17 @@ export default function AdminContact() {
   };
 
   const onDeleteFaq = async (id: number) => {
-    await supabase.from("contact_faqs").delete().eq("id", id);
-    load();
+    try {
+      if (usePhpApi) await phpPost("/studio/contact/save", { action: "delete-faq", id });
+      else {
+        const { error } = await supabase.from("contact_faqs").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+      await load();
+      setMsg("FAQ deleted.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not delete FAQ.");
+    }
   };
 
   const updateSummaryCard = (index: number, key: keyof SummaryCard, value: string) => {
@@ -217,8 +249,8 @@ export default function AdminContact() {
         <Label>Hero Badge</Label>
         <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={content.hero_badge} onChange={(e) => setContent({ ...content, hero_badge: e.target.value })} />
 
-        <Label>Hero Title</Label>
-        <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={content.hero_title} onChange={(e) => setContent({ ...content, hero_title: e.target.value })} />
+        <label htmlFor="contact-hero-title" className="text-xs font-semibold text-zinc-300">Hero Title</label>
+        <input id="contact-hero-title" className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={content.hero_title} onChange={(e) => setContent({ ...content, hero_title: e.target.value })} />
 
         <Label>Hero Description</Label>
         <textarea className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={content.hero_description} onChange={(e) => setContent({ ...content, hero_description: e.target.value })} />

@@ -1,6 +1,8 @@
 import { supabase } from "@src/Client/supabase";
+import { phpGet, usePhpApi } from "@src/Client/phpApi";
 
 export const fetchContact = async () => {
+  if (usePhpApi) return phpGet<{ content: unknown; faqs: unknown[] }>("/public/contact");
   const [{ data: content, error: contentError }, { data: faqs, error: faqsError }] = await Promise.all([
     supabase
       .from("contact_content")

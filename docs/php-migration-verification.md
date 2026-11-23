@@ -29,10 +29,11 @@
 | React Dashboard preview | PASS | Existing cards, lists, period filters and attendance chart use PHP aggregates. A seeded MariaDB test reconciles Nepal-local collections against payment rows, a reversal and a cancelled invoice, and verifies attendance, stock, dues status and access controls. |
 | Product and variant images | PASS | Inventory stages and saves product/variant images through PHP. Integration tests verify GD and MIME validation, blocked staged access, safe public serving, replacement, removal, cleanup, authorization and local export import. Real Supabase image migration remains pending. |
 | Monthly Reports | PASS | Existing membership and product views use an administrator-only MariaDB snapshot in PHP mode. The HTTP suite reconciles a fractional sale, a membership collection and cancellation against fixture transactions. The React test checks the Nepal-local filter, product tab and print action. Dashboard retains its attendance and outstanding-balance views. |
-| Public content and Website Studio | NOT TESTED | PHP API and frontend switch pending. |
+| Website Studio Contact and FAQs | PASS | Administrators can edit Contact content and manage FAQs through PHP. HTTP tests cover saved content, FAQ publication and deletion, anonymous reads, viewer denial, CSRF and link validation. React verifies that a saved title renders on the public Contact page. Importing existing content remains pending. |
+| Remaining public content and Website Studio | NOT TESTED | Homepage, trainers, facilities, pricing, shop, testimonials and footer still need PHP editor and public read paths. |
 | Existing media, documents, SMTP and notifications | NOT TESTED | Object migration and services pending. |
 | Backup, restore, legacy import and production reconciliation | NOT TESTED | Disposable rehearsal pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Next, migrate Website Studio Contact and FAQs together with the public Contact service. Verify that an administrator can save and reload edits and that only active FAQs appear in anonymous reads.
+The checkpoint is for development only. Next, migrate the Website Studio Footer editor and the shared public footer service together. Verify that saved footer content reloads in the editor and appears on public pages through PHP.

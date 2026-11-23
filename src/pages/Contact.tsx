@@ -303,6 +303,7 @@ export default function Contact() {
                 <iframe
                   title="A&A Health Club location map"
                   src={page.map_embed_url}
+                  sandbox="allow-scripts"
                   className="h-full w-full border-0"
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
