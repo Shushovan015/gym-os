@@ -13,9 +13,10 @@ final class ProductBilling
     {
     }
 
-    public function issue(array $input, mixed $key, string $actor): array
+    public function issue(array $input, mixed $key, string $actor, bool $serviceInvoice = false): array
     {
-        $lines = $input['lines'] ?? null;
+        $lines = $serviceInvoice ? [] : ($input['lines'] ?? null);
+        $service = $serviceInvoice ? ($input['service'] ?? null) : null;
         $name = $input['customerName'] ?? null;
         $member = $input['memberId'] ?? null;
         $payment = $input['paymentMinor'] ?? null;
@@ -26,7 +27,8 @@ final class ProductBilling
         $notes = $input['notes'] ?? null;
         $expectedTotal = $input['expectedTotalMinor'] ?? null;
         if (!is_string($key) || !preg_match('/^[A-Za-z0-9_-]{16,128}$/D', $key) ||
-            !is_array($lines) || !array_is_list($lines) || count($lines) < 1 || count($lines) > 100 ||
+            !is_array($lines) || !array_is_list($lines) || (!$serviceInvoice && count($lines) < 1) || count($lines) > 100 ||
+            ($serviceInvoice && !is_array($service)) ||
             ($member !== null && (!is_int($member) || $member < 1)) ||
             ($name !== null && (!is_string($name) || strlen($name) > 255)) ||
             ($member === null && (!is_string($name) || trim($name) === '')) ||
@@ -38,7 +40,7 @@ final class ProductBilling
             !in_array($method, ['cash','card','bank_transfer','digital_wallet','other'], true) ||
             ($due !== null && (!is_string($due) || !preg_match('/^([1-9][0-9]{3})-([0-9]{2})-([0-9]{2})$/D', $due, $parts) ||
                 !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])))) {
-            return [422, ['error' => 'Invalid product invoice or idempotency key.']];
+            return [422, ['error' => 'Invalid invoice or idempotency key.']];
         }
         $items = [];
         $quantities = [];
@@ -60,14 +62,31 @@ final class ProductBilling
             $items[] = [$id, $type, $units, $discount, $expected];
         }
         ksort($quantities, SORT_NUMERIC);
+        if ($serviceInvoice) {
+            $kind = $service['kind'] ?? null;
+            $description = $service['description'] ?? null;
+            $price = $service['unitPriceMinor'] ?? null;
+            $discount = $service['discountMinor'] ?? 0;
+            $plan = $service['planId'] ?? null;
+            if (!in_array($kind, ['personal_training', 'miscellaneous'], true) ||
+                ($kind === 'personal_training' && (!is_int($plan) || $plan < 1)) ||
+                ($kind === 'miscellaneous' && (!is_string($description) || trim($description) === '' || strlen($description) > 1000)) ||
+                !self::money($price) || $price === 0 || !self::money($discount) || $discount > $price) {
+                return [422, ['error' => 'Invalid training or miscellaneous charge.']];
+            }
+            $service = [$kind, $kind === 'personal_training' ? $plan : trim($description), $price, $discount];
+        }
         $customer = ['full_name' => $name === null ? null : trim($name), 'phone' => $phone ?: null, 'email' => $email ?: null];
         $terms = [$actor, $customer['full_name'], $member, $payment, $method, $due,
             array_map(static fn (array $item): array => $item[4] === null ? array_slice($item, 0, 4) : $item, $items)];
         if ($customer['phone'] !== null || $customer['email'] !== null || $notes !== null || $expectedTotal !== null) {
             $terms[] = [$customer['phone'], $customer['email'], $notes, $expectedTotal];
         }
+        if ($service !== null) {
+            $terms[] = $service;
+        }
         $fingerprint = hash('sha256', json_encode($terms, JSON_THROW_ON_ERROR));
-        return $this->transact(function () use ($key, $fingerprint, $customer, $member, $payment, $method, $due, $items, $quantities, $actor, $notes, $expectedTotal): array {
+        return $this->transact(function () use ($key, $fingerprint, $customer, $member, $payment, $method, $due, $items, $quantities, $actor, $notes, $expectedTotal, $service): array {
             $this->db->prepare('INSERT INTO product_invoice_requests (request_key, fingerprint) VALUES (?, ?)
                 ON DUPLICATE KEY UPDATE request_key = request_key')->execute([$key, $fingerprint]);
             $query = $this->db->prepare('SELECT fingerprint, response_json FROM product_invoice_requests WHERE request_key = ? FOR UPDATE');
@@ -79,14 +98,14 @@ final class ProductBilling
             if ($request['response_json'] !== null) {
                 return [200, json_decode($request['response_json'], true, flags: JSON_THROW_ON_ERROR)];
             }
-            $result = $this->record($customer, $member, $payment, $method, $due, $items, $quantities, $actor, $notes, $expectedTotal);
+            $result = $this->record($customer, $member, $payment, $method, $due, $items, $quantities, $actor, $notes, $expectedTotal, $service);
             $this->db->prepare('UPDATE product_invoice_requests SET invoice_id = ?, response_json = ? WHERE request_key = ?')
                 ->execute([$result['invoice_id'], json_encode($result, JSON_THROW_ON_ERROR), $key]);
             return [201, $result];
         });
     }
 
-    private function record(array $customer, ?int $member, ?int $payment, string $method, ?string $due, array $items, array $quantities, string $actor, ?string $notes, ?int $expectedTotal): array
+    private function record(array $customer, ?int $member, ?int $payment, string $method, ?string $due, array $items, array $quantities, string $actor, ?string $notes, ?int $expectedTotal, ?array $service): array
     {
         if ($member !== null) {
             $query = $this->db->prepare('SELECT full_name, phone, email FROM members WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
@@ -140,8 +159,20 @@ final class ProductBilling
             $subtotal = self::add($subtotal, $line);
             $discountTotal = self::add($discountTotal, $discount);
             $description = $product['title'] . ($variant['name'] === 'Default' ? '' : ' - ' . $variant['name']);
-            $snapshots[] = [$type, $product['id'], $id, $description, Stock::decimal($units),
+            $snapshots[] = ['product', $type, $product['id'], $id, $description, Stock::decimal($units),
                 $price, $variant['cost_price_minor'] ?? $product['cost_price_minor'], $discount, $line - $discount];
+        }
+        if ($service !== null) {
+            [$kind, $description, $subtotal, $discountTotal] = $service;
+            if ($kind === 'personal_training') {
+                $plan = $this->db->prepare('SELECT name FROM personal_training_plans WHERE id = ? AND is_active = 1 LOCK IN SHARE MODE');
+                $plan->execute([$description]);
+                $description = $plan->fetchColumn();
+                if ($description === false) {
+                    throw new DomainException('The selected training plan is unavailable.');
+                }
+            }
+            $snapshots[] = [$kind, null, null, null, $description, '1', $subtotal, null, $discountTotal, $subtotal - $discountTotal];
         }
         $net = $subtotal - $discountTotal;
         $tax = $settings['tax_enabled'] ? self::scale($net, (int) $settings['tax_rate_basis_points'], 10000) : 0;
@@ -167,7 +198,7 @@ final class ProductBilling
         $invoice = (int) $this->db->lastInsertId();
         $insert = $this->db->prepare("INSERT INTO invoice_items (invoice_id, item_type, customer_type, product_id, variant_id,
             description, quantity, unit_price_minor, unit_cost_minor, discount_minor, tax_minor, line_total_minor, sort_order)
-            VALUES (?, 'product', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         foreach ($snapshots as $index => $snapshot) {
             $lineNet = array_pop($snapshot);
             $lineTax = $index === count($snapshots) - 1 ? $tax : 0;
@@ -182,7 +213,7 @@ final class ProductBilling
                 VALUES (?, ?, ?, ?, ?)')->execute([$invoice, $payment, $method, $today, $actor]);
             $paymentId = (int) $this->db->lastInsertId();
         }
-        audit($this->db, 'product_invoice.issue', $actor);
+        audit($this->db, $service === null ? 'product_invoice.issue' : 'service_invoice.issue', $actor);
         return ['invoice_id' => $invoice, 'invoice_number' => $number, 'payment_id' => $paymentId,
             'total_minor' => $total, 'paid_minor' => $payment, 'balance_minor' => $total - $payment];
     }
@@ -201,20 +232,24 @@ final class ProductBilling
             $registered = $this->db->prepare('SELECT invoice_id FROM product_invoice_requests WHERE invoice_id = ?');
             $registered->execute([$id]);
             if ($status === false || $registered->fetchColumn() === false) {
-                return [404, ['error' => 'A PHP-issued product invoice was not found.']];
+                return [404, ['error' => 'A PHP-issued product or service invoice was not found.']];
             }
             if ($status === 'cancelled') {
                 return [200, ['invoice_id' => $id, 'invoice_status' => 'cancelled']];
             }
             if ($status !== 'issued') {
-                throw new DomainException('Only issued product invoices can be cancelled.');
+                throw new DomainException('Only issued product or service invoices can be cancelled.');
             }
             $sales = $this->db->prepare("SELECT variant_id, SUM(-quantity_delta) AS restored FROM stock_movements
                 WHERE invoice_id = ? AND movement_type = 'sale' GROUP BY variant_id ORDER BY variant_id");
             $sales->execute([$id]);
             $rows = $sales->fetchAll(PDO::FETCH_ASSOC);
             if ($rows === []) {
-                throw new DomainException('Stock movements must be reconciled before cancellation.');
+                $productItems = $this->db->prepare("SELECT 1 FROM invoice_items WHERE invoice_id = ? AND item_type = 'product' LIMIT 1");
+                $productItems->execute([$id]);
+                if ($productItems->fetchColumn() !== false) {
+                    throw new DomainException('Stock movements must be reconciled before cancellation.');
+                }
             }
             $variant = $this->db->prepare('SELECT current_quantity FROM inventory_product_variants WHERE id = ? FOR UPDATE');
             foreach ($rows as $row) {

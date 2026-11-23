@@ -25,6 +25,7 @@ it("retains the payment snapshot after a lost response and loads the original re
   };
   const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
     if (url === "/api/admin/settings") return json({ settings: {} });
+    if (url === "/api/invoices/training-plans") return json({ plans: [] });
     if (url.startsWith("/api/invoices?")) return json({
       invoices: committed ? [invoice] : [], count: Number(committed),
       summary: { revenue_today: 0, revenue_month: 0, invoices_today: 0, outstanding: 0, unpaid: 0, partially_paid: 0 },
@@ -88,6 +89,7 @@ it("issues a product invoice and asks for confirmation before recording a revers
       cancellation_reason: cancelled ? "Returned by buyer" : null,
     };
     if (url === "/api/admin/settings") return json({ settings: {} });
+    if (url === "/api/invoices/training-plans") return json({ plans: [] });
     if (url.startsWith("/api/invoices?")) return json({ invoices: issued ? [invoice] : [], count: Number(issued), summary: {} });
     if (url.startsWith("/api/inventory/catalog?")) return json({ products: [{
       id: 1, title: "Training bottle", selling_price_minor: 9900, wholesale_price_minor: 8000, cost_price_minor: 4000,
@@ -126,4 +128,41 @@ it("issues a product invoice and asks for confirmation before recording a revers
   const dialog = screen.getByRole("dialog", { name: /Cancel bill 902/ });
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel Bill" }));
   expect(await screen.findByText(/Reversal.*cash/)).toBeInTheDocument();
+});
+
+it("sends a miscellaneous charge through the shared PHP checkout", async () => {
+  const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url === "/api/admin/settings") return json({ settings: {} });
+    if (url === "/api/invoices/training-plans") return json({ plans: [{ id: 2, title: "Training", price: "NPR 1500" }] });
+    if (url.startsWith("/api/invoices?")) return json({ invoices: [], count: 0, summary: {} });
+    if (url === "/api/auth/session") return json({ csrfToken: "csrf" });
+    if (url === "/api/invoices/services/issue") {
+      expect(new Headers(options?.headers).get("Idempotency-Key")).toBeTruthy();
+      expect(JSON.parse(String(options?.body))).toMatchObject({
+        customerName: "Walk-in Customer", paymentMinor: 700, expectedTotalMinor: 700,
+        service: { kind: "miscellaneous", description: "Replacement card", unitPriceMinor: 700 },
+      });
+      return json({ invoice_id: 43, invoice_number: "903" });
+    }
+    if (url === "/api/invoices/receipt?id=43") return json({
+      invoice: { id: 43, invoice_number: "903", customer_name: "Walk-in Customer", invoice_status: "issued",
+        payment_status: "paid", billing_date: "2026-10-01", subtotal_minor: 700, discount_minor: 0,
+        tax_minor: 0, total_minor: 700, paid_minor: 700, balance_minor: 0, currency_code: "NPR" },
+      items: [{ id: 53, description: "Replacement card", item_type: "miscellaneous", quantity: 1,
+        unit_price_minor: 700, line_total_minor: 700 }],
+      payments: [],
+    });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<MemoryRouter><AdminBilling /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: "New Bill" }));
+  const dialog = screen.getByRole("dialog", { name: "New Bill" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Walk-in Customer" }));
+  const chargeTypes = within(dialog).getByText("What are they paying for?").closest("section")!;
+  fireEvent.click(within(chargeTypes).getByRole("button", { name: "Other" }));
+  fireEvent.change(within(dialog).getByLabelText("What is this charge for?"), { target: { value: "Replacement card" } });
+  fireEvent.change(within(dialog).getByLabelText("Amount (NPR)"), { target: { value: "7" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create Bill" }));
+  expect(await screen.findByText("Replacement card")).toBeInTheDocument();
 });

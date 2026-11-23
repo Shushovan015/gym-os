@@ -247,6 +247,25 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("invoices/products/cancel", 200, cancelPartial);
   const reversed = await request(`invoices/receipt?id=${partiallyPaid.invoice_id}`, 200);
   assert.equal(reversed.payments.filter((p) => p.is_reversal).length, 2);
+  const trainingName = `Training ${randomUUID()}`;
+  const trainingId = Number(php("backend/tests/billing-worker.php", ["training-fixture"], JSON.stringify(trainingName)));
+  assert.ok((await request("invoices/training-plans", 200)).plans.some((plan) => plan.id === trainingId && plan.price === "NPR 1,500"));
+  const trainingBill = { customerName: "Training buyer", paymentMinor: 40000, dueDate: "2030-01-01",
+    expectedTotalMinor: 145000, service: { kind: "personal_training", planId: trainingId, unitPriceMinor: 150000, discountMinor: 5000 } };
+  const trainingKey = paymentKey();
+  const training = await request("invoices/services/issue", 201, trainingBill, true, trainingKey);
+  assert.deepEqual(await request("invoices/services/issue", 200, trainingBill, true, trainingKey), training);
+  const trainingReceipt = await request(`invoices/receipt?id=${training.invoice_id}`, 200);
+  assert.equal(trainingReceipt.items[0].description, trainingName);
+  assert.equal(trainingReceipt.items[0].item_type, "personal_training");
+  assert.equal(trainingReceipt.invoice.balance_minor, 105000);
+  await request("invoices/products/cancel", 200, { invoiceId: training.invoice_id, reason: "Service cancelled" });
+  assert.equal((await request(`invoices/receipt?id=${training.invoice_id}`, 200)).payments.filter((p) => p.is_reversal).length, 1);
+  await request("invoices/services/issue", 422, { customerName: "Miscellaneous buyer", service: { kind: "miscellaneous", unitPriceMinor: 700 } }, true, paymentKey());
+  const misc = await request("invoices/services/issue", 201, {
+    customerName: "Miscellaneous buyer", service: { kind: "miscellaneous", description: "Replacement card", unitPriceMinor: 700 },
+  }, true, paymentKey());
+  assert.equal((await request(`invoices/receipt?id=${misc.invoice_id}`, 200)).items[0].description, "Replacement card");
   assert.deepEqual((await request(catalogPath + "&offset=1", 200)).products, []);
   assert.ok((await request("inventory/suppliers", 200)).suppliers.some(({ id }) => id === supplier.id));
   const setupSku = randomUUID();
@@ -368,6 +387,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(grid, 403);
   await request(invoiceList, 403);
   await request("invoices/payments", 403, balanceBody, true, paymentKey());
+  await request("invoices/services/issue", 403, trainingBill, true, paymentKey());
   await request(inventoryPage, 403);
   await request("inventory/catalog/activation", 403, { ids: [stocked.id], active: false });
   await request("attendance/holiday", 403, holidayBody);

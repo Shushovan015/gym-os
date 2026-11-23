@@ -1,8 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AdminAttendance from "../pages/admin/AdminAttendance";
-import { getNepalTodayAdDate } from "../pages/admin/adminUtils";
 
 vi.hoisted(() => vi.stubEnv("VITE_GYM_BACKEND", "php"));
 vi.mock("@src/Client/supabase", () => ({
@@ -11,15 +10,18 @@ vi.mock("@src/Client/supabase", () => ({
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const member = { id: 8, member_id: "TEST", full_name: "Test Member", membership_status: "active", is_active: true };
-const date = getNepalTodayAdDate();
-const settings = { weekly_closing_day: (new Date(`${date}T00:00:00Z`).getUTCDay() + 1) % 7 };
+const date = "2026-11-23";
+const settings = { weekly_closing_day: 6 };
 
 function open() {
   return render(<MemoryRouter><AdminAttendance /></MemoryRouter>);
 }
 
+beforeEach(() => vi.setSystemTime(new Date("2026-11-23T06:00:00Z")));
+
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 

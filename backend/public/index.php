@@ -54,6 +54,8 @@ $routes = [
     '/api/admin/dashboard' => 'GET',
     '/api/invoices/payments' => 'POST',
     '/api/invoices/products/issue' => 'POST',
+    '/api/invoices/services/issue' => 'POST',
+    '/api/invoices/training-plans' => 'GET',
     '/api/invoices/products/cancel' => 'POST',
     '/api/membership/cancel-invoice' => 'POST',
     '/api/inventory/stock' => 'POST',
@@ -153,6 +155,11 @@ try {
         [$status, $result] = (new BillingOverview($db))->invoices($_GET);
         respond($status, $result);
     }
+    if ($path === '/api/invoices/training-plans') {
+        $plans = $db->query('SELECT id, name AS title, details AS price, TRUE AS is_active FROM personal_training_plans
+            WHERE is_active = 1 ORDER BY sort_order, id')->fetchAll(PDO::FETCH_ASSOC);
+        respond(200, ['plans' => $plans]);
+    }
     if ($path === '/api/admin/dashboard') {
         [$status, $result] = (new Dashboard($db))->overview($_GET);
         respond($status, $result);
@@ -200,6 +207,10 @@ try {
             [$status, $result] = $path === '/api/invoices/products/issue'
                 ? $billing->issue($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id'])
                 : $billing->cancel($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/invoices/services/issue') {
+            [$status, $result] = (new ProductBilling($db))->issue($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id'], true);
             respond($status, $result);
         }
         if ($path === '/api/inventory/stock') {

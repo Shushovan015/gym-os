@@ -14,6 +14,10 @@ $mode = $argv[1] ?? '';
 $actor = '00000000-0000-0000-0000-000000000001';
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 switch ($mode) {
+    case 'training-fixture':
+        $db->prepare("INSERT INTO personal_training_plans (name, details) VALUES (?, 'NPR 1,500')")->execute([$input]);
+        echo $db->lastInsertId();
+        break;
     case 'plan-fixture':
         $db->prepare("INSERT INTO pricing_items (kind, title) VALUES ('plan', ?)")->execute([$input]);
         echo $db->lastInsertId();

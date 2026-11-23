@@ -260,15 +260,17 @@ export default function AdminBilling() {
       const query = new URLSearchParams({ search: debouncedSearch, from: dateFrom, to: dateTo, paymentStatus: paymentFilter,
         invoiceStatus: statusFilter, offset: String((page - 1) * 10), limit: "10" });
       try {
-        const [result, config] = await Promise.all([
+        const [result, config, training] = await Promise.all([
           phpGet<{ invoices: InvoiceRow[]; count: number; summary: typeof billingSummary }>(`/invoices?${query}`),
           phpGet<{ settings: BillingSettings }>("/admin/settings"),
+          phpGet<{ plans: BillablePlan[] }>("/invoices/training-plans"),
         ]);
         if (!isCurrent()) return;
         setInvoices(result.invoices);
         setInvoiceCount(result.count);
         setBillingSummary(result.summary);
         setSettings((current) => ({ ...current, ...config.settings }));
+        setTrainingPlans(training.plans);
       } catch (error) {
         if (isCurrent()) setMessage(error instanceof Error ? error.message : "Could not load billing.");
       } finally {
@@ -558,8 +560,19 @@ export default function AdminBilling() {
           notes: notes.trim() || null, paymentMinor: initial, paymentMethod, dueDate: dueDate || null,
           expectedTotalMinor: totals.totalMinor, lines: items };
       } else {
-        setCreateError("This charge type is unavailable in the PHP billing preview.");
-        return;
+        const initial = paymentTouched ? majorToMinor(paymentAmount, settings.currency_minor_unit) : totals.totalMinor;
+        if (initial === null || initial > totals.totalMinor || (initial < totals.totalMinor && !dueDate) ||
+          automaticPrice === null || (lineType === "personal_training" && !selectedPlanId)) {
+          setCreateError("Select a valid charge, payment amount and due date for any remaining balance.");
+          return;
+        }
+        path = "/invoices/services/issue";
+        payload = { memberId: memberId ? Number(memberId) : null, customerName, customerPhone, customerEmail,
+          notes: notes.trim() || null, paymentMinor: initial, paymentMethod, dueDate: dueDate || null,
+          expectedTotalMinor: totals.totalMinor, service: {
+            kind: lineType, planId: lineType === "personal_training" ? Number(selectedPlanId) : null,
+            description: lineDescription.trim(), unitPriceMinor: automaticPrice, discountMinor: totals.discountMinor,
+          } };
       }
       await completePhpAttempt({ key: crypto.randomUUID(), path, payload });
       return;
@@ -1250,7 +1263,6 @@ export default function AdminBilling() {
                 <button
                   key={choice.value}
                   type="button"
-                  disabled={usePhpApi && (choice.value === "personal_training" || choice.value === "miscellaneous")}
                   onClick={() => {
                     setLineType(choice.value);
                     setLineVariant("");
