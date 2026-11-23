@@ -13,6 +13,7 @@ require __DIR__ . '/../src/Catalog.php';
 require __DIR__ . '/../src/ProductBilling.php';
 require __DIR__ . '/../src/BillingOverview.php';
 require __DIR__ . '/../src/Dashboard.php';
+require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceBalancePayments.php';
 
 function respond(int $status, array $body): never
@@ -52,6 +53,8 @@ $routes = [
     '/api/invoices/receipt' => 'GET',
     '/api/invoices' => 'GET',
     '/api/admin/dashboard' => 'GET',
+    '/api/billing/attempt' => 'GET',
+    '/api/billing/attempt/change' => 'POST',
     '/api/invoices/payments' => 'POST',
     '/api/invoices/products/issue' => 'POST',
     '/api/invoices/services/issue' => 'POST',
@@ -164,6 +167,10 @@ try {
         [$status, $result] = (new Dashboard($db))->overview($_GET);
         respond($status, $result);
     }
+    if ($path === '/api/billing/attempt') {
+        [$status, $result] = (new BillingAttempts($db))->retrieve($user['id']);
+        respond($status, $result);
+    }
     if ($path === '/api/members/upload-photo') {
         [$status, $result] = (new MemberPhotos($db))->upload($_POST['memberId'] ?? null, $_FILES['photo'] ?? null, $user['id']);
         respond($status, $result);
@@ -182,6 +189,10 @@ try {
         if (!is_array($input) || array_is_list($input)) {
             respond(400, ['error' => 'Invalid request body.']);
         }
+        if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {
+            [$status, $result] = (new BillingAttempts($db))->direct(substr($path, 4), $input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id']);
+            respond($status, $result);
+        }
         if ($path === '/api/attendance/change') {
             [$status, $result] = (new Attendance($db))->change($input, $user['id']);
             respond($status, $result);
@@ -190,27 +201,16 @@ try {
             [$status, $result] = (new Attendance($db))->holiday($input, $user['id']);
             respond($status, $result);
         }
-        if ($path === '/api/membership/payments') {
-            [$status, $result] = (new MembershipBilling($db))->pay($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id']);
-            respond($status, $result);
-        }
-        if ($path === '/api/invoices/payments') {
-            [$status, $result] = (new InvoiceBalancePayments($db))->record($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id']);
+        if ($path === '/api/billing/attempt/change') {
+            [$status, $result] = (new BillingAttempts($db))->change($input, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/membership/cancel-invoice') {
             [$status, $result] = (new MembershipBilling($db))->cancel($input, $user['id']);
             respond($status, $result);
         }
-        if ($path === '/api/invoices/products/issue' || $path === '/api/invoices/products/cancel') {
-            $billing = new ProductBilling($db);
-            [$status, $result] = $path === '/api/invoices/products/issue'
-                ? $billing->issue($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id'])
-                : $billing->cancel($input, $user['id']);
-            respond($status, $result);
-        }
-        if ($path === '/api/invoices/services/issue') {
-            [$status, $result] = (new ProductBilling($db))->issue($input, $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? null, $user['id'], true);
+        if ($path === '/api/invoices/products/cancel') {
+            [$status, $result] = (new ProductBilling($db))->cancel($input, $user['id']);
             respond($status, $result);
         }
         if ($path === '/api/inventory/stock') {

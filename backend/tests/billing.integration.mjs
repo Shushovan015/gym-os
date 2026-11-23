@@ -143,6 +143,30 @@ test("membership billing allocates and reconciles integer payments atomically", 
   assert.equal(history.movements[0].resulting_quantity, "0.750");
 });
 
+test("saved attempts survive rollback and concurrent execution", async () => {
+  const fixture = await work("fixture", [["2025-04-10", 1000]]);
+  const key = randomUUID();
+  assert.equal((await work("attempt", { action: "prepare", key, path: "/membership/payments",
+    payload: { ...fixture, amountMinor: 500, paymentMethod: "cash" } }))[0], 200);
+  const execute = { action: "execute", key };
+  await work("inject", fixture.memberId);
+  try {
+    assert.equal((await work("attempt", execute))[0], 500);
+    assert.equal((await work("state", fixture.memberId)).invoices, 0);
+  } finally {
+    await work("clear", null);
+  }
+  const results = await Promise.all([work("attempt", execute), work("attempt", execute)]);
+  assert.deepEqual(results.map(([status]) => status).sort(), [200, 201]);
+  assert.deepEqual(results[0][1], results[1][1]);
+  const state = await work("state", fixture.memberId);
+  assert.equal(state.invoices, 1);
+  assert.equal(state.payments, 1);
+  assert.equal(state.allocations, 1);
+  assert.equal(state.allocated, 500);
+  await work("attempt", { action: "dismiss", key });
+});
+
 test("stock-linked invoices preserve line prices and reverse the combined sale once", async () => {
   const fixture = async () => {
     const variantId = await work("stock-fixture", null);

@@ -80,6 +80,8 @@ type LocationState = { memberId?: number; feeId?: number };
 type BillablePlan = { id: number; title: string; price: string; is_active: boolean };
 type PhpReceipt = { invoice: InvoiceRow; items: InvoiceItemRow[]; payments: InvoicePaymentRow[] };
 type BillingAttempt = { key: string; path: string; payload: object };
+type AttemptResult = { invoice_id: number; invoice_number?: string; invoice_status?: string };
+type RecoveredAttempt = { key: string; path: string; status: "pending" | "committed"; result: AttemptResult | null };
 const paymentMethods: Array<{ value: PaymentMethod; label: string }> = [
   { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
@@ -143,8 +145,32 @@ export default function AdminBilling() {
   const [pendingAttempt, setPendingAttempt] = useState<BillingAttempt | null>(null);
   const [balanceAttempt, setBalanceAttempt] = useState<BillingAttempt | null>(null);
   const [balanceError, setBalanceError] = useState("");
+  const [recoveredAttempt, setRecoveredAttempt] = useState<RecoveredAttempt | null>(null);
+  const [recoveryReady, setRecoveryReady] = useState(!usePhpApi);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState("");
   const paymentInFlight = useRef(false);
   const receiptRequest = useRef(0);
+  useEffect(() => {
+    if (!usePhpApi) return;
+    let active = true;
+    phpGet<{ attempt: RecoveredAttempt | null }>("/billing/attempt").then(({ attempt }) => {
+      if (active) {
+        setRecoveredAttempt(attempt);
+        setRecoveryReady(true);
+      }
+    }).catch(() => {
+      if (active) setRecoveryError("Could not check for a pending payment. Reload Billing before entering a payment.");
+    });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    const result = recoveredAttempt?.result;
+    if (!result) return;
+    void readPhpReceipt(result.invoice_id).catch(() => setRecoveryError("Could not load the recovered receipt. You can open it again."));
+    // The saved result is the only trigger for opening a recovered receipt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recoveredAttempt]);
   useEffect(() => {
     if (!pendingAttempt && !balanceAttempt) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -503,6 +529,7 @@ export default function AdminBilling() {
   };
   const createInvoice = async () => {
     if (saving || paymentInFlight.current) return;
+    if (usePhpApi && (!recoveryReady || recoveredAttempt)) return;
     if (usePhpApi && pendingAttempt) return completePhpAttempt(pendingAttempt);
     if (!usePhpApi && !billNumber.ready) { setCreateError(billNumber.error || "Bill number is not ready. Please wait and try again."); return; }
     setCreateError("");
@@ -742,18 +769,64 @@ export default function AdminBilling() {
       }
     }
   };
+  const changeAttempt = <T,>(action: string, key: string, snapshot?: BillingAttempt) =>
+    phpPost<T>("/billing/attempt/change", { action, key, ...(snapshot ? { path: snapshot.path, payload: snapshot.payload } : {}) });
+
+  const submitSnapshot = async (snapshot: BillingAttempt) => {
+    await changeAttempt("prepare", snapshot.key, snapshot);
+    return changeAttempt<AttemptResult>("execute", snapshot.key);
+  };
+
+  const closeAttempt = async (action: "discard" | "dismiss", key: string) => {
+    try {
+      await changeAttempt(action, key);
+      return true;
+    } catch (error) {
+      try {
+        const { attempt } = await phpGet<{ attempt: RecoveredAttempt | null }>("/billing/attempt");
+        setRecoveredAttempt(attempt);
+        if (!attempt) return true;
+      } catch {
+        // Keep the local snapshot when the server outcome cannot be checked.
+      }
+      setRecoveryError(error instanceof Error ? error.message : "Could not resolve the payment attempt.");
+      return false;
+    }
+  };
+
+  const resolveRecovered = async (action: "execute" | "discard" | "dismiss") => {
+    if (!recoveredAttempt || paymentInFlight.current) return;
+    paymentInFlight.current = true;
+    setRecoveryBusy(true);
+    setRecoveryError("");
+    try {
+      if (action === "execute") {
+        await changeAttempt<AttemptResult>(action, recoveredAttempt.key);
+        const { attempt } = await phpGet<{ attempt: RecoveredAttempt | null }>("/billing/attempt");
+        setRecoveredAttempt(attempt);
+        await load();
+      } else if (await closeAttempt(action, recoveredAttempt.key)) {
+        setRecoveredAttempt(null);
+      }
+    } catch (error) {
+      setRecoveryError(error instanceof Error ? error.message : "Could not resolve the payment attempt.");
+    } finally {
+      paymentInFlight.current = false;
+      setRecoveryBusy(false);
+    }
+  };
+
   const completePhpAttempt = async (attempt: BillingAttempt) => {
     if (paymentInFlight.current) return;
     paymentInFlight.current = true;
     setPendingAttempt(attempt);
     setSaving(true);
     setCreateError("");
-    let issued: { invoice_id: number; invoice_number: string };
+    let issued: AttemptResult;
     try {
-      issued = await phpPost(attempt.path, attempt.payload, attempt.key);
+      issued = await submitSnapshot(attempt);
     } catch (error) {
       const definitive = error instanceof PhpApiError && [409, 422].includes(error.status);
-      if (definitive) setPendingAttempt(null);
       setCreateError(definitive ? error.message : "Payment confirmation was interrupted. Retry the original request to check its result.");
       return;
     } finally {
@@ -767,7 +840,9 @@ export default function AdminBilling() {
     setMessage(`Invoice ${issued.invoice_number} was issued.`);
     try {
       await Promise.all([load(), readPhpReceipt(issued.invoice_id)]);
+      await closeAttempt("dismiss", attempt.key);
     } catch {
+      setRecoveredAttempt({ key: attempt.key, path: attempt.path, status: "committed", result: issued });
       setMessage(`Invoice ${issued.invoice_number} was issued. Open it from the list to view the receipt.`);
     }
   };
@@ -801,6 +876,7 @@ export default function AdminBilling() {
   };
   const recordPayment = async () => {
     if (!detail || paymentInFlight.current) return;
+    if (usePhpApi && (!recoveryReady || recoveredAttempt)) return;
     const amount = majorToMinor(newPayment, settings.currency_minor_unit);
     if (!balanceAttempt && (amount === null || amount <= 0 || amount > detail.balance_minor)) {
       if (usePhpApi) setBalanceError("Payment must be positive and cannot exceed the balance.");
@@ -815,10 +891,9 @@ export default function AdminBilling() {
       setBalanceError("");
       setSaving(true);
       try {
-        await phpPost(attempt.path, attempt.payload, attempt.key);
+        await submitSnapshot(attempt);
       } catch (error) {
         const definitive = error instanceof PhpApiError && [409, 422].includes(error.status);
-        if (definitive) setBalanceAttempt(null);
         setBalanceError(definitive ? error.message : "Payment confirmation was interrupted. Retry the original payment.");
         return;
       } finally {
@@ -829,8 +904,14 @@ export default function AdminBilling() {
       setPaymentOpen(false);
       setNewPayment("");
       setMessage("Payment recorded.");
-      try { await Promise.all([load(), readPhpReceipt(detail.id, detail)]); }
-      catch { setMessage("Payment recorded. Reopen the receipt to see the updated balance."); }
+      try {
+        await Promise.all([load(), readPhpReceipt(detail.id, detail)]);
+        await closeAttempt("dismiss", attempt.key);
+      }
+      catch {
+        setRecoveredAttempt({ key: attempt.key, path: attempt.path, status: "committed", result: { invoice_id: detail.id } });
+        setMessage("Payment recorded. Reopen the receipt to see the updated balance.");
+      }
       return;
     }
     if (amount === null) return;
@@ -906,12 +987,32 @@ export default function AdminBilling() {
         title="Bills & Payments"
         description="Record membership payments, make shop sales and print bills."
         actions={
-          <AdminButton variant="primary" onClick={() => openCreate()}>
+          <AdminButton variant="primary" disabled={!recoveryReady || Boolean(recoveredAttempt)} onClick={() => openCreate()}>
             <FilePlus2 className="h-4 w-4" />
             New Bill
           </AdminButton>
         }
       />
+      {recoveryError && <AdminNotice tone="danger">{recoveryError}</AdminNotice>}
+      {recoveredAttempt && <AdminNotice tone="warning" title={recoveredAttempt.result ? "Recovered payment" : "Unfinished payment"}>
+        <p>{recoveredAttempt.result
+          ? `The original invoice ${recoveredAttempt.result.invoice_number ?? ""} was already recorded.`
+          : "The original request is saved. Retry it before entering a new payment."}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {recoveredAttempt.result ? <>
+            <AdminButton disabled={recoveryBusy} onClick={() => {
+              const id = recoveredAttempt.result?.invoice_id;
+              if (id) void readPhpReceipt(id).catch(() => setRecoveryError("Could not load the receipt."));
+            }}>Open original receipt</AdminButton>
+            <AdminButton disabled={recoveryBusy} onClick={() => void resolveRecovered("dismiss")}>Acknowledge</AdminButton>
+          </> : <>
+            <AdminButton disabled={recoveryBusy} onClick={() => void resolveRecovered("execute")}>Retry saved payment</AdminButton>
+            <AdminButton disabled={recoveryBusy} onClick={() => {
+              if (window.confirm("Discard this uncommitted payment attempt?")) void resolveRecovered("discard");
+            }}>Discard attempt</AdminButton>
+          </>}
+        </div>
+      </AdminNotice>}
       {message ? (
         <AdminNotice
           tone={
@@ -1125,7 +1226,7 @@ export default function AdminBilling() {
         </div>
       </div>
       <AdminDialog
-        open={createOpen}
+        open={createOpen && !recoveredAttempt}
         size="2xl"
         title="New Bill"
         description="Choose the customer, what they are paying for, and how they paid."
@@ -1140,13 +1241,17 @@ export default function AdminBilling() {
                 Total: {formatMoney(effectiveTotals.totalMinor, settings.currency_code)}
               </b>
               <div className="flex gap-2">
-                <AdminButton variant="secondary" disabled={saving} onClick={() => {
+                <AdminButton variant="secondary" disabled={saving} onClick={async () => {
                   if (pendingAttempt && !window.confirm("The original payment may already be recorded. Abandon the retry and review the invoice list?")) return;
+                  if (pendingAttempt && !await closeAttempt("discard", pendingAttempt.key)) {
+                    setCreateError("Could not discard this attempt. Check its status before entering another payment.");
+                    return;
+                  }
                   setPendingAttempt(null);
                   setCreateOpen(false);
                   if (pendingAttempt) void load();
                 }}>{pendingAttempt ? "Abandon retry" : "Cancel"}</AdminButton>
-                <AdminButton variant="primary" disabled={saving || (!pendingAttempt && (memberFeesLoading || (!usePhpApi && !billNumber.ready) || (lineType === "membership_fee_collection" && selectedFeeIds.length === 0)))} onClick={() => void createInvoice()}>
+                <AdminButton variant="primary" disabled={!recoveryReady || saving || (!pendingAttempt && (memberFeesLoading || (!usePhpApi && !billNumber.ready) || (lineType === "membership_fee_collection" && selectedFeeIds.length === 0)))} onClick={() => void createInvoice()}>
                   {saving ? "Completing..." : pendingAttempt ? "Retry payment" : "Create Bill"}
                 </AdminButton>
               </div>
@@ -1654,6 +1759,7 @@ export default function AdminBilling() {
                 detail.balance_minor > 0 ? (
                 <AdminButton
                   variant="primary"
+                  disabled={!recoveryReady || Boolean(recoveredAttempt)}
                   onClick={() => { setBalanceError(""); setPaymentOpen(true); }}
                 >
                   Record payment
@@ -1819,7 +1925,7 @@ export default function AdminBilling() {
       </AdminDrawer>
       {billEmail.dialog}
       <AdminDialog
-        open={paymentOpen}
+        open={paymentOpen && !recoveredAttempt}
         title="Record payment"
         description={
           detail
@@ -1829,8 +1935,12 @@ export default function AdminBilling() {
         onClose={() => { if (!saving && !balanceAttempt) setPaymentOpen(false); }}
         footer={
           <div className="flex gap-2">
-            {balanceAttempt && !saving && <AdminButton onClick={() => {
+            {balanceAttempt && !saving && <AdminButton onClick={async () => {
               if (!window.confirm("The payment may already be recorded. Abandon the retry and reload the receipt?")) return;
+              if (!await closeAttempt("discard", balanceAttempt.key)) {
+                setBalanceError("Could not discard this attempt. Check its status before entering another payment.");
+                return;
+              }
               setBalanceAttempt(null);
               setPaymentOpen(false);
               if (detail) void showDetail(detail);

@@ -15,6 +15,29 @@ afterEach(() => {
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
+function withAttempts(next: (url: string, options?: RequestInit) => Promise<Response>, recovered?: () => object | null) {
+  let snapshot: { key: string; path: string; payload: object } | null = null;
+  return async (url: string, options?: RequestInit) => {
+    if (url === "/api/billing/attempt") return json({ attempt: recovered?.() ?? null });
+    if (url !== "/api/billing/attempt/change") return next(url, options);
+    const headers = new Headers(options?.headers);
+    expect(headers.get("X-CSRF-Token")).toBe("csrf");
+    const request = JSON.parse(String(options?.body));
+    if (request.action === "prepare") {
+      if (snapshot) expect(request).toEqual(snapshot);
+      snapshot = request;
+      return json({});
+    }
+    expect(request.key).toBe(snapshot?.key);
+    if (request.action === "execute" && snapshot) {
+      headers.set("Idempotency-Key", snapshot.key);
+      return next(`/api${snapshot.path}`, { headers, body: JSON.stringify(snapshot.payload) });
+    }
+    snapshot = null;
+    return json({});
+  };
+}
+
 it("retains the payment snapshot after a lost response and loads the original receipt", async () => {
   const requests: { key: string | null; body: string }[] = [];
   let committed = false;
@@ -54,9 +77,14 @@ it("retains the payment snapshot after a lost response and loads the original re
     });
     throw new Error(`Unexpected request: ${url}`);
   });
-  vi.stubGlobal("fetch", fetchMock);
-  render(<MemoryRouter><AdminBilling /></MemoryRouter>);
-  fireEvent.click(await screen.findByRole("button", { name: "New Bill" }));
+  vi.stubGlobal("fetch", withAttempts(fetchMock, () => committed ? {
+    key: requests[0].key, path: "/membership/payments", status: "committed",
+    result: { invoice_id: 41, invoice_number: "901" },
+  } : null));
+  const mounted = render(<MemoryRouter><AdminBilling /></MemoryRouter>);
+  const newBill = await screen.findByRole("button", { name: "New Bill" });
+  await waitFor(() => expect(newBill).toBeEnabled());
+  fireEvent.click(newBill);
   fireEvent.change(screen.getByPlaceholderText("Start typing a name"), { target: { value: "Test" } });
   fireEvent.click(await screen.findByRole("button", { name: /Test Member/ }));
   const dialog = screen.getByRole("dialog", { name: "New Bill" });
@@ -66,14 +94,16 @@ it("retains the payment snapshot after a lost response and loads the original re
   const submit = within(dialog).getByRole("button", { name: "Create Bill" });
   fireEvent.click(submit);
   fireEvent.click(submit);
-  const retry = await within(dialog).findByRole("button", { name: "Retry payment" });
+  expect(await within(dialog).findByRole("button", { name: "Retry payment" })).toBeEnabled();
   expect(requests).toHaveLength(1);
   expect(requests[0].key).toMatch(/^[a-f\d-]{36}$/);
   expect(JSON.parse(requests[0].body)).toMatchObject({ memberId: 3, feeIds: [11, 12], amountMinor: 12500 });
-  fireEvent.click(retry);
+  mounted.unmount();
+  render(<MemoryRouter><AdminBilling /></MemoryRouter>);
+  expect(await screen.findByText("Recovered payment")).toBeInTheDocument();
   expect(await screen.findByText("Membership fee allocation")).toBeInTheDocument();
   expect(await screen.findByText(/Outstanding membership fees:/)).toBeInTheDocument();
-  expect(requests).toEqual([requests[0], requests[0]]);
+  expect(requests).toHaveLength(1);
   await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url.startsWith("/api/invoices?")).length).toBeGreaterThan(1));
 });
 
@@ -117,7 +147,7 @@ it("issues a product invoice and asks for confirmation before recording a revers
     });
     throw new Error(`Unexpected request: ${url}`);
   });
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", withAttempts(fetchMock));
   render(<MemoryRouter initialEntries={["/admin/billing?mode=shop"]}><AdminBilling /></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button", { name: /Training bottle/ }));
   fireEvent.click(screen.getByRole("button", { name: "Create Bill" }));
@@ -154,9 +184,11 @@ it("sends a miscellaneous charge through the shared PHP checkout", async () => {
     });
     throw new Error(`Unexpected request: ${url}`);
   });
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", withAttempts(fetchMock));
   render(<MemoryRouter><AdminBilling /></MemoryRouter>);
-  fireEvent.click(await screen.findByRole("button", { name: "New Bill" }));
+  const newBill = await screen.findByRole("button", { name: "New Bill" });
+  await waitFor(() => expect(newBill).toBeEnabled());
+  fireEvent.click(newBill);
   const dialog = screen.getByRole("dialog", { name: "New Bill" });
   fireEvent.click(within(dialog).getByRole("button", { name: "Walk-in Customer" }));
   const chargeTypes = within(dialog).getByText("What are they paying for?").closest("section")!;

@@ -5,6 +5,7 @@ require __DIR__ . '/../src/database.php';
 require __DIR__ . '/../src/MembershipBilling.php';
 require __DIR__ . '/../src/Stock.php';
 require __DIR__ . '/../src/ProductBilling.php';
+require __DIR__ . '/../src/BillingAttempts.php';
 
 if (PHP_SAPI !== 'cli' || !preg_match('/^mysql:host=127\.0\.0\.1;port=\d+;dbname=gym_migration_test;charset=utf8mb4$/D', getenv('GYM_DB_DSN') ?: '')) {
     exit(2);
@@ -14,6 +15,16 @@ $mode = $argv[1] ?? '';
 $actor = '00000000-0000-0000-0000-000000000001';
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 switch ($mode) {
+    case 'attempt':
+        try {
+            echo json_encode((new BillingAttempts($db))->change($input, $actor), JSON_THROW_ON_ERROR);
+        } catch (PDOException $error) {
+            if ($error->getCode() !== '45000' || ($error->errorInfo[2] ?? '') !== 'test audit failure') {
+                throw $error;
+            }
+            echo '[500,{}]';
+        }
+        break;
     case 'training-fixture':
         $db->prepare("INSERT INTO personal_training_plans (name, details) VALUES (?, 'NPR 1,500')")->execute([$input]);
         echo $db->lastInsertId();

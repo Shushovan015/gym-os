@@ -52,7 +52,9 @@ All endpoints require an administrator session. Writes require the CSRF header. 
 
 `POST /api/membership/cancel-invoice` accepts `invoiceId` and `reason` for invoices issued by the PHP membership payment endpoint. It requires administrator access and CSRF. It restores the allocated fee balances and records a linked reversal in the same transaction. Retrying returns the original reversal.
 
-`POST /api/invoices/payments` records a subsequent payment on an issued invoice. It takes `invoiceId`, `amountMinor`, `paymentMethod` and an `Idempotency-Key`. It locks the invoice and rejects overpayments. The PHP Billing preview retains an unchanged request for retries while the screen is mounted and warns before browser unload. If leaving after an uncertain result, review the invoice and its payment history before entering the payment again.
+`POST /api/invoices/payments` records a subsequent payment on an issued invoice. It takes `invoiceId`, `amountMinor`, `paymentMethod` and an `Idempotency-Key`. It locks the invoice and rejects overpayments.
+
+The PHP Billing preview saves a payment snapshot using `POST /api/billing/attempt/change` with `action: prepare`. The execute action uses the saved payload through the existing idempotent allocator. `GET /api/billing/attempt` retrieves only the signed-in operator's active attempt. If a payment committed before the response was lost, Billing opens its original receipt after reload. An unfinished attempt can be retried or explicitly discarded. Dismissal and discard clear the stored payload and preserve the key and fingerprint to prevent key reuse.
 
 `GET /api/invoices/training-plans` lists active personal-training plans. `POST /api/invoices/services/issue` uses the same customer, payment, date and idempotency fields as product checkout, plus a `service` with `kind`, `unitPriceMinor`, optional `discountMinor`, and either a training `planId` or a miscellaneous `description`. The existing PHP invoice cancellation endpoint also reverses payments on PHP-issued service invoices.
 
