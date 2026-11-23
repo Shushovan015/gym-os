@@ -198,3 +198,37 @@ it("sends a miscellaneous charge through the shared PHP checkout", async () => {
   fireEvent.click(within(dialog).getByRole("button", { name: "Create Bill" }));
   expect(await screen.findByText("Replacement card")).toBeInTheDocument();
 });
+
+it("opens cancellation for an imported stock bill and displays its reversal", async () => {
+  let cancelled = false;
+  const invoice = {
+    id: 44, invoice_number: "LEG-44", customer_name: "Imported buyer", invoice_status: "issued",
+    payment_status: "partially_paid", billing_date: "2026-10-01", subtotal_minor: 1000,
+    discount_minor: 0, tax_minor: 0, total_minor: 1000, paid_minor: 500, balance_minor: 500,
+    currency_code: "NPR", legacy_source: "legacy_mysql", member_ref: null,
+  };
+  vi.stubGlobal("fetch", withAttempts(async (url, options) => {
+    if (url === "/api/admin/settings") return json({ settings: {} });
+    if (url === "/api/invoices/training-plans") return json({ plans: [] });
+    if (url.startsWith("/api/invoices?")) return json({ invoices: [invoice], count: 1, summary: {} });
+    if (url === "/api/auth/session") return json({ csrfToken: "csrf" });
+    if (url === "/api/invoices/products/cancel") {
+      expect(JSON.parse(String(options?.body))).toEqual({ invoiceId: 44, reason: "Returned" });
+      cancelled = true;
+      return json({ invoice_id: 44, invoice_status: "cancelled" });
+    }
+    if (url === "/api/invoices/receipt?id=44") return json({
+      invoice: cancelled ? { ...invoice, invoice_status: "cancelled", cancellation_reason: "Returned" } : invoice,
+      items: [{ id: 54, description: "Stock", item_type: "product", quantity: 1, unit_price_minor: 1000, line_total_minor: 1000 }],
+      payments: cancelled ? [{ id: 64, payment_date: "2026-10-01", payment_method: "cash", amount_minor: 500, is_reversal: true }] : [],
+    });
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+  render(<MemoryRouter><AdminBilling /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: "View Bill" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel Bill" }));
+  const dialog = screen.getByRole("dialog", { name: /Cancel bill LEG-44/ });
+  fireEvent.change(within(dialog).getByPlaceholderText("Example: Customer returned the products"), { target: { value: "Returned" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel Bill" }));
+  expect(await screen.findByText(/Reversal.*cash/)).toBeInTheDocument();
+});

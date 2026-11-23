@@ -226,14 +226,16 @@ final class ProductBilling
             return [422, ['error' => 'An invoice ID and cancellation reason are required.']];
         }
         return $this->transact(function () use ($id, $reason, $actor): array {
-            $invoice = $this->db->prepare('SELECT invoice_status FROM invoices WHERE id = ? FOR UPDATE');
+            $invoice = $this->db->prepare('SELECT invoice_status, legacy_source, paid_minor, member_ref FROM invoices WHERE id = ? FOR UPDATE');
             $invoice->execute([$id]);
-            $status = $invoice->fetchColumn();
+            $bill = $invoice->fetch(PDO::FETCH_ASSOC);
             $registered = $this->db->prepare('SELECT invoice_id FROM product_invoice_requests WHERE invoice_id = ?');
             $registered->execute([$id]);
-            if ($status === false || $registered->fetchColumn() === false) {
-                return [404, ['error' => 'A PHP-issued product or service invoice was not found.']];
+            $legacy = $registered->fetchColumn() === false;
+            if (!$bill || ($legacy && !$bill['legacy_source'])) {
+                return [404, ['error' => 'An eligible invoice was not found.']];
             }
+            $status = $bill['invoice_status'];
             if ($status === 'cancelled') {
                 return [200, ['invoice_id' => $id, 'invoice_status' => 'cancelled']];
             }
@@ -244,6 +246,9 @@ final class ProductBilling
                 WHERE invoice_id = ? AND movement_type = 'sale' GROUP BY variant_id ORDER BY variant_id");
             $sales->execute([$id]);
             $rows = $sales->fetchAll(PDO::FETCH_ASSOC);
+            if ($legacy) {
+                $this->checkLegacyCancellation($id, (int) $bill['paid_minor'], $bill['member_ref'] !== null, $rows);
+            }
             if ($rows === []) {
                 $productItems = $this->db->prepare("SELECT 1 FROM invoice_items WHERE invoice_id = ? AND item_type = 'product' LIMIT 1");
                 $productItems->execute([$id]);
@@ -271,9 +276,41 @@ final class ProductBilling
             $this->db->prepare("UPDATE invoices SET invoice_status = 'cancelled', payment_status = 'unpaid', paid_minor = 0,
                 balance_minor = total_minor, cancelled_at = CURRENT_TIMESTAMP(6), cancelled_by = ?, cancellation_reason = ?, updated_by = ?
                 WHERE id = ?")->execute([$actor, trim($reason), $actor, $id]);
-            audit($this->db, 'product_invoice.cancel', $actor);
+            audit($this->db, $legacy ? 'legacy_invoice.cancel' : 'product_invoice.cancel', $actor);
             return [200, ['invoice_id' => $id, 'invoice_status' => 'cancelled']];
         });
+    }
+
+    private function checkLegacyCancellation(int $invoice, int $paid, bool $hasMember, array $sales): void
+    {
+        $fees = $this->db->prepare("SELECT EXISTS(SELECT 1 FROM membership_fees WHERE invoice_id = ?)
+            OR EXISTS(SELECT 1 FROM invoice_items WHERE invoice_id = ? AND item_type = 'membership')
+            OR (? = 1 AND NOT EXISTS(SELECT 1 FROM invoice_items WHERE invoice_id = ?))");
+        $fees->execute([$invoice, $invoice, (int) $hasMember, $invoice]);
+        if ($fees->fetchColumn()) {
+            throw new DomainException('Historical membership allocations must be reconciled before cancellation.');
+        }
+        $payments = $this->db->prepare('SELECT COALESCE(SUM(amount_minor), 0) AS total, COALESCE(MAX(is_reversal), 0) AS reversed
+            FROM invoice_payments WHERE invoice_id = ?');
+        $payments->execute([$invoice]);
+        $record = $payments->fetch(PDO::FETCH_ASSOC);
+        if ($record['reversed'] || (int) $record['total'] !== $paid) {
+            throw new DomainException('Historical payments must reconcile with the invoice before cancellation.');
+        }
+        $stock = $this->db->prepare("SELECT EXISTS(SELECT 1 FROM stock_movements
+            WHERE invoice_id = ? AND (movement_type = 'cancellation_reversal' OR (movement_type = 'sale' AND quantity_delta >= 0)))");
+        $stock->execute([$invoice]);
+        if ($stock->fetchColumn()) {
+            throw new DomainException('Historical stock movements must be reconciled before cancellation.');
+        }
+        $items = $this->db->prepare("SELECT variant_id, SUM(quantity) AS quantity FROM invoice_items
+            WHERE invoice_id = ? AND item_type = 'product' GROUP BY variant_id ORDER BY variant_id");
+        $items->execute([$invoice]);
+        $expected = array_column($items->fetchAll(PDO::FETCH_ASSOC), 'quantity', 'variant_id');
+        $recorded = array_column($sales, 'restored', 'variant_id');
+        if ($expected !== $recorded) {
+            throw new DomainException('Historical product quantities must reconcile with recorded sales before cancellation.');
+        }
     }
 
     private function move(int $invoice, int $variant, string $type, string $before, int $after, string $actor): void

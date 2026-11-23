@@ -15,6 +15,28 @@ $mode = $argv[1] ?? '';
 $actor = '00000000-0000-0000-0000-000000000001';
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 switch ($mode) {
+    case 'legacy-fixture':
+        $db->beginTransaction();
+        $db->exec("INSERT INTO shop_items (title, category, inventory_enabled) VALUES ('Imported stock', 'Fixture', 1)");
+        $product = (int) $db->lastInsertId();
+        $db->prepare('INSERT INTO inventory_product_variants (product_id, sku, current_quantity) VALUES (?, ?, 2)')
+            ->execute([$product, bin2hex(random_bytes(16))]);
+        $variant = (int) $db->lastInsertId();
+        $db->prepare("INSERT INTO invoices (invoice_number, customer_name, billing_date, invoice_status, payment_status,
+            subtotal_minor,total_minor,paid_minor,balance_minor,created_by,legacy_source)
+            VALUES (?, 'Imported buyer','2025-04-03','issued','partially_paid',1000,1000,500,500,?,'legacy_mysql')")
+            ->execute(['LEG-' . bin2hex(random_bytes(12)), $actor]);
+        $invoice = (int) $db->lastInsertId();
+        $db->prepare("INSERT INTO invoice_items (invoice_id,item_type,customer_type,product_id,variant_id,description,quantity,unit_price_minor,line_total_minor)
+            VALUES (?,'product','general',?,?,'Imported stock',1.250,800,1000)")->execute([$invoice, $product, $variant]);
+        $db->prepare("INSERT INTO invoice_payments (invoice_id, amount_minor, payment_method, payment_date, received_by)
+            VALUES (?, ?, 'cash','2025-04-03',?)")->execute([$invoice, $input === 'bad-payment' ? 400 : 500, $actor]);
+        $sold = $input === 'bad-stock' ? '1.000' : '1.250';
+        $db->prepare("INSERT INTO stock_movements (invoice_id,variant_id,movement_type,quantity_delta,previous_quantity,resulting_quantity,created_by)
+            VALUES (?,?,'sale',-?,2+?,2,?)")->execute([$invoice, $variant, $sold, $sold, $actor]);
+        $db->commit();
+        echo json_encode(['invoiceId' => $invoice, 'variantId' => $variant], JSON_THROW_ON_ERROR);
+        break;
     case 'attempt':
         try {
             echo json_encode((new BillingAttempts($db))->change($input, $actor), JSON_THROW_ON_ERROR);

@@ -941,10 +941,10 @@ export default function AdminBilling() {
   const cancelInvoice = async () => {
     if (!detail || !cancellationReason.trim()) return;
     if (usePhpApi) {
-      if (paymentInFlight.current || !detail.php_product && !detail.php_membership) return;
+      if (paymentInFlight.current || (!detail.php_product && !detail.php_membership && !detail.legacy_source)) return;
       paymentInFlight.current = true;
       try {
-        await phpPost(detail.php_product ? "/invoices/products/cancel" : "/membership/cancel-invoice", {
+        await phpPost(detail.php_membership ? "/membership/cancel-invoice" : "/invoices/products/cancel", {
           invoiceId: detail.id, reason: cancellationReason.trim(),
         });
         setCancelOpen(false);
@@ -1765,7 +1765,9 @@ export default function AdminBilling() {
                   Record payment
                 </AdminButton>
               ) : null}
-              {detail.invoice_status === "issued" && (!usePhpApi || detail.php_product || detail.php_membership) ? (
+              {detail.invoice_status === "issued" && (!usePhpApi || detail.php_product || detail.php_membership ||
+                (detail.legacy_source && (!detail.member_ref || detailItems.length > 0) &&
+                  detailItems.every((item) => item.item_type !== "membership"))) ? (
                 <AdminButton
                   variant="danger"
                   onClick={() => setCancelOpen(true)}

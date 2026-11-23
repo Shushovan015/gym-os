@@ -167,6 +167,25 @@ test("saved attempts survive rollback and concurrent execution", async () => {
   await work("attempt", { action: "dismiss", key });
 });
 
+test("legacy cancellation restores reconciled stock and rejects inconsistent histories", async () => {
+  const clean = await work("legacy-fixture", "balanced");
+  const result = await Promise.all([work("product-cancel", clean.invoiceId), work("product-cancel", clean.invoiceId)]);
+  assert.ok(result.every(([status]) => status === 200));
+  const [, receipt] = await work("product-receipt", clean.invoiceId);
+  assert.equal(receipt.invoice.invoice_status, "cancelled");
+  assert.equal(receipt.payments.length, 2);
+  assert.equal(receipt.payments[1].reverses_payment_id, receipt.payments[0].id);
+  const [, history] = await work("stock-history", clean.variantId);
+  assert.equal(history.movements[0].resulting_quantity, "3.250");
+  assert.equal(history.movements.filter(({ movement_type }) => movement_type === "cancellation_reversal").length, 1);
+  for (const invalid of ["bad-stock", "bad-payment"]) {
+    const fixture = await work("legacy-fixture", invalid);
+    assert.equal((await work("product-cancel", fixture.invoiceId))[0], 409);
+    assert.equal((await work("product-receipt", fixture.invoiceId))[1].invoice.invoice_status, "issued");
+    assert.equal((await work("stock-history", fixture.variantId))[1].movements.length, 1);
+  }
+});
+
 test("stock-linked invoices preserve line prices and reverse the combined sale once", async () => {
   const fixture = async () => {
     const variantId = await work("stock-fixture", null);
