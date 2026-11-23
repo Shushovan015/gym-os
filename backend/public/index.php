@@ -20,6 +20,7 @@ require __DIR__ . '/../src/FooterContent.php';
 require __DIR__ . '/../src/HomeContent.php';
 require __DIR__ . '/../src/FacilitiesContent.php';
 require __DIR__ . '/../src/TrainersContent.php';
+require __DIR__ . '/../src/PricingContent.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -78,6 +79,9 @@ $routes = [
     '/api/public/trainers' => 'GET',
     '/api/studio/trainers' => 'GET',
     '/api/studio/trainers/save' => 'POST',
+    '/api/public/pricing' => 'GET',
+    '/api/studio/pricing' => 'GET',
+    '/api/studio/pricing/save' => 'POST',
     '/api/studio/footer/save' => 'POST',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
@@ -114,6 +118,9 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/public/pricing') {
+        respond(200, (new PricingContent(database()))->read(false));
+    }
     if ($path === '/api/public/trainers') {
         respond(200, (new TrainersContent(database()))->read(false));
     }
@@ -238,6 +245,9 @@ try {
     if ($path === '/api/studio/trainers') {
         respond(200, (new TrainersContent($db))->read(true));
     }
+    if ($path === '/api/studio/pricing') {
+        respond(200, (new PricingContent($db))->read(true));
+    }
     if ($path === '/api/studio/media/upload') {
         [$status, $result] = (new ProductMedia($db))->upload($_FILES['photo'] ?? null, $user['id'], 'studio.image.upload');
         respond($status, $result);
@@ -290,6 +300,10 @@ try {
         }
         if ($path === '/api/studio/trainers/save') {
             [$status, $result] = (new TrainersContent($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/studio/pricing/save') {
+            [$status, $result] = (new PricingContent($db))->save($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {

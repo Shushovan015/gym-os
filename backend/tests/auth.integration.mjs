@@ -110,6 +110,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("studio/home", 401);
   await request("studio/facilities", 401);
   await request("studio/trainers", 401);
+  await request("studio/pricing", 401);
   await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
@@ -219,7 +220,28 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal((await request("admin/dashboard?period=90", 200)).attendanceLabels.length, 90);
   await request("admin/dashboard?period=8", 422);
   const planTitle = `Plan ${randomUUID()}`;
-  const planId = Number(php("backend/tests/billing-worker.php", ["plan-fixture"], JSON.stringify(planTitle)));
+  const pricingSave = "studio/pricing/save";
+  const pricingFields = ("hero_badge hero_title hero_description hero_primary_cta_text hero_primary_cta_link hero_secondary_cta_text " +
+    "hero_secondary_cta_link benefits_title benefits_description advisor_title advisor_description advisor_cta_text advisor_cta_link " +
+    "popular_badge_text bottom_cta_title bottom_cta_description bottom_primary_cta_text bottom_primary_cta_link " +
+    "bottom_secondary_cta_text bottom_secondary_cta_link").split(" ");
+  const pricingContent = Object.fromEntries(pricingFields.map((name) => [name, ""]));
+  Object.assign(pricingContent, { hero_title: "Fixture pricing", summary_cards: [{ label: "Plans", value: "{plans}", icon: "Crown" }] });
+  await request(pricingSave, 403, { action: "content", content: pricingContent }, false);
+  await request(pricingSave, 422, { action: "content", content: { ...pricingContent, advisor_cta_link: "javascript:alert(1)" } });
+  await request(pricingSave, 200, { action: "content", content: pricingContent });
+  const pricingPlan = { kind: "plan", title: planTitle, price: "NPR 2,000", cadence: "/month", subtitle: "Gym access",
+    is_highlighted: true, features: ["Training floor"], sort_order: -20, is_active: false };
+  await request(pricingSave, 200, { action: "item", item: pricingPlan });
+  const planId = (await request("studio/pricing", 200)).items.find(({ title }) => title === planTitle).id;
+  assert.ok(!(await request("public/pricing", 200)).items.some(({ id }) => id === planId));
+  assert.ok(!(await request("members/plans", 200)).plans.some(({ id }) => id === planId));
+  await request(pricingSave, 200, { action: "item", id: planId, item: { ...pricingPlan, is_active: true } });
+  cookie = undefined;
+  const publicPricing = await request("public/pricing", 200);
+  assert.deepEqual(publicPricing.content, pricingContent);
+  assert.deepEqual(publicPricing.items.find(({ id }) => id === planId), { ...pricingPlan, id: planId, is_active: true });
+  cookie = authenticatedCookie;
   assert.ok((await request("members/plans", 200)).plans.some(({ id, title }) => id === planId && title === planTitle));
   assert.equal((await request("admin/settings", 200)).settings.attendance_holiday_lock, true);
   const profile = {
@@ -674,6 +696,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(facilitiesSave, 403, { action: "content", content: facilityContent });
   await request("studio/trainers", 403);
   await request(trainersSave, 403, { action: "item", entity: "plan", item: plan });
+  await request("studio/pricing", 403);
+  await request(pricingSave, 403, { action: "delete", id: planId });
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

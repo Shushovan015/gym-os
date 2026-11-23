@@ -31,7 +31,7 @@ final class FacilitiesContent
         $image = null;
         if ($id !== null && (!is_int($id) || $id < 1)) return [422, ['error' => 'Invalid facility ID.']];
         if ($action === 'content') {
-            $content = self::content($input['content'] ?? null);
+            $content = WebsiteContentFields::pageWithSummary($input['content'] ?? null, self::PAGE_FIELDS);
             if ($content === null) return [422, ['error' => 'Enter valid facilities content, links and summary cards.']];
             $sql = 'INSERT INTO facilities_page_content (id, content) VALUES (1, ?) ON DUPLICATE KEY UPDATE content = VALUES(content)';
             $parameters = [json_encode($content, JSON_THROW_ON_ERROR)];
@@ -86,21 +86,4 @@ final class FacilitiesContent
         return [200, ['saved' => true]];
     }
 
-    private static function content(mixed $input): ?array
-    {
-        $data = WebsiteContentFields::text($input, self::PAGE_FIELDS, 4000);
-        if ($data === null) return null;
-        foreach ($data as $field => $value) {
-            if (str_ends_with($field, '_link') && !WebsiteContentFields::validLink($value)) return null;
-        }
-        $cards = $input['summary_cards'] ?? null;
-        if (!is_array($cards) || !array_is_list($cards) || count($cards) > 30) return null;
-        $data['summary_cards'] = [];
-        foreach ($cards as $card) {
-            $text = WebsiteContentFields::text($card, ['label', 'value', 'icon'], 500);
-            if ($text === null) return null;
-            $data['summary_cards'][] = $text;
-        }
-        return $data;
-    }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 
 type Kind = "plan" | "perk";
 
@@ -130,14 +131,20 @@ export default function AdminPricing() {
   const [pageMsg, setPageMsg] = useState("");
 
   const load = async () => {
-    const [{ data: itemData }, { data: pageData }] = await Promise.all([
+    const { items: itemData, content: pageData } = usePhpApi
+      ? await phpGet<{ items: Row[]; content: Partial<PageContent> | null }>("/studio/pricing")
+      : await Promise.all([
       supabase
         .from("pricing_items")
         .select("*")
         .order("kind", { ascending: true })
         .order("sort_order", { ascending: true }),
       supabase.from("pricing_page_content").select("*").eq("id", 1).maybeSingle(),
-    ]);
+    ]).then(([items, page]) => {
+      const issue = items.error ?? page.error;
+      if (issue) throw new Error(issue.message);
+      return { items: items.data as Row[], content: page.data as Partial<PageContent> | null };
+    });
 
     setRows((itemData as Row[]) || []);
 
@@ -153,7 +160,7 @@ export default function AdminPricing() {
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setPageMsg(issue.message));
   }, []);
 
   const resetForm = () => {
@@ -183,18 +190,17 @@ export default function AdminPricing() {
         features: form.kind === "perk" ? [] : features,
       };
 
-      if (editingId) {
-        const { error } = await supabase.from("pricing_items").update(payload).eq("id", editingId);
-        if (error) throw new Error(error.message);
-        setMsg("Updated successfully.");
+      if (usePhpApi) {
+        await phpPost("/studio/pricing/save", { action: "item", id: editingId, item: payload });
       } else {
-        const { error } = await supabase.from("pricing_items").insert(payload);
+        const table = supabase.from("pricing_items");
+        const { error } = editingId ? await table.update(payload).eq("id", editingId) : await table.insert(payload);
         if (error) throw new Error(error.message);
-        setMsg("Created successfully.");
       }
 
       resetForm();
       await load();
+      setMsg(editingId ? "Updated successfully." : "Created successfully.");
     } catch (err: any) {
       setMsg(err?.message || "Something went wrong.");
     } finally {
@@ -222,8 +228,18 @@ export default function AdminPricing() {
   const onDelete = async (id: number) => {
     const ok = window.confirm("Delete this item?");
     if (!ok) return;
-    const { error } = await supabase.from("pricing_items").delete().eq("id", id);
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/pricing/save", { action: "delete", id });
+      else {
+        const { error } = await supabase.from("pricing_items").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+      if (editingId === id) resetForm();
+      await load();
+      setMsg("Pricing item deleted.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not delete pricing item.");
+    }
   };
 
   const updateSummaryCard = (index: number, key: keyof SummaryCard, value: string) => {
@@ -265,13 +281,19 @@ export default function AdminPricing() {
         .filter((card) => card.label && card.value),
     };
 
-    const { error } = await supabase
-      .from("pricing_page_content")
-      .upsert(payload, { onConflict: "id" });
-
-    setPageMsg(error ? error.message : "Pricing page content saved.");
-    setPageSaving(false);
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/pricing/save", { action: "content", content: payload });
+      else {
+        const { error } = await supabase.from("pricing_page_content").upsert(payload, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+      await load();
+      setPageMsg("Pricing page content saved.");
+    } catch (issue) {
+      setPageMsg(issue instanceof Error ? issue.message : "Could not save pricing page content.");
+    } finally {
+      setPageSaving(false);
+    }
   };
 
   return (
