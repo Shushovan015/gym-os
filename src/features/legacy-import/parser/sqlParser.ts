@@ -94,11 +94,8 @@ function parseInsertStatement(sql: string, tableName: TargetTable): Record<strin
   const valuesPart = match[2].trim();
 
   const columns = columnsPart.split(',').map(c => c.trim().replace(/[`"]/g, ''));
-  console.log(`[DEBUG] Table ${tableName}: columns=${columns.length}, schema=${schema.columns.length}`);
-  console.log(`[DEBUG] Columns:`, columns);
   
   if (columns.length !== schema.columns.length) {
-    console.log(`[DEBUG] Column count mismatch for ${tableName}`);
     return [];
   }
   
@@ -149,15 +146,10 @@ function parseInsertStatement(sql: string, tableName: TargetTable): Record<strin
     }
   }
 
-  console.log(`[DEBUG] Table ${tableName}: valueGroups count=${valueGroups.length}`);
-  
   const rows: Record<string, string>[] = [];
   for (const group of valueGroups) {
     const inner = group.slice(1, -1).trim();
     const values = splitInsertValues(inner);
-    
-    console.log(`[DEBUG] Row values count: ${values.length}, expected: ${columns.length}`);
-    console.log(`[DEBUG] Values:`, values.slice(0, 3));
     
     if (values.length !== columns.length) continue;
 

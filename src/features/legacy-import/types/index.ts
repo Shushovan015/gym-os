@@ -141,6 +141,8 @@ export interface MigrationResult {
   skippedRecords: number;
   preservedInNotesCount: number;
   importLogId?: number;
+  evidenceRecorded?: number;
+  reviewItems?: Array<{ entity: string; id: number; reason: string }>;
 }
 
 export interface ImportLogEntry {

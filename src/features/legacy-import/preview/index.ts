@@ -127,6 +127,9 @@ export function formatMigrationResult(result: MigrationResult): string {
   lines.push(`Members imported:      ${result.membersImported.toLocaleString()}`);
   lines.push(`Memberships imported:  ${result.membershipsImported.toLocaleString()}`);
   lines.push(`Payments imported:     ${result.paymentsImported.toLocaleString()}`);
+  if (result.evidenceRecorded !== undefined) {
+    lines.push(`Source records saved:  ${result.evidenceRecorded.toLocaleString()}`);
+  }
   lines.push('');
   
   if (result.warnings.length > 0) {
@@ -145,6 +148,10 @@ export function formatMigrationResult(result: MigrationResult): string {
   
   lines.push(`Skipped records:       ${result.skippedRecords}`);
   lines.push(`Preserved in notes:    ${result.preservedInNotesCount} fields`);
+  if (result.reviewItems?.length) {
+    lines.push(`Records for review:    ${result.reviewItems.length.toLocaleString()}`);
+    for (const item of result.reviewItems) lines.push(`  - ${item.entity} #${item.id}: ${item.reason}`);
+  }
   lines.push('');
   
   if (result.errors.length === 0) {

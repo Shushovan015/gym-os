@@ -91,6 +91,8 @@ $requiredKeys = [
     'product_invoice_requests.invoice_id' => 'invoices.id',
     'bill_email_attempts.invoice_id' => 'invoices.id',
     'invoice_balance_payment_requests.payment_id' => 'invoice_payments.id',
+    'legacy_sql_evidence.member_id' => 'members.id',
+    'legacy_sql_evidence.invoice_id' => 'invoices.id',
 ];
 foreach ($requiredKeys as $source => $target) {
     if (($foreignKeys[$source] ?? null) !== $target) {

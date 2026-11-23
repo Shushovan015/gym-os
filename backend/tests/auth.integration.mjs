@@ -756,6 +756,54 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal(settingsReceipt.invoice.tax_label, "Fixture Tax");
   assert.deepEqual((await request(historicalReceiptPath, 200)).invoice, historicalInvoice);
   await request(settingsSave, 200, { ...currentSettings.settings, invoice_start_number: floor });
+  const importPath = "admin/legacy-import";
+  const legacyId = randomBytes(5).readUIntBE(0, 5);
+  const memberCode = `LEG-${String(legacyId).padStart(6, "0")}`;
+  const legacyName = `Legacy fixture ${legacyId}`;
+  const legacyMemberSearch = `members?search=${encodeURIComponent(legacyName)}`;
+  const legacyBillNumber = `OLD-${randomUUID()}`;
+  const legacyOtherBill = `REVIEW-${randomUUID()}`;
+  const paidDate = "2019-04-14";
+  const legacyBundle = {
+    members: [{ source: { id: legacyId, name: legacyName, datead: paidDate },
+      profile: { full_name: legacyName, phone: "", start_date: paidDate } }],
+    memberships: [{ id: legacyId, reg_id: legacyId, issuedate: paidDate, membershiptype: "Monthly" }],
+    bills: [
+      { source: { bill_id: legacyId, register_id: legacyId, billno: legacyBillNumber, amount: "12.50", tobepaid: "12.50", paiddate: paidDate }, date: paidDate },
+      { source: { bill_id: legacyId + 1, register_id: legacyId, billno: legacyOtherBill, amount: "5", tobepaid: "12.50", paiddate: paidDate }, date: paidDate },
+    ],
+  };
+  await request(importPath, 403, legacyBundle, false);
+  await request(importPath, 422, { ...legacyBundle, bills: [...legacyBundle.bills, legacyBundle.bills[0]] });
+  const plannedLegacy = await request(importPath, 200, { ...legacyBundle, dryRun: true });
+  assert.equal(plannedLegacy.invoices, 1);
+  assert.equal((await request(legacyMemberSearch, 200)).members.length, 0);
+  const imported = await request(importPath, 200, legacyBundle);
+  assert.deepEqual({ ...imported, review: imported.review.map(({ entity }) => entity) },
+    { members: 1, evidence: 4, invoices: 1, payments: 1, skipped: 0, review: ["officeregister", "bill"] });
+  const [importedMember] = (await request(legacyMemberSearch, 200)).members;
+  assert.equal(importedMember.member_id, memberCode);
+  assert.equal(importedMember.start_date, paidDate);
+  const historicalFees = await request(`members/fees?id=${importedMember.id}`, 200);
+  assert.equal(historicalFees.summary.total_due, 0);
+  const relatedLegacyBills = (await request(`invoices?search=${encodeURIComponent(legacyName)}`, 200)).invoices;
+  assert.deepEqual(relatedLegacyBills.map(({ invoice_number }) => invoice_number), [legacyBillNumber]);
+  const [importedBill] = relatedLegacyBills;
+  assert.equal(importedBill.member_ref, importedMember.id);
+  const legacyReceipt = await request(`invoices/receipt?id=${importedBill.id}`, 200);
+  assert.equal(legacyReceipt.invoice.billing_date, paidDate);
+  assert.equal(legacyReceipt.invoice.total_minor, 1250);
+  assert.equal(legacyReceipt.invoice.balance_minor, 0);
+  assert.equal(legacyReceipt.payments.length, 1);
+  const repeated = await request(importPath, 200, legacyBundle);
+  assert.equal(repeated.evidence, 0);
+  assert.equal(repeated.skipped, 4);
+  assert.deepEqual(repeated.review, imported.review);
+  const changedBill = structuredClone(legacyBundle);
+  changedBill.bills[0].source.amount = "999.00";
+  assert.match((await request(importPath, 200, changedBill)).review.find(({ id, entity }) => id === legacyId && entity === "bill").reason,
+    /differs from the earlier import/);
+  assert.deepEqual(await request(`invoices/receipt?id=${importedBill.id}`, 200), legacyReceipt);
   php("backend/bin/account.php", ["reset", id], randomBytes(24).toString("hex"));
   await request("admin", 401);
   await request("session", 200);
@@ -797,6 +845,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(settingsSave, 403, revisedSettings);
   await request("admin/backups", 403);
   await request(downloadPath, 403);
+  await request(importPath, 403, legacyBundle);
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

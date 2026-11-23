@@ -26,6 +26,7 @@ require __DIR__ . '/../src/ShopContent.php';
 require __DIR__ . '/../src/AdminSettings.php';
 require __DIR__ . '/../src/GymBackup.php';
 require __DIR__ . '/../src/BackupDownloads.php';
+require __DIR__ . '/../src/LegacySqlImport.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -65,6 +66,7 @@ $routes = [
     '/api/admin/settings/save' => 'POST',
     '/api/admin/backups' => 'GET',
     '/api/admin/backups/download' => 'GET',
+    '/api/admin/legacy-import' => 'POST',
     '/api/members/plans' => 'GET',
     '/api/members/fees' => 'GET',
     '/api/membership/payments' => 'POST',
@@ -295,7 +297,11 @@ try {
         if ($type !== 'application/json') {
             respond(415, ['error' => 'JSON is required.']);
         }
-        $limit = $path === '/api/auth/login' ? 4096 : 65536;
+        $limit = match ($path) {
+            '/api/auth/login' => 4096,
+            '/api/admin/legacy-import' => 8 * 1024 * 1024,
+            default => 65536,
+        };
         $body = file_get_contents('php://input', false, null, 0, $limit + 1);
         if ($body === false || strlen($body) > $limit) {
             respond(413, ['error' => 'Request body is too large.']);
@@ -338,6 +344,10 @@ try {
         }
         if ($path === '/api/admin/settings/save') {
             [$status, $result] = (new AdminSettings($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/admin/legacy-import') {
+            [$status, $result] = (new LegacySqlImport($db))->run($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {

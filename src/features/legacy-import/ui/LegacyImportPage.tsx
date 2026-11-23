@@ -10,6 +10,7 @@ import { cx } from '@src/pages/admin/adminUtils';
 import type { ImportPreview, FieldCompletenessReport } from '../types';
 import { previewLegacyImport } from '../migrationService';
 import { runLegacyImport } from '../migrationService';
+import { usePhpApi } from '@src/Client/phpApi';
 import { formatImportPreview, formatCompletenessReport, formatMigrationResult } from '../preview';
 import { Upload, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -235,9 +236,15 @@ export function LegacyImportPage() {
       
       <AdminNotice tone="warning" title="⚠ Please review before proceeding">
         <ul className="list-disc list-inside space-y-1 text-sm">
-          <li>This will create <strong>{preview?.summary.members}</strong> member records</li>
-          <li>This will create <strong>{preview?.summary.membershipRecords}</strong> membership fee records</li>
-          <li>This will create <strong>{preview?.summary.billingRecords}</strong> invoice/payment records</li>
+          {usePhpApi ? <>
+            <li><strong>{preview?.summary.members}</strong> registrations will be checked for duplicates.</li>
+            <li><strong>{preview?.summary.membershipRecords}</strong> historical membership records will be kept as evidence for review.</li>
+            <li><strong>{preview?.summary.billingRecords}</strong> bills will be checked for a matching member, invoice number, date and recorded amounts.</li>
+          </> : <>
+            <li>This will create <strong>{preview?.summary.members}</strong> member records</li>
+            <li>This will create <strong>{preview?.summary.membershipRecords}</strong> membership fee records</li>
+            <li>This will create <strong>{preview?.summary.billingRecords}</strong> invoice/payment records</li>
+          </>}
           <li><strong>{preview?.warnings.length}</strong> warnings will be logged</li>
           <li><strong>{preview?.invalidRecords.length}</strong> invalid records will be skipped</li>
           <li><strong>{preview?.duplicateCandidates.length}</strong> potential duplicates detected</li>

@@ -1,4 +1,6 @@
 import { supabase } from '@src/Client/supabase';
+import { phpGet, phpPost, usePhpApi } from '@src/Client/phpApi';
+import { parseLegacyDate } from './normalizer';
 import type {
   ParsedLegacyData,
   MemberMigrationData,
@@ -26,6 +28,7 @@ export interface ImportOptions {
 }
 
 export async function runLegacyImport(options: ImportOptions): Promise<MigrationResult> {
+  if (usePhpApi) return runPhpLegacyImport(options);
   const { fileName, sqlContent, dryRun = false } = options;
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -177,6 +180,38 @@ export async function runLegacyImport(options: ImportOptions): Promise<Migration
   }
 }
 
+async function runPhpLegacyImport({ sqlContent, dryRun = false }: ImportOptions): Promise<MigrationResult> {
+  const parsed = parseLegacySQLDump(sqlContent);
+  const validation = validateParsedData(parsed);
+  if (!validation.valid) return createFailedResult(validation.errors, [], 0, 0, 0, 0, 0);
+  const context = createMigrationContext([]);
+  const validId = (id: number) => Number.isSafeInteger(id) && id > 0;
+  const members = parsed.register.filter(({ id }) => validId(id)).map((source) => ({
+    source,
+    profile: migrateRegisterRow(source, context),
+  }));
+  const memberships = parsed.officeregister.filter(({ id }) => validId(id));
+  const bills = parsed.bill.filter(({ bill_id }) => validId(bill_id)).map((source) => ({
+    source,
+    date: parseLegacyDate(null, source.paiddate).adDate,
+  }));
+  const payload = await phpPost<{ members: number; payments: number; evidence: number; skipped: number;
+    review: NonNullable<MigrationResult['reviewItems']> }>('/admin/legacy-import', { members, memberships, bills, dryRun });
+  const invalid = parsed.register.length + parsed.officeregister.length + parsed.bill.length - members.length - memberships.length - bills.length;
+  return {
+    success: true,
+    membersImported: dryRun ? 0 : payload.members,
+    membershipsImported: 0,
+    paymentsImported: dryRun ? 0 : payload.payments,
+    warnings: context.warnings,
+    errors: [],
+    skippedRecords: payload.skipped + invalid,
+    preservedInNotesCount: 0,
+    evidenceRecorded: dryRun ? 0 : payload.evidence,
+    reviewItems: payload.review,
+  };
+}
+
 function createFailedResult(
   errors: string[],
   warnings: MigrationResult['warnings'],
@@ -199,6 +234,16 @@ function createFailedResult(
 }
 
 async function fetchExistingMembers(): Promise<Array<{ id: number; member_id: string; full_name: string; phone: string; email: string | null }>> {
+  if (usePhpApi) {
+    type ExistingMember = ReturnType<typeof createMigrationContext>['existingMembers'][number];
+    const all: ExistingMember[] = [];
+    const size = 200;
+    for (let offset = 0; ; offset += size) {
+      const { members } = await phpGet<{ members: ExistingMember[] }>(`/members?limit=${size}&offset=${offset}`);
+      all.push(...members);
+      if (members.length < size) return all;
+    }
+  }
   const { data, error } = await supabase
     .from('members')
     .select('id, member_id, full_name, phone, email')
