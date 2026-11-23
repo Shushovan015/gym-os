@@ -27,6 +27,7 @@ require __DIR__ . '/../src/AdminSettings.php';
 require __DIR__ . '/../src/GymBackup.php';
 require __DIR__ . '/../src/BackupDownloads.php';
 require __DIR__ . '/../src/LegacySqlImport.php';
+require __DIR__ . '/../src/HolidayManager.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -67,6 +68,9 @@ $routes = [
     '/api/admin/backups' => 'GET',
     '/api/admin/backups/download' => 'GET',
     '/api/admin/legacy-import' => 'POST',
+    '/api/admin/holidays' => 'GET',
+    '/api/admin/holiday-templates' => 'GET',
+    '/api/admin/holidays/change' => 'POST',
     '/api/members/plans' => 'GET',
     '/api/members/fees' => 'GET',
     '/api/membership/payments' => 'POST',
@@ -193,6 +197,13 @@ try {
     }
     if ($path === '/api/admin/settings') {
         respond(200, (new AdminSettings($db))->read());
+    }
+    if ($path === '/api/admin/holidays') {
+        [$status, $result] = (new HolidayManager($db))->month($_GET);
+        respond($status, $result);
+    }
+    if ($path === '/api/admin/holiday-templates') {
+        respond(200, (new HolidayManager($db))->templates());
     }
     if ($path === '/api/admin/backups') {
         respond(200, (new BackupDownloads($db))->listing());
@@ -348,6 +359,10 @@ try {
         }
         if ($path === '/api/admin/legacy-import') {
             [$status, $result] = (new LegacySqlImport($db))->run($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/admin/holidays/change') {
+            [$status, $result] = (new HolidayManager($db))->change($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {

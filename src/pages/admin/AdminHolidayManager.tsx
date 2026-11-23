@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import NepaliDate from "nepali-date-converter";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
+import { getNepalTodayAdDate } from "./adminUtils";
 
 type HolidayRow = {
   id: number;
@@ -68,7 +70,7 @@ function adToBsText(adDate: string) {
 }
 
 export default function AdminHolidayManager() {
-  const nowBs = new NepaliDate();
+  const nowBs = useMemo(() => new NepaliDate(new Date(`${getNepalTodayAdDate()}T00:00:00`)), []);
   const [selectedBsYear, setSelectedBsYear] = useState<number>(nowBs.getYear());
   const [selectedBsMonth, setSelectedBsMonth] = useState<number>(nowBs.getMonth());
   const [holidays, setHolidays] = useState<HolidayRow[]>([]);
@@ -110,6 +112,14 @@ export default function AdminHolidayManager() {
     const start = days[0].adDate;
     const end = days[days.length - 1].adDate;
 
+    if (usePhpApi) {
+      try {
+        setHolidays((await phpGet<{ holidays: HolidayRow[] }>(`/admin/holidays?start=${start}&end=${end}`)).holidays);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not load holidays.");
+      }
+      return;
+    }
     const { data, error } = await supabase
       .from("attendance_holidays")
       .select("id, holiday_date, name")
@@ -126,6 +136,14 @@ export default function AdminHolidayManager() {
   };
 
   const loadTemplates = async () => {
+    if (usePhpApi) {
+      try {
+        setTemplates((await phpGet<{ templates: HolidayTemplateRow[] }>("/admin/holiday-templates")).templates);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not load holiday templates.");
+      }
+      return;
+    }
     const { data, error } = await supabase
       .from("attendance_holiday_templates")
       .select("id, name, bs_month, bs_day, is_active")
@@ -137,6 +155,18 @@ export default function AdminHolidayManager() {
       return;
     }
     setTemplates((data as HolidayTemplateRow[]) || []);
+  };
+
+  const change = async (body: object, legacy: () => PromiseLike<{ error: { message: string } | null }>) => {
+    try {
+      if (usePhpApi) return await phpPost<{ applied?: number }>("/admin/holidays/change", body);
+      const { error } = await legacy();
+      if (error) throw new Error(error.message);
+      return {};
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save holidays.");
+      return null;
+    }
   };
 
   useEffect(() => {
@@ -173,15 +203,11 @@ export default function AdminHolidayManager() {
 
     setSaving(true);
     const payload = { holiday_date: dayInfo.adDate, name: occasionName.trim() };
-    const { error } = await supabase
-      .from("attendance_holidays")
-      .upsert(payload, { onConflict: "holiday_date" });
+    const result = await change({ action: "save", date: dayInfo.adDate, name: payload.name },
+      () => supabase.from("attendance_holidays").upsert(payload, { onConflict: "holiday_date" }));
     setSaving(false);
 
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
+    if (!result) return;
 
     setMessage("Holiday saved.");
     setOccasionName("");
@@ -192,24 +218,17 @@ export default function AdminHolidayManager() {
     const next = window.prompt("Edit holiday occasion:", holiday.name || "");
     if (next === null) return;
     const updatedName = next.trim() || "Holiday";
-    const { error } = await supabase
-      .from("attendance_holidays")
-      .update({ name: updatedName })
-      .eq("id", holiday.id);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
+    const result = await change({ action: "save", date: holiday.holiday_date, name: updatedName },
+      () => supabase.from("attendance_holidays").update({ name: updatedName }).eq("id", holiday.id));
+    if (!result) return;
     setMessage("Holiday updated.");
     await loadHolidays(selectedBsYear, selectedBsMonth);
   };
 
   const deleteHoliday = async (holiday: HolidayRow) => {
-    const { error } = await supabase.from("attendance_holidays").delete().eq("id", holiday.id);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
+    const result = await change({ action: "remove", date: holiday.holiday_date },
+      () => supabase.from("attendance_holidays").delete().eq("id", holiday.id));
+    if (!result) return;
     setMessage("Holiday removed.");
     await loadHolidays(selectedBsYear, selectedBsMonth);
   };
@@ -225,18 +244,16 @@ export default function AdminHolidayManager() {
     }
 
     setSaving(true);
-    const { error } = await supabase.from("attendance_holiday_templates").insert({
+    const result = await change({ action: "create-template", name: templateName.trim(), month: templateMonth, day: templateDay },
+      () => supabase.from("attendance_holiday_templates").insert({
       name: templateName.trim(),
       bs_month: templateMonth,
       bs_day: templateDay,
       is_active: true,
-    });
+    }));
     setSaving(false);
 
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
+    if (!result) return;
 
     setTemplateName("");
     setTemplateDay(1);
@@ -245,23 +262,17 @@ export default function AdminHolidayManager() {
   };
 
   const toggleTemplateActive = async (template: HolidayTemplateRow) => {
-    const { error } = await supabase
-      .from("attendance_holiday_templates")
-      .update({ is_active: !template.is_active })
-      .eq("id", template.id);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
+    const active = !template.is_active;
+    const result = await change({ action: "toggle-template", id: template.id, active },
+      () => supabase.from("attendance_holiday_templates").update({ is_active: active }).eq("id", template.id));
+    if (!result) return;
     await loadTemplates();
   };
 
   const deleteTemplate = async (templateId: number) => {
-    const { error } = await supabase.from("attendance_holiday_templates").delete().eq("id", templateId);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
+    const result = await change({ action: "delete-template", id: templateId },
+      () => supabase.from("attendance_holiday_templates").delete().eq("id", templateId));
+    if (!result) return;
     setMessage("Template removed.");
     await loadTemplates();
   };
@@ -284,17 +295,13 @@ export default function AdminHolidayManager() {
       };
     }).filter((x) => Boolean(x.holiday_date));
 
-    const { error } = await supabase
-      .from("attendance_holidays")
-      .upsert(payload, { onConflict: "holiday_date" });
+    const result = await change({ action: "apply", month: selectedBsMonth, days: bsDays.map(({ adDate }) => adDate) },
+      () => supabase.from("attendance_holidays").upsert(payload, { onConflict: "holiday_date" }));
     setSaving(false);
 
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
+    if (!result) return;
 
-    setMessage(`Applied ${payload.length} template holiday(s).`);
+    setMessage(`Applied ${result.applied ?? payload.length} template holiday(s).`);
     await loadHolidays(selectedBsYear, selectedBsMonth);
   };
 
