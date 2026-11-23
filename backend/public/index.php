@@ -17,6 +17,7 @@ require __DIR__ . '/../src/MonthlyReports.php';
 require __DIR__ . '/../src/ContactContent.php';
 require __DIR__ . '/../src/WebsiteContentFields.php';
 require __DIR__ . '/../src/FooterContent.php';
+require __DIR__ . '/../src/HomeContent.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -65,6 +66,9 @@ $routes = [
     '/api/studio/contact' => 'GET',
     '/api/studio/contact/save' => 'POST',
     '/api/public/footer' => 'GET',
+    '/api/public/home' => 'GET',
+    '/api/studio/home' => 'GET',
+    '/api/studio/home/save' => 'POST',
     '/api/studio/footer/save' => 'POST',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
@@ -101,6 +105,9 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/public/home') {
+        respond(200, (new HomeContent(database()))->read(false));
+    }
     if ($path === '/api/public/footer') {
         respond(200, (new FooterContent(database()))->read());
     }
@@ -207,6 +214,9 @@ try {
     if ($path === '/api/studio/contact') {
         respond(200, (new ContactContent($db))->read(true));
     }
+    if ($path === '/api/studio/home') {
+        respond(200, (new HomeContent($db))->read(true));
+    }
     if ($path === '/api/billing/attempt') {
         [$status, $result] = (new BillingAttempts($db))->retrieve($user['id']);
         respond($status, $result);
@@ -243,6 +253,10 @@ try {
         }
         if ($path === '/api/studio/footer/save') {
             [$status, $result] = (new FooterContent($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/studio/home/save') {
+            [$status, $result] = (new HomeContent($db))->save($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {

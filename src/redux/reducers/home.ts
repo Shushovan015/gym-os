@@ -4,6 +4,10 @@ const initialState = {
   content: null as any,
   status: [] as any[],
   points: [] as any[],
+  zones: [] as any[],
+  trainers: [] as any[],
+  testimonials: [] as any[],
+  statusConfigured: false,
   loading: false,
   error: null as string | null,
 };
@@ -19,6 +23,10 @@ export default function home(state = initialState, action: any) {
         content: action.payload?.content ?? null,
         status: action.payload?.status ?? [],
         points: action.payload?.points ?? [],
+        zones: action.payload?.zones ?? [],
+        trainers: action.payload?.trainers ?? [],
+        testimonials: action.payload?.testimonials ?? [],
+        statusConfigured: action.payload?.statusConfigured ?? false,
       };
     case GET_HOME_FAILURE:
       return { ...state, loading: false, error: action.error };

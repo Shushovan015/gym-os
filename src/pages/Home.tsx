@@ -6,6 +6,7 @@ import { getFacilitiesRequest } from "@src/redux/actions/facilities";
 import { getHomeRequest } from "@src/redux/actions/home";
 import { getTestimonialsRequest } from "@src/redux/actions/testimonials";
 import { getTrainersRequest } from "@src/redux/actions/trainers";
+import { usePhpApi } from "@src/Client/phpApi";
 import {
   Badge,
   Card,
@@ -97,6 +98,10 @@ type HomeState = {
     content?: Partial<HomeContent> | null;
     status?: Array<{ label: string; value: string; icon?: string }>;
     points?: Array<{ point: string }>;
+    zones?: FacilityItem[];
+    trainers?: TrainerItem[];
+    testimonials?: Testimonial[];
+    statusConfigured?: boolean;
   };
   facilities?: {
     items?: FacilityItem[];
@@ -214,27 +219,30 @@ export default function Home() {
 
   useEffect(() => {
     dispatch(getHomeRequest());
-    dispatch(getFacilitiesRequest());
-    dispatch(getTrainersRequest());
-    dispatch(getTestimonialsRequest());
+    if (!usePhpApi) {
+      dispatch(getFacilitiesRequest());
+      dispatch(getTrainersRequest());
+      dispatch(getTestimonialsRequest());
+    }
   }, [dispatch]);
 
   const home = { ...fallbackHome, ...(homeSlice?.content ?? {}) };
-  const statusItems = homeSlice?.status?.length ? homeSlice.status : fallbackStatus;
+  const statusItems = homeSlice?.status?.length || homeSlice?.statusConfigured ? homeSlice.status ?? [] : fallbackStatus;
   const points = homeSlice?.points?.map((item) => item.point).filter(Boolean) ?? [
     "Squat, Bench and Deadlift focused training",
     "Technique feedback and progression planning",
     "Team sessions for beginner to advanced lifters",
   ];
 
+  const zoneItems = usePhpApi ? homeSlice?.zones : facilitiesSlice?.items;
   const zones = useMemo(() => {
-    const items = facilitiesSlice?.items ?? [];
+    const items = zoneItems ?? [];
     const activeZones = items.filter((item) => item.kind === "zone" && item.is_active !== false).slice(0, 3);
     return activeZones.length ? activeZones : fallbackZones;
-  }, [facilitiesSlice?.items]);
+  }, [zoneItems]);
 
-  const trainers = (trainersSlice?.items ?? []).slice(0, 3);
-  const testimonials = testimonialsSlice?.items ?? [];
+  const trainers = ((usePhpApi ? homeSlice?.trainers : trainersSlice?.items) ?? []).slice(0, 3);
+  const testimonials = (usePhpApi ? homeSlice?.testimonials : testimonialsSlice?.items) ?? [];
 
   const heroMetrics =
     home.hero_metrics?.length
@@ -247,14 +255,14 @@ export default function Home() {
 
   const cmsGalleryImages =
     home.gallery_images
-      ?.map((item) => (typeof item === "string" ? item : item.url))
-      .filter(Boolean) ?? [];
+      ?.map((item) => (typeof item === "string" ? { url: item } : item))
+      .filter((item) => item.url) ?? [];
   const zoneGalleryImages = zones.map((zone) => zone.image).filter((image): image is string => Boolean(image));
   const galleryImages = cmsGalleryImages.length
     ? cmsGalleryImages
     : zoneGalleryImages.length >= 3
-      ? zoneGalleryImages
-      : fallbackGallery;
+      ? zoneGalleryImages.map((url) => ({ url }))
+      : fallbackGallery.map((url) => ({ url }));
 
   return (
     <PageRoot>
@@ -265,7 +273,7 @@ export default function Home() {
 
       <section className="relative overflow-hidden border-b border-[var(--public-line)]">
         <div className="absolute inset-0">
-          <img src={home.hero_image} alt="A&A Health Club training floor" className="h-full w-full object-cover opacity-64" loading="eager" />
+          <img src={home.hero_image || fallbackHome.hero_image} alt="A&A Health Club training floor" className="h-full w-full object-cover opacity-64" loading="eager" />
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,16,14,0.96),rgba(16,16,14,0.74)_48%,rgba(16,16,14,0.48))]" />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,16,14,0.1),rgba(16,16,14,0.9))]" />
         </div>
@@ -298,7 +306,7 @@ export default function Home() {
         </div>
       </section>
 
-      <Section>
+      {statusItems.length > 0 && <Section>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {statusItems.slice(0, 3).map((item) => {
             const Icon = metricIcon(item.icon);
@@ -311,7 +319,7 @@ export default function Home() {
             );
           })}
         </div>
-      </Section>
+      </Section>}
 
       <Section className="bg-[var(--public-bg-soft)]">
         <SectionHeading
@@ -370,7 +378,7 @@ export default function Home() {
           eyebrow={home.maximus_badge}
           title={home.maximus_title}
           description={home.maximus_description}
-          image={home.maximus_image}
+          image={home.maximus_image || fallbackHome.maximus_image}
           imageAlt="Maximus Strength powerlifting training"
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -437,8 +445,8 @@ export default function Home() {
       <Section>
         <SectionHeading eyebrow="Gallery" title={home.gallery_title || "Inside A&A Health Club"} />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {galleryImages.slice(0, 4).map((image, index) => (
-            <ImageFrame key={`${image}-${index}`} src={image} alt={`A&A Health Club gallery ${index + 1}`} className="aspect-[4/5]" />
+          {galleryImages.slice(0, 4).map((image: GalleryImage, index) => (
+            <ImageFrame key={`${image.url}-${index}`} src={image.url} alt={image.alt || `A&A Health Club gallery ${index + 1}`} className="aspect-[4/5]" />
           ))}
         </div>
       </Section>

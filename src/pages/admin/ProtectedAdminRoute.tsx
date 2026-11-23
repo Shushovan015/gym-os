@@ -46,7 +46,7 @@ export default function ProtectedAdminRoute() {
 
   if (loading) return <div className="p-6 text-white">Checking admin access...</div>;
   if (!allowed) return <Navigate to="/admin/login" replace />;
-  if (usePhpApi && !["/admin", "/admin/members", "/admin/attendance", "/admin/billing", "/admin/inventory", "/admin/reports", "/studio", "/studio/contact", "/studio/footer"].includes(pathname.replace(/\/$/, ""))) {
+  if (usePhpApi && !["/admin", "/admin/members", "/admin/attendance", "/admin/billing", "/admin/inventory", "/admin/reports", "/studio", "/studio/contact", "/studio/footer", "/studio/home"].includes(pathname.replace(/\/$/, ""))) {
     return (
       <div className="min-h-screen bg-slate-950 p-6 text-slate-100">
         <p>This workspace is still being migrated.</p>

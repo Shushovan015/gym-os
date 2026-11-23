@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 
 type HeroMetric = {
   label: string;
@@ -178,6 +179,9 @@ const normalizeGalleryImages = (value: any): GalleryImage[] => {
 export default function AdminHome() {
   const [content, setContent] = useState<Content>(emptyContent);
   const [contentMsg, setContentMsg] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const [statusRows, setStatusRows] = useState<StatusRow[]>([]);
   const [statusForm, setStatusForm] = useState(emptyStatusForm);
@@ -190,11 +194,17 @@ export default function AdminHome() {
   const [pointMsg, setPointMsg] = useState("");
 
   const load = async () => {
-    const [{ data: contentData }, { data: statusData }, { data: pointsData }] = await Promise.all([
+    const { content: contentData, status: statusData, points: pointsData } = usePhpApi
+      ? await phpGet<{ content: Partial<Content> | null; status: StatusRow[]; points: PointRow[] }>("/studio/home")
+      : await Promise.all([
       supabase.from("home_content").select("*").eq("id", 1).maybeSingle(),
       supabase.from("home_status_items").select("*").order("sort_order", { ascending: true }),
       supabase.from("home_maximus_points").select("*").order("sort_order", { ascending: true }),
-    ]);
+    ]).then(([page, status, points]) => {
+      const issue = page.error ?? status.error ?? points.error;
+      if (issue) throw new Error(issue.message);
+      return { content: page.data as Partial<Content> | null, status: status.data as StatusRow[], points: points.data as PointRow[] };
+    });
 
     if (contentData) {
       setContent({
@@ -212,8 +222,20 @@ export default function AdminHome() {
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setLoadError(issue.message)).finally(() => setLoading(false));
   }, []);
+
+  const changeList = async (list: "status" | "points", id: number | null, item?: typeof emptyStatusForm | typeof emptyPointForm) => {
+    if (usePhpApi) {
+      await phpPost("/studio/home/save", { action: item ? "item" : "delete", list, id, item });
+      return;
+    }
+    const table = supabase.from(list === "status" ? "home_status_items" : "home_maximus_points");
+    const { error } = item
+      ? await (id ? table.update(item).eq("id", id) : table.insert(item))
+      : await table.delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  };
 
   const updateHeroMetric = (index: number, key: keyof HeroMetric, value: string) => {
     setContent((prev) => {
@@ -261,6 +283,8 @@ export default function AdminHome() {
 
   const saveContent = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setSaving(true);
+    setContentMsg("");
     const payload = {
       id: 1,
       ...content,
@@ -279,31 +303,34 @@ export default function AdminHome() {
         .filter((g) => g.url),
     };
 
-    const { error } = await supabase.from("home_content").upsert(payload, { onConflict: "id" });
-    setContentMsg(error ? error.message : "Home content saved.");
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/home/save", { action: "content", content: payload });
+      else {
+        const { error } = await supabase.from("home_content").upsert(payload, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+      await load();
+      setContentMsg("Home content saved.");
+    } catch (issue) {
+      setContentMsg(issue instanceof Error ? issue.message : "Could not save homepage content.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveStatus = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setStatusMsg("");
 
-    if (statusEditingId) {
-      const { error } = await supabase
-        .from("home_status_items")
-        .update(statusForm)
-        .eq("id", statusEditingId);
-      if (error) return setStatusMsg(error.message);
-      setStatusMsg("Status updated.");
-    } else {
-      const { error } = await supabase.from("home_status_items").insert(statusForm);
-      if (error) return setStatusMsg(error.message);
-      setStatusMsg("Status created.");
+    try {
+      await changeList("status", statusEditingId, statusForm);
+      setStatusForm(emptyStatusForm);
+      setStatusEditingId(null);
+      await load();
+      setStatusMsg(statusEditingId ? "Status updated." : "Status created.");
+    } catch (issue) {
+      setStatusMsg(issue instanceof Error ? issue.message : "Could not save status.");
     }
-
-    setStatusForm(emptyStatusForm);
-    setStatusEditingId(null);
-    await load();
   };
 
   const onEditStatus = (row: StatusRow) => {
@@ -319,8 +346,13 @@ export default function AdminHome() {
   const onDeleteStatus = async (id: number) => {
     const ok = window.confirm("Delete this status item?");
     if (!ok) return;
-    await supabase.from("home_status_items").delete().eq("id", id);
-    await load();
+    try {
+      await changeList("status", id);
+      await load();
+      setStatusMsg("Status deleted.");
+    } catch (issue) {
+      setStatusMsg(issue instanceof Error ? issue.message : "Could not delete status.");
+    }
   };
 
   const resetStatusForm = () => {
@@ -333,22 +365,15 @@ export default function AdminHome() {
     e.preventDefault();
     setPointMsg("");
 
-    if (pointEditingId) {
-      const { error } = await supabase
-        .from("home_maximus_points")
-        .update(pointForm)
-        .eq("id", pointEditingId);
-      if (error) return setPointMsg(error.message);
-      setPointMsg("Point updated.");
-    } else {
-      const { error } = await supabase.from("home_maximus_points").insert(pointForm);
-      if (error) return setPointMsg(error.message);
-      setPointMsg("Point created.");
+    try {
+      await changeList("points", pointEditingId, pointForm);
+      setPointForm(emptyPointForm);
+      setPointEditingId(null);
+      await load();
+      setPointMsg(pointEditingId ? "Point updated." : "Point created.");
+    } catch (issue) {
+      setPointMsg(issue instanceof Error ? issue.message : "Could not save point.");
     }
-
-    setPointForm(emptyPointForm);
-    setPointEditingId(null);
-    await load();
   };
 
   const onEditPoint = (row: PointRow) => {
@@ -363,8 +388,13 @@ export default function AdminHome() {
   const onDeletePoint = async (id: number) => {
     const ok = window.confirm("Delete this Maximus point?");
     if (!ok) return;
-    await supabase.from("home_maximus_points").delete().eq("id", id);
-    await load();
+    try {
+      await changeList("points", id);
+      await load();
+      setPointMsg("Point deleted.");
+    } catch (issue) {
+      setPointMsg(issue instanceof Error ? issue.message : "Could not delete point.");
+    }
   };
 
   const resetPointForm = () => {
@@ -372,6 +402,9 @@ export default function AdminHome() {
     setPointForm(emptyPointForm);
     setPointMsg("");
   };
+
+  if (loading) return <p role="status">Loading homepage editor…</p>;
+  if (loadError) return <p role="alert">{loadError}</p>;
 
   return (
     <div className="space-y-6">
@@ -553,7 +586,7 @@ export default function AdminHome() {
         </div>
 
         {contentMsg && <p className="text-sm text-zinc-300">{contentMsg}</p>}
-        <button className="rounded-xl bg-white px-5 py-3 font-black text-black">Save Home Content</button>
+        <button disabled={saving} className="rounded-xl bg-white px-5 py-3 font-black text-black">{saving ? "Saving…" : "Save Home Content"}</button>
       </form>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

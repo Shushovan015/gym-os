@@ -31,10 +31,11 @@
 | Monthly Reports | PASS | Existing membership and product views use an administrator-only MariaDB snapshot in PHP mode. The HTTP suite reconciles a fractional sale, a membership collection and cancellation against fixture transactions. The React test checks the Nepal-local filter, product tab and print action. Dashboard retains its attendance and outstanding-balance views. |
 | Website Studio Contact and FAQs | PASS | Administrators can edit Contact content and manage FAQs through PHP. HTTP tests cover saved content, FAQ publication and deletion, anonymous reads, viewer denial, CSRF and link validation. React verifies that a saved title renders on the public Contact page. Importing existing content remains pending. |
 | Website Studio Footer | PASS | The editor and shared site footer read the same MariaDB content. HTTP tests cover anonymous reads, CSRF, invalid links and viewer denial. React verifies a saved title reloads in the editor and renders in the public footer. |
-| Remaining public content and Website Studio | NOT TESTED | Homepage, trainers, facilities, pricing, shop and testimonials still need PHP editor and public read paths. |
+| Website Studio Homepage | PASS | PHP stores the homepage copy, image URLs, gallery, status items and Maximus points. The HTTP suite checks access control, CSRF, invalid values, ordering, visibility and persistence. React checks edit, save, reload and public rendering without Supabase calls. PHP supplies published homepage cards for facilities, trainers and testimonials. |
+| Remaining public content and Website Studio | NOT TESTED | Standalone trainers, facilities, pricing, shop and testimonials still need PHP editor and public read paths. The About page is static and has no existing editor. |
 | Existing media, documents, SMTP and notifications | NOT TESTED | Object migration and services pending. |
 | Backup, restore, legacy import and production reconciliation | NOT TESTED | Disposable rehearsal pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Next, migrate the Website Studio Homepage editor and the public Home service together. Verify section order and visibility and confirm that saved edits appear on the public homepage.
+The checkpoint is for development only. Next, migrate the Facilities editor, the public Facilities service and facility image uploads. Verify that published training zones are also visible on the homepage.

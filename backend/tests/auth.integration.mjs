@@ -107,6 +107,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
 
   await request("admin", 401);
   await request("studio/contact", 401);
+  await request("studio/home", 401);
+  await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
   await request("login", 401, { email: admin, password: "wrong' OR 1=1" });
@@ -145,6 +147,39 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(contactSave, 200, { action: "delete-faq", id: savedFaq.id });
   assert.ok((await request("public/contact", 200)).faqs.every((entry) => entry.id !== savedFaq.id));
   const footerSave = "studio/footer/save";
+  const homeSave = "studio/home/save";
+  const homeFields = ("hero_badge hero_title hero_description hero_image hero_primary_cta_text hero_primary_cta_link " +
+    "hero_secondary_cta_text hero_secondary_cta_link status_title zones_title coaches_title coaches_subtitle maximus_badge " +
+    "maximus_title maximus_description maximus_image maximus_learn_more_link maximus_instagram_link gallery_title " +
+    "testimonials_title testimonials_subtitle final_cta_title final_cta_description final_primary_cta_text final_primary_cta_link " +
+    "final_secondary_cta_text final_secondary_cta_link").split(" ");
+  const home = Object.fromEntries(homeFields.map((field) => [field, ""]));
+  Object.assign(home, { hero_title: "Fixture homepage", hero_image: "/media/fixture-hero.webp", hero_metrics: [],
+    gallery_images: [{ url: "/media/fixture-gallery.webp", alt: "Fixture gallery" }] });
+  await request(homeSave, 403, { action: "content", content: home }, false);
+  await request(homeSave, 422, { action: "content", content: { ...home, hero_image: "javascript:alert(1)" } });
+  await request(homeSave, 200, { action: "content", content: home });
+  const statusPrefix = randomUUID();
+  for (const [label, sort_order, is_active] of [["first", -20, true], ["hidden", -30, false], ["second", -10, true]]) {
+    await request(homeSave, 200, { action: "item", list: "status", item: { label: statusPrefix + label, value: label, sort_order, is_active } });
+  }
+  await request(homeSave, 422, { action: "item", list: "points", item: { point: "Test", sort_order: "1", is_active: true } });
+  await request(homeSave, 200, { action: "item", list: "points", item: { point: statusPrefix, sort_order: 1, is_active: false } });
+  const editorHome = await request("studio/home", 200);
+  assert.deepEqual(editorHome.content, home);
+  const savedStatuses = editorHome.status.filter(({ label }) => label.startsWith(statusPrefix));
+  assert.deepEqual(savedStatuses.map(({ value }) => value), ["hidden", "first", "second"]);
+  assert.equal(editorHome.points.find(({ point }) => point === statusPrefix).is_active, false);
+  const firstStatus = savedStatuses.find(({ value }) => value === "first");
+  await request(homeSave, 200, { action: "item", list: "status", id: firstStatus.id, item: { ...firstStatus, sort_order: 10 } });
+  cookie = undefined;
+  const visitorHome = await request("public/home", 200);
+  assert.deepEqual(visitorHome.content, home);
+  assert.deepEqual(visitorHome.status.filter(({ label }) => label.startsWith(statusPrefix)).map(({ value }) => value), ["second", "first"]);
+  assert.ok(!visitorHome.points.some(({ point }) => point === statusPrefix));
+  cookie = authenticatedCookie;
+  for (const { id } of savedStatuses) await request(homeSave, 200, { action: "delete", list: "status", id });
+  await request(homeSave, 200, { action: "delete", list: "points", id: editorHome.points.find(({ point }) => point === statusPrefix).id });
   const footer = {
     brand_name: "Fixture gym", location: "Butwal", banner_title: "Fixture footer", banner_subtitle: "Train locally",
     cta_text: "Contact", cta_link: "/contact", about_text: "Fixture gym details", hours_text: "Monday",
@@ -551,6 +586,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("studio/contact", 403);
   await request(contactSave, 403, { action: "content", content: contact });
   await request(footerSave, 403, { content: footer });
+  await request("studio/home", 403);
+  await request(homeSave, 403, { action: "content", content: home });
   await request("billing/attempt", 403);
   await request(details, 403);
   await request(ledger, 403);

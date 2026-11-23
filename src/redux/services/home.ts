@@ -1,6 +1,8 @@
 import { supabase } from "@src/Client/supabase";
+import { phpGet, usePhpApi } from "@src/Client/phpApi";
 
 export const fetchHome = async () => {
+  if (usePhpApi) return phpGet("/public/home");
   const [{ data: content, error: contentError }, { data: status, error: statusError }, { data: points, error: pointsError }] =
     await Promise.all([
       supabase.from("home_content").select("*").eq("id", 1).maybeSingle(),
