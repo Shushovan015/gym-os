@@ -12,6 +12,7 @@ require __DIR__ . '/../src/Stock.php';
 require __DIR__ . '/../src/Catalog.php';
 require __DIR__ . '/../src/ProductBilling.php';
 require __DIR__ . '/../src/BillingOverview.php';
+require __DIR__ . '/../src/Dashboard.php';
 require __DIR__ . '/../src/InvoiceBalancePayments.php';
 
 function respond(int $status, array $body): never
@@ -50,6 +51,7 @@ $routes = [
     '/api/membership/payment-history' => 'GET',
     '/api/invoices/receipt' => 'GET',
     '/api/invoices' => 'GET',
+    '/api/admin/dashboard' => 'GET',
     '/api/invoices/payments' => 'POST',
     '/api/invoices/products/issue' => 'POST',
     '/api/invoices/products/cancel' => 'POST',
@@ -149,6 +151,10 @@ try {
     }
     if ($path === '/api/invoices') {
         [$status, $result] = (new BillingOverview($db))->invoices($_GET);
+        respond($status, $result);
+    }
+    if ($path === '/api/admin/dashboard') {
+        [$status, $result] = (new Dashboard($db))->overview($_GET);
         respond($status, $result);
     }
     if ($path === '/api/members/upload-photo') {

@@ -106,6 +106,28 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin", 401);
   cookie = authenticatedCookie;
   await request("admin", 200);
+  const dashboardPath = "admin/dashboard?period=7&horizon=15";
+  const beforeDashboard = await request(dashboardPath, 200);
+  const fixtureDashboard = JSON.parse(php("backend/tests/dashboard-fixture.php", []));
+  const updatedDashboard = await request(dashboardPath, 200);
+  assert.equal(updatedDashboard.today, fixtureDashboard.today);
+  assert.equal(updatedDashboard.attendanceLabels.length, 7);
+  assert.equal(updatedDashboard.attendanceLabels.at(-1), fixtureDashboard.today);
+  assert.equal(updatedDashboard.horizon, 15);
+  for (const [key, delta] of Object.entries({
+    liveCount: 1, activeCount: 1, newCount: 1, unpaidCount: 1, attendanceTodayCount: 1, lowCount: 1, outCount: 1,
+    revenueToday: 300, outstanding: 500,
+  })) {
+    assert.equal(updatedDashboard.metrics[key] - beforeDashboard.metrics[key], delta, key);
+  }
+  assert.equal(updatedDashboard.attendanceValues.at(-1) - beforeDashboard.attendanceValues.at(-1), 1);
+  assert.equal(updatedDashboard.attendanceValues.at(-2), beforeDashboard.attendanceValues.at(-2));
+  assert.ok(updatedDashboard.upcomingHolidays.some(({ name }) => name === "Dashboard fixture holiday"));
+  assert.equal((await request(`members/fees?id=${fixtureDashboard.memberId}`, 200)).summary.total_due, 600);
+  await request("members/change", 200, { action: "deactivate", ids: [fixtureDashboard.memberId] });
+  assert.equal((await request(dashboardPath, 200)).metrics.activeCount, updatedDashboard.metrics.activeCount);
+  assert.equal((await request("admin/dashboard?period=90", 200)).attendanceLabels.length, 90);
+  await request("admin/dashboard?period=8", 422);
   const planTitle = `Plan ${randomUUID()}`;
   const planId = Number(php("backend/tests/billing-worker.php", ["plan-fixture"], JSON.stringify(planTitle)));
   assert.ok((await request("members/plans", 200)).plans.some(({ id, title }) => id === planId && title === planTitle));
@@ -329,6 +351,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("login", 401, { email: admin, password });
   assert.equal((await request("login", 200, { email: viewer, password, role: "admin" })).user.role, "viewer");
   await request("admin", 403);
+  await request(dashboardPath, 403);
   await request(details, 403);
   await request(ledger, 403);
   await request(receiptPath, 403);

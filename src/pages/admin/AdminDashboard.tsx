@@ -17,6 +17,8 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, usePhpApi } from "@src/Client/phpApi";
+import { formatMoney } from "@src/features/billing/currency";
 import { fetchAllPages } from "@src/utils/fetchAllPages";
 import {
   AdminBadge,
@@ -52,6 +54,20 @@ type DashboardState = {
   inventory: Array<{ current_quantity: number; low_stock_threshold: number | null; product_id: number }>;
   inventoryProducts: Array<{ id: number; low_stock_threshold: number }>;
   invoices: Array<{ billing_date: string; invoice_status: string; paid_minor: number; balance_minor: number }>;
+};
+type DashboardOverview = {
+  today: string; periodStart: string; horizon: 7 | 15 | 30; settings: AdminSettings;
+  metrics: {
+    liveCount: number; deletedCount: number; activeCount: number; newCount: number;
+    expiringCount: number; expiredCount: number; unpaidCount: number; attendanceTodayCount: number;
+    absentCount: number; lowCount: number; outCount: number; revenueToday: number; outstanding: number;
+  };
+  expiringMembers: { member: Pick<MemberRow, "id" | "full_name" | "member_id" | "end_date">; daysLeft: number }[];
+  unpaidMembers: Pick<MemberRow, "id" | "full_name" | "phone" | "payment_status" | "payment_due_date">[];
+  recentMembers: Pick<MemberRow, "id" | "full_name" | "updated_at" | "deleted_at" | "membership_status">[];
+  attendanceLabels: string[]; attendanceValues: number[];
+  upcomingHolidays: HolidayRow[];
+  planDistribution: Record<string, number>;
 };
 
 const periodOptions: Array<{ value: PeriodDays; label: string }> = [
@@ -120,11 +136,14 @@ export default function AdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [horizonOverride, setHorizonOverride] = useState<7 | 15 | 30 | null>(null);
 
   const todayAd = useMemo(() => getNepalTodayAdDate(), []);
   const periodStartAd = useMemo(() => addDays(todayAd, -(periodDays - 1)), [periodDays, todayAd]);
 
   useEffect(() => {
+    if (usePhpApi) return;
     let alive = true;
 
     Promise.all([
@@ -181,13 +200,30 @@ export default function AdminDashboard() {
     };
   }, [periodStartAd, todayAd]);
 
+  useEffect(() => {
+    if (!usePhpApi) return;
+    let alive = true;
+    const query = new URLSearchParams({ period: String(periodDays) });
+    if (horizonOverride !== null) query.set("horizon", String(horizonOverride));
+    phpGet<DashboardOverview>(`/admin/dashboard?${query}`).then((result) => {
+      if (!alive) return;
+      setOverview(result);
+      setExpiryHorizon(result.horizon);
+    }).catch((failure: unknown) => {
+      if (alive) setError(failure instanceof Error ? failure.message : "Could not load the dashboard.");
+    }).finally(() => {
+      if (alive) setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [periodDays, horizonOverride]);
+
   const changePeriod = (next: PeriodDays) => {
     setLoading(true);
     setError("");
     setPeriodDays(next);
   };
 
-  const dashboard = useMemo(() => {
+  const legacyDashboard = useMemo(() => {
     const liveMembers = state.members.filter((member) => !member.deleted_at);
     const activeMembers = liveMembers.filter((member) => getMemberLifecycle(member, todayAd) === "active");
     const newMembers = liveMembers.filter((member) => member.created_at.slice(0, 10) >= periodStartAd);
@@ -248,6 +284,21 @@ export default function AdminDashboard() {
     };
   }, [expiryHorizon, periodDays, periodStartAd, state.attendance, state.holidays, state.inventory, state.inventoryProducts, state.invoices, state.members, state.settings.absent_after_days, todayAd]);
 
+  const dashboard = overview ?? {
+    today: todayAd, periodStart: periodStartAd, settings: state.settings,
+    metrics: {
+      liveCount: legacyDashboard.liveMembers.length, deletedCount: state.members.length - legacyDashboard.liveMembers.length,
+      activeCount: legacyDashboard.activeMembers.length, newCount: legacyDashboard.newMembers.length,
+      expiringCount: legacyDashboard.expiringMembers.length, expiredCount: legacyDashboard.expiredMembers.length,
+      unpaidCount: legacyDashboard.unpaidMembers.length, attendanceTodayCount: legacyDashboard.attendanceToday.length,
+      absentCount: legacyDashboard.absentMembers.length, lowCount: legacyDashboard.lowStock.filter((item) => item.current_quantity > 0).length,
+      outCount: legacyDashboard.lowStock.filter((item) => item.current_quantity <= 0).length,
+      revenueToday: legacyDashboard.revenueToday, outstanding: legacyDashboard.outstanding,
+    },
+    expiringMembers: legacyDashboard.expiringMembers, unpaidMembers: legacyDashboard.unpaidMembers, recentMembers: state.members.slice(0, 6),
+    attendanceLabels: legacyDashboard.attendanceLabels, attendanceValues: legacyDashboard.attendanceValues,
+    upcomingHolidays: legacyDashboard.upcomingHolidays, planDistribution: legacyDashboard.planDistribution,
+  };
   if (loading) {
     return <AdminLoading label="Loading dashboard metrics..." />;
   }
@@ -260,14 +311,16 @@ export default function AdminDashboard() {
     );
   }
 
-  const today = new Date(`${todayAd}T00:00:00`);
+  const today = new Date(`${dashboard.today}T00:00:00`);
+  const todayHoliday = dashboard.upcomingHolidays.find((holiday) => holiday.holiday_date === dashboard.today);
+  const stockAlerts = dashboard.metrics.lowCount + dashboard.metrics.outCount;
   const todayWeekday = WEEKDAYS[today.getDay()] ?? "Today";
-  const isClosingDay = today.getDay() === state.settings.weekly_closing_day;
+  const isClosingDay = today.getDay() === dashboard.settings.weekly_closing_day;
 
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        eyebrow={formatDisplayDate(todayAd)}
+        eyebrow={formatDisplayDate(dashboard.today)}
         title={`${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}`}
         description="Here’s what is happening at the gym today. Start a common task below."
         actions={
@@ -282,7 +335,15 @@ export default function AdminDashboard() {
             <AdminSelect<7 | 15 | 30>
               options={horizonOptions}
               value={expiryHorizon}
-              onChange={(event) => setExpiryHorizon(Number(event.target.value) as 7 | 15 | 30)}
+              onChange={(event) => {
+                const horizon = Number(event.target.value) as 7 | 15 | 30;
+                setExpiryHorizon(horizon);
+                if (usePhpApi) {
+                  setLoading(true);
+                  setError("");
+                  setHorizonOverride(horizon);
+                }
+              }}
               aria-label="Membership expiry horizon"
               className="w-36"
             />
@@ -307,23 +368,23 @@ export default function AdminDashboard() {
       <AdminCard>
         <AdminSectionTitle title="Needs attention" description="Handle these items when you have a moment." />
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Link to={`/admin/members?expiring=${expiryHorizon}`} className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><b className="text-2xl text-white">{dashboard.expiringMembers.length}</b><p className="mt-1 text-sm text-amber-100">memberships expire soon</p><span className="mt-3 inline-block text-xs font-bold text-amber-200">View members →</span></Link>
-          <Link to="/admin/members?payment=unpaid" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4"><b className="text-2xl text-white">{dashboard.unpaidMembers.length}</b><p className="mt-1 text-sm text-rose-100">members have unpaid fees</p><span className="mt-3 inline-block text-xs font-bold text-rose-200">Record payments →</span></Link>
-          <Link to="/admin/inventory?stock=low" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><b className="text-2xl text-white">{dashboard.lowStock.filter((item) => item.current_quantity > 0).length}</b><p className="mt-1 text-sm text-amber-100">products are running low</p><span className="mt-3 inline-block text-xs font-bold text-amber-200">Add stock →</span></Link>
-          <Link to="/admin/inventory?stock=out" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4"><b className="text-2xl text-white">{dashboard.lowStock.filter((item) => item.current_quantity <= 0).length}</b><p className="mt-1 text-sm text-rose-100">products are out of stock</p><span className="mt-3 inline-block text-xs font-bold text-rose-200">View products →</span></Link>
+          <Link to={`/admin/members?expiring=${expiryHorizon}`} className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><b className="text-2xl text-white">{dashboard.metrics.expiringCount}</b><p className="mt-1 text-sm text-amber-100">memberships expire soon</p><span className="mt-3 inline-block text-xs font-bold text-amber-200">View members →</span></Link>
+          <Link to="/admin/members?payment=unpaid" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4"><b className="text-2xl text-white">{dashboard.metrics.unpaidCount}</b><p className="mt-1 text-sm text-rose-100">members have unpaid fees</p><span className="mt-3 inline-block text-xs font-bold text-rose-200">Record payments →</span></Link>
+          <Link to="/admin/inventory?stock=low" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4"><b className="text-2xl text-white">{dashboard.metrics.lowCount}</b><p className="mt-1 text-sm text-amber-100">products are running low</p><span className="mt-3 inline-block text-xs font-bold text-amber-200">Add stock →</span></Link>
+          <Link to="/admin/inventory?stock=out" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4"><b className="text-2xl text-white">{dashboard.metrics.outCount}</b><p className="mt-1 text-sm text-rose-100">products are out of stock</p><span className="mt-3 inline-block text-xs font-bold text-rose-200">View products →</span></Link>
         </div>
       </AdminCard>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <AdminNotice tone={dashboard.todayHoliday || isClosingDay ? "warning" : "success"} title="Today status">
-          {dashboard.todayHoliday
-            ? `Holiday: ${dashboard.todayHoliday.name || "Holiday"}`
+        <AdminNotice tone={todayHoliday || isClosingDay ? "warning" : "success"} title="Today status">
+          {todayHoliday
+            ? `Holiday: ${todayHoliday.name || "Holiday"}`
             : isClosingDay
               ? `${todayWeekday} is the configured weekly closing day.`
               : `${todayWeekday} is open for attendance entry.`}
         </AdminNotice>
-        <AdminNotice tone={dashboard.lowStock.length ? "warning" : "success"} title="Stock and billing">
-          {dashboard.lowStock.length} low/out-of-stock variant(s). Today collected: {new Intl.NumberFormat("en-NP", { style: "currency", currency: state.settings.currency_code }).format(dashboard.revenueToday / 100)}.
+        <AdminNotice tone={stockAlerts ? "warning" : "success"} title="Stock and billing">
+          {stockAlerts} low/out-of-stock variant(s). Today collected: {formatMoney(dashboard.metrics.revenueToday, dashboard.settings.currency_code, dashboard.settings.currency_minor_unit)}.
         </AdminNotice>
       </div>
 
@@ -331,16 +392,16 @@ export default function AdminDashboard() {
         <Link to="/admin/members?membership=active">
           <AdminMetricCard
             label="Active members"
-            value={dashboard.activeMembers.length}
+            value={dashboard.metrics.activeCount}
             description="Status is active and membership is not logically expired."
             icon={Users}
             tone="success"
           />
         </Link>
-        <Link to={`/admin/members?created_since=${periodStartAd}`}>
+        <Link to={`/admin/members?created_since=${dashboard.periodStart}`}>
           <AdminMetricCard
             label="New members"
-            value={dashboard.newMembers.length}
+            value={dashboard.metrics.newCount}
             description={`Created in the selected ${periodDays}-day period.`}
             icon={UserPlus}
             tone="accent"
@@ -349,7 +410,7 @@ export default function AdminDashboard() {
         <Link to={`/admin/members?expiring=${expiryHorizon}`}>
           <AdminMetricCard
             label="Expiring soon"
-            value={dashboard.expiringMembers.length}
+            value={dashboard.metrics.expiringCount}
             description={`Memberships ending within ${expiryHorizon} days.`}
             icon={CalendarClock}
             tone="warning"
@@ -358,7 +419,7 @@ export default function AdminDashboard() {
         <Link to="/admin/members?membership=expired">
           <AdminMetricCard
             label="Expired"
-            value={dashboard.expiredMembers.length}
+            value={dashboard.metrics.expiredCount}
             description="Expired by status or end date."
             icon={AlertTriangle}
             tone="danger"
@@ -367,7 +428,7 @@ export default function AdminDashboard() {
         <Link to="/admin/members?payment=unpaid">
           <AdminMetricCard
             label="Unpaid or overdue"
-            value={dashboard.unpaidMembers.length}
+            value={dashboard.metrics.unpaidCount}
             description="Payment status needs front-desk follow-up."
             icon={CreditCard}
             tone="danger"
@@ -376,35 +437,35 @@ export default function AdminDashboard() {
         <Link to="/admin/attendance">
           <AdminMetricCard
             label="Attendance today"
-            value={dashboard.attendanceToday.length}
+            value={dashboard.metrics.attendanceTodayCount}
             description="Present or late records saved for today."
             icon={UserCheck}
             tone="success"
           />
         </Link>
-        <Link to={`/admin/members?absent=${state.settings.absent_after_days}`}>
+        <Link to={`/admin/members?absent=${dashboard.settings.absent_after_days}`}>
           <AdminMetricCard
             label="Absent follow-up"
-            value={dashboard.absentMembers.length}
-            description={`Active members without attendance in ${state.settings.absent_after_days}+ days.`}
+            value={dashboard.metrics.absentCount}
+            description={`Active members without attendance in ${dashboard.settings.absent_after_days}+ days.`}
             icon={Clock3}
             tone="warning"
           />
         </Link>
         <AdminMetricCard
           label="Deleted records"
-          value={state.members.length - dashboard.liveMembers.length}
+          value={dashboard.metrics.deletedCount}
           description="Soft-deleted members can still be restored."
           icon={CalendarDays}
           tone="muted"
         />
-        <Link to="/admin/inventory"><AdminMetricCard label="Low / out of stock" value={dashboard.lowStock.length} description="Variants at or below their configured threshold." icon={Boxes} tone={dashboard.lowStock.length ? "warning" : "success"} /></Link>
-        <Link to="/admin/billing"><AdminMetricCard label="Outstanding bills" value={new Intl.NumberFormat("en-NP", { style: "currency", currency: state.settings.currency_code }).format(dashboard.outstanding / 100)} description="Balance on issued invoices." icon={ReceiptText} tone={dashboard.outstanding ? "warning" : "success"} /></Link>
+        <Link to="/admin/inventory"><AdminMetricCard label="Low / out of stock" value={stockAlerts} description="Variants at or below their configured threshold." icon={Boxes} tone={stockAlerts ? "warning" : "success"} /></Link>
+        <Link to="/admin/billing"><AdminMetricCard label="Outstanding bills" value={formatMoney(dashboard.metrics.outstanding, dashboard.settings.currency_code, dashboard.settings.currency_minor_unit)} description="Balance on issued invoices." icon={ReceiptText} tone={dashboard.metrics.outstanding ? "warning" : "success"} /></Link>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
         <AdminCard>
-          <AdminSectionTitle title="Attendance trend" description={`Present and late records from ${periodStartAd} to ${todayAd}.`} />
+          <AdminSectionTitle title="Attendance trend" description={`Present and late records from ${dashboard.periodStart} to ${dashboard.today}.`} />
           <div className="mt-4">
             {dashboard.attendanceValues.some((value) => value > 0) ? (
               <MiniBarChart values={dashboard.attendanceValues} labels={dashboard.attendanceLabels} />
@@ -421,7 +482,7 @@ export default function AdminDashboard() {
               <AdminEmptyState title="No members yet" />
             ) : (
               Object.entries(dashboard.planDistribution).map(([plan, count]) => {
-                const percent = dashboard.liveMembers.length ? Math.round((count / dashboard.liveMembers.length) * 100) : 0;
+                const percent = dashboard.metrics.liveCount ? Math.round((count / dashboard.metrics.liveCount) * 100) : 0;
                 return (
                   <div key={plan}>
                     <div className="mb-1 flex items-center justify-between text-sm">
@@ -451,7 +512,7 @@ export default function AdminDashboard() {
             }
           />
           <div className="mt-4 space-y-2">
-            {dashboard.expiringMembers.length === 0 ? (
+            {dashboard.metrics.expiringCount === 0 ? (
               <AdminEmptyState title="No expiring memberships" />
             ) : (
               dashboard.expiringMembers.slice(0, 8).map(({ member, daysLeft }) => (
@@ -473,7 +534,7 @@ export default function AdminDashboard() {
         <AdminCard>
           <AdminSectionTitle title="Dues follow-up" description="Payment status only. Amounts are not stored." />
           <div className="mt-4 space-y-2">
-            {dashboard.unpaidMembers.length === 0 ? (
+            {dashboard.metrics.unpaidCount === 0 ? (
               <AdminEmptyState title="No unpaid dues" />
             ) : (
               dashboard.unpaidMembers.slice(0, 8).map((member) => (
@@ -497,7 +558,7 @@ export default function AdminDashboard() {
         <AdminCard>
           <AdminSectionTitle title="Recent operational activity" />
           <div className="mt-4 space-y-2">
-            {state.members.slice(0, 6).map((member) => (
+            {dashboard.recentMembers.map((member) => (
               <div key={member.id} className={cx("rounded-lg border border-slate-800 bg-slate-900/55 p-3", member.deleted_at && "opacity-70")}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
