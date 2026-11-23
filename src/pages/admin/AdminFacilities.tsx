@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 
 type Kind = "zone" | "amenity";
 
@@ -120,14 +121,20 @@ export default function AdminFacilities() {
   const [pageMsg, setPageMsg] = useState("");
 
   const load = async () => {
-    const [{ data: itemData }, { data: pageData }] = await Promise.all([
+    const { items: itemData, content: pageData } = usePhpApi
+      ? await phpGet<{ items: Row[]; content: Partial<PageContent> | null }>("/studio/facilities")
+      : await Promise.all([
       supabase
         .from("facility_items")
         .select("*")
         .order("kind", { ascending: true })
         .order("sort_order", { ascending: true }),
       supabase.from("facilities_page_content").select("*").eq("id", 1).maybeSingle(),
-    ]);
+    ]).then(([items, page]) => {
+      const error = items.error ?? page.error;
+      if (error) throw new Error(error.message);
+      return { items: items.data as Row[], content: page.data as Partial<PageContent> | null };
+    });
 
     setRows((itemData as Row[]) || []);
 
@@ -143,10 +150,19 @@ export default function AdminFacilities() {
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setPageMsg(issue.message));
   }, []);
 
+  useEffect(() => {
+    if (preview.startsWith("blob:")) return () => URL.revokeObjectURL(preview);
+  }, [preview]);
+
   const uploadImage = async (file: File) => {
+    if (usePhpApi) {
+      const data = new FormData();
+      data.set("photo", file);
+      return (await phpPost<{ url: string }>("/studio/media/upload", data)).url;
+    }
     const ext = file.name.split(".").pop() || "jpg";
     const path = `facilities/${Date.now()}-${crypto.randomUUID()}.${ext}`;
     const { error } = await supabase.storage.from("gym-media").upload(path, file);
@@ -157,7 +173,7 @@ export default function AdminFacilities() {
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
     setImageFile(f);
-    if (f) setPreview(URL.createObjectURL(f));
+    setPreview(f ? URL.createObjectURL(f) : form.image);
   };
 
   const resetForm = () => {
@@ -187,18 +203,17 @@ export default function AdminFacilities() {
         tag: form.kind === "amenity" ? "" : form.tag,
       };
 
-      if (editingId) {
-        const { error } = await supabase.from("facility_items").update(payload).eq("id", editingId);
-        if (error) throw new Error(error.message);
-        setMsg("Updated successfully.");
+      if (usePhpApi) {
+        await phpPost("/studio/facilities/save", { action: "item", id: editingId, item: payload });
       } else {
-        const { error } = await supabase.from("facility_items").insert(payload);
+        const table = supabase.from("facility_items");
+        const { error } = editingId ? await table.update(payload).eq("id", editingId) : await table.insert(payload);
         if (error) throw new Error(error.message);
-        setMsg("Created successfully.");
       }
 
       resetForm();
       await load();
+      setMsg(editingId ? "Updated successfully." : "Created successfully.");
     } catch (err: any) {
       setMsg(err?.message || "Something went wrong.");
     } finally {
@@ -225,8 +240,18 @@ export default function AdminFacilities() {
   const onDelete = async (id: number) => {
     const ok = window.confirm("Delete this item?");
     if (!ok) return;
-    const { error } = await supabase.from("facility_items").delete().eq("id", id);
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/facilities/save", { action: "delete", id });
+      else {
+        const { error } = await supabase.from("facility_items").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+      if (editingId === id) resetForm();
+      await load();
+      setMsg("Facility deleted.");
+    } catch (issue) {
+      setMsg(issue instanceof Error ? issue.message : "Could not delete facility.");
+    }
   };
 
   const updateSummaryCard = (index: number, key: keyof SummaryCard, value: string) => {
@@ -268,13 +293,19 @@ export default function AdminFacilities() {
         .filter((card) => card.label && card.value),
     };
 
-    const { error } = await supabase
-      .from("facilities_page_content")
-      .upsert(payload, { onConflict: "id" });
-
-    setPageMsg(error ? error.message : "Facilities page content saved.");
-    setPageSaving(false);
-    if (!error) await load();
+    try {
+      if (usePhpApi) await phpPost("/studio/facilities/save", { action: "content", content: payload });
+      else {
+        const { error } = await supabase.from("facilities_page_content").upsert(payload, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
+      await load();
+      setPageMsg("Facilities page content saved.");
+    } catch (issue) {
+      setPageMsg(issue instanceof Error ? issue.message : "Could not save facilities content.");
+    } finally {
+      setPageSaving(false);
+    }
   };
 
   return (

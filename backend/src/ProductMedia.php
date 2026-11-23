@@ -28,7 +28,7 @@ final class ProductMedia
         return $directory;
     }
 
-    public function upload(mixed $file, string $actor): array
+    public function upload(mixed $file, string $actor, string $auditAction = 'catalog.image.upload'): array
     {
         if (!is_array($file) || ($file['error'] ?? null) !== UPLOAD_ERR_OK ||
             !is_string($file['tmp_name'] ?? null) || !is_uploaded_file($file['tmp_name'])) {
@@ -39,7 +39,7 @@ final class ProductMedia
         } catch (DomainException $error) {
             return [422, ['error' => $error->getMessage()]];
         }
-        audit($this->db, 'catalog.image.upload', $actor);
+        audit($this->db, $auditAction, $actor);
         return [201, ['url' => $url]];
     }
 
@@ -124,6 +124,7 @@ final class ProductMedia
             WHERE created_at < CURRENT_TIMESTAMP(6) - INTERVAL 1 DAY
             AND NOT EXISTS(SELECT 1 FROM shop_items WHERE image = CONCAT('/api/media/product?key=', f.file_key))
             AND NOT EXISTS(SELECT 1 FROM inventory_product_variants WHERE image = CONCAT('/api/media/product?key=', f.file_key))
+            AND NOT EXISTS(SELECT 1 FROM facility_items WHERE image = CONCAT('/api/media/product?key=', f.file_key))
             ORDER BY created_at LIMIT 500")->fetchAll(PDO::FETCH_COLUMN);
         $directory = $this->directory();
         $count = 0;
@@ -154,8 +155,9 @@ final class ProductMedia
         $product = $published ? ' AND is_active = 1' : '';
         $variant = $published ? ' AND v.is_active = 1 AND p.is_active = 1' : '';
         $query = $this->db->prepare("SELECT EXISTS(SELECT 1 FROM shop_items WHERE image = ?$product)
-            OR EXISTS(SELECT 1 FROM inventory_product_variants v JOIN shop_items p ON p.id = v.product_id WHERE v.image = ?$variant)");
-        $query->execute([$url, $url]);
+            OR EXISTS(SELECT 1 FROM inventory_product_variants v JOIN shop_items p ON p.id = v.product_id WHERE v.image = ?$variant)
+            OR EXISTS(SELECT 1 FROM facility_items WHERE image = ?$product)");
+        $query->execute([$url, $url, $url]);
         return (bool) $query->fetchColumn();
     }
 

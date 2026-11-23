@@ -108,6 +108,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("admin", 401);
   await request("studio/contact", 401);
   await request("studio/home", 401);
+  await request("studio/facilities", 401);
   await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
@@ -453,6 +454,35 @@ test("authentication, members, private photos and attendance on MariaDB", async 
     return image;
   };
   const publicFetch = (path) => fetch(`http://127.0.0.1:${port}${path}`);
+  const facilitiesSave = "studio/facilities/save";
+  const facilityUpload = "studio/media/upload";
+  const facilityFields = ("hero_badge hero_title hero_description hero_primary_cta_text hero_primary_cta_link hero_secondary_cta_text " +
+    "hero_secondary_cta_link zone_explorer_title zone_explorer_description amenities_title amenities_description tour_title " +
+    "tour_description tour_primary_cta_text tour_primary_cta_link tour_secondary_cta_text tour_secondary_cta_link").split(" ");
+  const facilityContent = Object.fromEntries(facilityFields.map((field) => [field, ""]));
+  Object.assign(facilityContent, { hero_title: "Fixture Facilities", summary_cards: [{ label: "Zones", value: "{zones}", icon: "Building2" }] });
+  await request(facilitiesSave, 403, { action: "content", content: facilityContent }, false);
+  await request(facilitiesSave, 200, { action: "content", content: facilityContent });
+  await request(facilityUpload, 403, catalogPhoto(), false);
+  const facilityImage = (await request(facilityUpload, 201, catalogPhoto())).url;
+  assert.equal((await publicFetch(facilityImage)).status, 404);
+  const facility = { kind: "zone", title: randomUUID(), description: "Fixture training space", tag: "Strength",
+    image: facilityImage, sort_order: -100, is_active: false };
+  await request(facilitiesSave, 422, { action: "item", item: { ...facility, image: "javascript:alert(1)" } });
+  await request(facilitiesSave, 200, { action: "item", item: facility });
+  const facilityRead = await request("studio/facilities", 200);
+  assert.deepEqual(facilityRead.content, facilityContent);
+  const savedFacility = facilityRead.items.find(({ title }) => title === facility.title);
+  assert.equal(savedFacility.is_active, false);
+  assert.equal((await publicFetch(facilityImage)).status, 404);
+  const anonymousFacilities = async () => (await publicFetch("/api/public/facilities")).json();
+  assert.ok(!(await anonymousFacilities()).items.some(({ id }) => id === savedFacility.id));
+  await request(facilitiesSave, 200, { action: "item", id: savedFacility.id, item: { ...facility, is_active: true } });
+  assert.equal((await publicFetch(facilityImage)).headers.get("content-type"), "image/png");
+  const publishedFacilities = await anonymousFacilities();
+  assert.deepEqual(publishedFacilities.content, facilityContent);
+  assert.equal(publishedFacilities.items.find(({ id }) => id === savedFacility.id).image, facilityImage);
+  assert.ok((await (await publicFetch("/api/public/home")).json()).zones.some(({ id }) => id === savedFacility.id));
   await request(catalogUpload, 403, catalogPhoto(), false);
   const invalidPhoto = new FormData();
   invalidPhoto.set("photo", new Blob(["<?php echo 1; ?>"], { type: "image/png" }), "fake.png");
@@ -472,11 +502,16 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal((await publicFetch(firstMedia)).status, 404);
   assert.equal((await publicFetch(replacement)).status, 200);
   const keyOf = (url) => new URL(url, "https://fixture.example.test").searchParams.get("key");
-  for (const url of [firstMedia, replacement]) php("backend/tests/billing-worker.php", ["media-age"], JSON.stringify(keyOf(url)));
+  for (const url of [firstMedia, replacement, facilityImage]) php("backend/tests/billing-worker.php", ["media-age"], JSON.stringify(keyOf(url)));
   const mediaEnv = { ...process.env, GYM_PRODUCT_MEDIA_DIR: catalogMediaDirectory };
   php("backend/bin/product-media.php", ["cleanup"], undefined, mediaEnv);
   assert.equal(existsSync(join(catalogMediaDirectory, keyOf(firstMedia))), false);
   assert.equal(existsSync(join(catalogMediaDirectory, keyOf(replacement))), true);
+  assert.equal(existsSync(join(catalogMediaDirectory, keyOf(facilityImage))), true);
+  await request(facilitiesSave, 200, { action: "delete", id: savedFacility.id });
+  assert.equal((await publicFetch(facilityImage)).status, 404);
+  php("backend/bin/product-media.php", ["cleanup"], undefined, mediaEnv);
+  assert.equal(existsSync(join(catalogMediaDirectory, keyOf(facilityImage))), false);
   const legacyUrl = "https://fixtures.example.test/shop/legacy.png";
   await request("inventory/catalog/save", 200, { entity: "product", id: product.id, fields: { image: legacyUrl } });
   const legacyFile = join(mediaDirectory, "migration-fixture.png");
@@ -602,6 +637,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("members/save", 403, profile);
   await request(photoPath, 403);
   await request(catalogUpload, 403, catalogPhoto());
+  await request(facilityUpload, 403, catalogPhoto());
+  await request(facilitiesSave, 403, { action: "content", content: facilityContent });
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

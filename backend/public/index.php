@@ -18,6 +18,7 @@ require __DIR__ . '/../src/ContactContent.php';
 require __DIR__ . '/../src/WebsiteContentFields.php';
 require __DIR__ . '/../src/FooterContent.php';
 require __DIR__ . '/../src/HomeContent.php';
+require __DIR__ . '/../src/FacilitiesContent.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -69,6 +70,10 @@ $routes = [
     '/api/public/home' => 'GET',
     '/api/studio/home' => 'GET',
     '/api/studio/home/save' => 'POST',
+    '/api/public/facilities' => 'GET',
+    '/api/studio/facilities' => 'GET',
+    '/api/studio/facilities/save' => 'POST',
+    '/api/studio/media/upload' => 'POST',
     '/api/studio/footer/save' => 'POST',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
@@ -105,6 +110,9 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/public/facilities') {
+        respond(200, (new FacilitiesContent(database()))->read(false));
+    }
     if ($path === '/api/public/home') {
         respond(200, (new HomeContent(database()))->read(false));
     }
@@ -217,6 +225,13 @@ try {
     if ($path === '/api/studio/home') {
         respond(200, (new HomeContent($db))->read(true));
     }
+    if ($path === '/api/studio/facilities') {
+        respond(200, (new FacilitiesContent($db))->read(true));
+    }
+    if ($path === '/api/studio/media/upload') {
+        [$status, $result] = (new ProductMedia($db))->upload($_FILES['photo'] ?? null, $user['id'], 'studio.image.upload');
+        respond($status, $result);
+    }
     if ($path === '/api/billing/attempt') {
         [$status, $result] = (new BillingAttempts($db))->retrieve($user['id']);
         respond($status, $result);
@@ -257,6 +272,10 @@ try {
         }
         if ($path === '/api/studio/home/save') {
             [$status, $result] = (new HomeContent($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/studio/facilities/save') {
+            [$status, $result] = (new FacilitiesContent($db))->save($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {
