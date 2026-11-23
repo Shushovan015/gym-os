@@ -19,6 +19,7 @@ require __DIR__ . '/../src/WebsiteContentFields.php';
 require __DIR__ . '/../src/FooterContent.php';
 require __DIR__ . '/../src/HomeContent.php';
 require __DIR__ . '/../src/FacilitiesContent.php';
+require __DIR__ . '/../src/TrainersContent.php';
 require __DIR__ . '/../src/BillingAttempts.php';
 require __DIR__ . '/../src/InvoiceMailTransport.php';
 require __DIR__ . '/../src/InvoiceMail.php';
@@ -74,6 +75,9 @@ $routes = [
     '/api/studio/facilities' => 'GET',
     '/api/studio/facilities/save' => 'POST',
     '/api/studio/media/upload' => 'POST',
+    '/api/public/trainers' => 'GET',
+    '/api/studio/trainers' => 'GET',
+    '/api/studio/trainers/save' => 'POST',
     '/api/studio/footer/save' => 'POST',
     '/api/billing/attempt' => 'GET',
     '/api/billing/attempt/change' => 'POST',
@@ -110,6 +114,9 @@ if ($method !== $routes[$path]) {
 }
 
 try {
+    if ($path === '/api/public/trainers') {
+        respond(200, (new TrainersContent(database()))->read(false));
+    }
     if ($path === '/api/public/facilities') {
         respond(200, (new FacilitiesContent(database()))->read(false));
     }
@@ -228,6 +235,9 @@ try {
     if ($path === '/api/studio/facilities') {
         respond(200, (new FacilitiesContent($db))->read(true));
     }
+    if ($path === '/api/studio/trainers') {
+        respond(200, (new TrainersContent($db))->read(true));
+    }
     if ($path === '/api/studio/media/upload') {
         [$status, $result] = (new ProductMedia($db))->upload($_FILES['photo'] ?? null, $user['id'], 'studio.image.upload');
         respond($status, $result);
@@ -276,6 +286,10 @@ try {
         }
         if ($path === '/api/studio/facilities/save') {
             [$status, $result] = (new FacilitiesContent($db))->save($input, $user['id']);
+            respond($status, $result);
+        }
+        if ($path === '/api/studio/trainers/save') {
+            [$status, $result] = (new TrainersContent($db))->save($input, $user['id']);
             respond($status, $result);
         }
         if (in_array($path, ['/api/membership/payments', '/api/invoices/payments', '/api/invoices/products/issue', '/api/invoices/services/issue'], true)) {

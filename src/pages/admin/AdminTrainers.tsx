@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, SyntheticEvent } from "react";
 import { supabase } from "@src/Client/supabase";
+import { phpGet, phpPost, usePhpApi } from "@src/Client/phpApi";
 
 type MetricItem = {
   label: string;
@@ -258,11 +259,17 @@ export default function AdminTrainers() {
   const [planSaving, setPlanSaving] = useState(false);
 
   const load = async () => {
-    const [{ data: trainers }, { data: content }, { data: plans }] = await Promise.all([
+    const { trainers, ptContent: content, plans } = usePhpApi
+      ? await phpGet<{ trainers: TrainerRow[]; ptContent: Partial<PTContent> | null; plans: PlanRow[] }>("/studio/trainers")
+      : await Promise.all([
       supabase.from("trainers").select("*").order("sort_order", { ascending: true }),
       supabase.from("trainer_page_content").select("*").eq("id", 1).maybeSingle(),
       supabase.from("personal_training_plans").select("*").order("sort_order", { ascending: true }),
-    ]);
+    ]).then(([profiles, page, services]) => {
+      const issue = profiles.error ?? page.error ?? services.error;
+      if (issue) throw new Error(issue.message);
+      return { trainers: profiles.data as TrainerRow[], ptContent: page.data as Partial<PTContent> | null, plans: services.data as PlanRow[] };
+    });
 
     setTrainerRows((trainers as TrainerRow[]) || []);
 
@@ -279,10 +286,31 @@ export default function AdminTrainers() {
   };
 
   useEffect(() => {
-    load();
+    void load().catch((issue: Error) => setPTMsg(issue.message));
   }, []);
 
+  useEffect(() => {
+    if (preview.startsWith("blob:")) return () => URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  const mutate = async (entity: "trainer" | "plan", id: number | null, item?: TrainerForm | PlanForm) => {
+    if (usePhpApi) {
+      await phpPost("/studio/trainers/save", { action: item ? "item" : "delete", entity, id, item });
+      return;
+    }
+    const table = supabase.from(entity === "trainer" ? "trainers" : "personal_training_plans");
+    const { error } = item
+      ? await (id ? table.update(item).eq("id", id) : table.insert(item))
+      : await table.delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  };
+
   const uploadImage = async (file: File) => {
+    if (usePhpApi) {
+      const upload = new FormData();
+      upload.set("photo", file);
+      return (await phpPost<{ url: string }>("/studio/media/upload", upload)).url;
+    }
     const ext = file.name.split(".").pop() || "jpg";
     const path = `trainers/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
@@ -295,7 +323,7 @@ export default function AdminTrainers() {
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
     setImageFile(f);
-    if (f) setPreview(URL.createObjectURL(f));
+    setPreview(f ? URL.createObjectURL(f) : trainerForm.image);
   };
 
   const resetTrainerForm = () => {
@@ -330,18 +358,10 @@ export default function AdminTrainers() {
         clients_coached: Number(trainerForm.clients_coached || 0),
       };
 
-      if (trainerEditingId) {
-        const { error } = await supabase.from("trainers").update(payload).eq("id", trainerEditingId);
-        if (error) throw new Error(error.message);
-        setTrainerMsg("Trainer updated.");
-      } else {
-        const { error } = await supabase.from("trainers").insert(payload);
-        if (error) throw new Error(error.message);
-        setTrainerMsg("Trainer created.");
-      }
-
+      await mutate("trainer", trainerEditingId, payload);
       resetTrainerForm();
       await load();
+      setTrainerMsg(trainerEditingId ? "Trainer updated." : "Trainer created.");
     } catch (err: any) {
       setTrainerMsg(err?.message || "Something went wrong.");
     } finally {
@@ -385,8 +405,14 @@ export default function AdminTrainers() {
   const onDeleteTrainer = async (id: number) => {
     const ok = window.confirm("Delete this trainer?");
     if (!ok) return;
-    await supabase.from("trainers").delete().eq("id", id);
-    await load();
+    try {
+      await mutate("trainer", id);
+      if (trainerEditingId === id) resetTrainerForm();
+      await load();
+      setTrainerMsg("Trainer deleted.");
+    } catch (issue) {
+      setTrainerMsg(issue instanceof Error ? issue.message : "Could not delete trainer.");
+    }
   };
 
   const updateStrengthMetric = (index: number, key: keyof MetricItem, value: string) => {
@@ -460,8 +486,11 @@ export default function AdminTrainers() {
           .filter((z) => z.title && z.desc),
       };
 
-      const { error } = await supabase.from("trainer_page_content").upsert(payload, { onConflict: "id" });
-      if (error) throw new Error(error.message);
+      if (usePhpApi) await phpPost("/studio/trainers/save", { action: "content", content: payload });
+      else {
+        const { error } = await supabase.from("trainer_page_content").upsert(payload, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+      }
 
       setPTMsg("Trainer page content saved.");
       await load();
@@ -490,18 +519,10 @@ export default function AdminTrainers() {
         points: splitCsv(planPointsInput),
       };
 
-      if (planEditingId) {
-        const { error } = await supabase.from("personal_training_plans").update(payload).eq("id", planEditingId);
-        if (error) throw new Error(error.message);
-        setPlanMsg("Plan updated.");
-      } else {
-        const { error } = await supabase.from("personal_training_plans").insert(payload);
-        if (error) throw new Error(error.message);
-        setPlanMsg("Plan created.");
-      }
-
+      await mutate("plan", planEditingId, payload);
       resetPlanForm();
       await load();
+      setPlanMsg(planEditingId ? "Plan updated." : "Plan created.");
     } catch (err: any) {
       setPlanMsg(err?.message || "Something went wrong.");
     } finally {
@@ -525,8 +546,14 @@ export default function AdminTrainers() {
   const onDeletePlan = async (id: number) => {
     const ok = window.confirm("Delete this plan?");
     if (!ok) return;
-    await supabase.from("personal_training_plans").delete().eq("id", id);
-    await load();
+    try {
+      await mutate("plan", id);
+      if (planEditingId === id) resetPlanForm();
+      await load();
+      setPlanMsg("Plan deleted.");
+    } catch (issue) {
+      setPlanMsg(issue instanceof Error ? issue.message : "Could not delete plan.");
+    }
   };
 
   return (
@@ -812,8 +839,8 @@ export default function AdminTrainers() {
         <form onSubmit={savePlan} className="rounded-2xl bg-black/35 p-6 space-y-3">
           <h2 className="text-xl font-black text-white">{planEditingId ? "Edit" : "Add"} Personal Training Plan</h2>
 
-          <FieldLabel>Plan Name</FieldLabel>
-          <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} required />
+          <label htmlFor="training-plan-name" className="text-xs font-semibold text-zinc-300">Plan Name</label>
+          <input id="training-plan-name" className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} required />
 
           <FieldLabel>Plan Details</FieldLabel>
           <input className="w-full rounded-xl bg-white/10 px-4 py-3 text-white" value={planForm.details} onChange={(e) => setPlanForm({ ...planForm, details: e.target.value })} />

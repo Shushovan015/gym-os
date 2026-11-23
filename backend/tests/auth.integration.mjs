@@ -109,6 +109,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("studio/contact", 401);
   await request("studio/home", 401);
   await request("studio/facilities", 401);
+  await request("studio/trainers", 401);
   await request("public/home", 200);
   await request("public/contact", 200);
   await request("login", 403, { email: admin, password }, false);
@@ -381,7 +382,22 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   const reversed = await request(`invoices/receipt?id=${partiallyPaid.invoice_id}`, 200);
   assert.equal(reversed.payments.filter((p) => p.is_reversal).length, 2);
   const trainingName = `Training ${randomUUID()}`;
-  const trainingId = Number(php("backend/tests/billing-worker.php", ["training-fixture"], JSON.stringify(trainingName)));
+  const trainersSave = "studio/trainers/save";
+  const trainerPageFields = ("pt_badge pt_title pt_description pt_cta_text pt_cta_link hero_badge hero_title hero_description " +
+    "hero_primary_cta_text hero_primary_cta_link hero_secondary_cta_text hero_secondary_cta_link strength_section_title equipment_section_title").split(" ");
+  const trainerPage = Object.fromEntries(trainerPageFields.map((field) => [field, ""]));
+  Object.assign(trainerPage, { hero_title: "Fixture coaching page", spotlight_count: 3,
+    strength_metrics: [{ label: "Racks", value: "8", sub: "Strength floor", icon: "Dumbbell" }], equipment_zones: [] });
+  await request(trainersSave, 200, { action: "content", content: trainerPage });
+  assert.deepEqual((await request("public/trainers", 200)).ptContent, trainerPage);
+  const plan = { name: trainingName, details: "NPR 1,500", points: ["Technique review"], sort_order: -20, is_active: false };
+  await request(trainersSave, 403, { action: "item", entity: "plan", item: plan }, false);
+  await request(trainersSave, 200, { action: "item", entity: "plan", item: plan });
+  const trainingId = (await request("studio/trainers", 200)).plans.find(({ name }) => name === trainingName).id;
+  assert.ok(!(await request("public/trainers", 200)).plans.some(({ id }) => id === trainingId));
+  assert.ok(!(await request("invoices/training-plans", 200)).plans.some(({ id }) => id === trainingId));
+  await request(trainersSave, 200, { action: "item", entity: "plan", id: trainingId, item: { ...plan, is_active: true } });
+  assert.deepEqual((await request("public/trainers", 200)).plans.find(({ id }) => id === trainingId).points, ["Technique review"]);
   assert.ok((await request("invoices/training-plans", 200)).plans.some((plan) => plan.id === trainingId && plan.price === "NPR 1,500"));
   const trainingBill = { customerName: "Training buyer", paymentMinor: 40000, dueDate: "2030-01-01",
     expectedTotalMinor: 145000, service: { kind: "personal_training", planId: trainingId, unitPriceMinor: 150000, discountMinor: 5000 } };
@@ -483,6 +499,23 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.deepEqual(publishedFacilities.content, facilityContent);
   assert.equal(publishedFacilities.items.find(({ id }) => id === savedFacility.id).image, facilityImage);
   assert.ok((await (await publicFetch("/api/public/home")).json()).zones.some(({ id }) => id === savedFacility.id));
+  const trainerImage = (await request(facilityUpload, 201, catalogPhoto())).url;
+  const trainer = { name: randomUUID(), role: "Coach", bio: "Short biography", long_bio: "Extended profile",
+    coaching_style: "Technique first", availability: "Monday", image: trainerImage, intro_video_url: "https://example.test/video",
+    intro_video_thumb: "", specialties: ["Strength"], certifications: ["Fixture certificate"], achievements: [], session_focus: ["Squat"],
+    years_experience: 4, clients_coached: 12, offers_personal_training: true, sort_order: -50, is_active: false };
+  await request(trainersSave, 422, { action: "item", entity: "trainer", item: { ...trainer, intro_video_url: "javascript:alert(1)" } });
+  await request(trainersSave, 200, { action: "item", entity: "trainer", item: trainer });
+  const trainerId = (await request("studio/trainers", 200)).trainers.find(({ name }) => name === trainer.name).id;
+  assert.equal((await publicFetch(trainerImage)).status, 404);
+  const anonymousTrainers = async () => (await publicFetch("/api/public/trainers")).json();
+  assert.ok(!(await anonymousTrainers()).trainers.some(({ id }) => id === trainerId));
+  await request(trainersSave, 200, { action: "item", entity: "trainer", id: trainerId, item: { ...trainer, is_active: true } });
+  assert.equal((await publicFetch(trainerImage)).headers.get("content-type"), "image/png");
+  assert.deepEqual((await anonymousTrainers()).trainers.find(({ id }) => id === trainerId), { id: trainerId, ...trainer, is_active: true });
+  assert.ok((await (await publicFetch("/api/public/home")).json()).trainers.some(({ id }) => id === trainerId));
+  await request(trainersSave, 200, { action: "delete", entity: "trainer", id: trainerId });
+  assert.equal((await publicFetch(trainerImage)).status, 404);
   await request(catalogUpload, 403, catalogPhoto(), false);
   const invalidPhoto = new FormData();
   invalidPhoto.set("photo", new Blob(["<?php echo 1; ?>"], { type: "image/png" }), "fake.png");
@@ -639,6 +672,8 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request(catalogUpload, 403, catalogPhoto());
   await request(facilityUpload, 403, catalogPhoto());
   await request(facilitiesSave, 403, { action: "content", content: facilityContent });
+  await request("studio/trainers", 403);
+  await request(trainersSave, 403, { action: "item", entity: "plan", item: plan });
   await request(history, 403);
   await request(grid, 403);
   await request(invoiceList, 403);

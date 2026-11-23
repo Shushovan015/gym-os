@@ -1,6 +1,8 @@
 import { supabase } from "@src/Client/supabase";
+import { phpGet, usePhpApi } from "@src/Client/phpApi";
 
 export const fetchTrainers = async () => {
+  if (usePhpApi) return phpGet("/public/trainers");
   const [
     { data: trainers, error: trainersError },
     { data: ptContent, error: ptContentError },

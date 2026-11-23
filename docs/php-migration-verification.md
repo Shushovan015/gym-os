@@ -33,10 +33,11 @@
 | Website Studio Footer | PASS | The editor and shared site footer read the same MariaDB content. HTTP tests cover anonymous reads, CSRF, invalid links and viewer denial. React verifies a saved title reloads in the editor and renders in the public footer. |
 | Website Studio Homepage | PASS | PHP stores the homepage copy, image URLs, gallery, status items and Maximus points. The HTTP suite checks access control, CSRF, invalid values, ordering, visibility and persistence. React checks edit, save, reload and public rendering without Supabase calls. PHP supplies published homepage cards for facilities, trainers and testimonials. |
 | Website Studio Facilities | PASS | PHP stores page copy, zones, amenities and photos. HTTP tests cover staged and inactive photo privacy, publishing on Facilities and Home, deletion and cleanup, administrator access and CSRF. React verifies a new zone and its image render on the public Facilities page. |
-| Remaining public content and Website Studio | NOT TESTED | Standalone trainers, pricing, shop and testimonials still need PHP editor and public read paths. The About page is static and has no existing editor. |
+| Website Studio Trainers | PASS | PHP stores profiles, trainer page content and the personal-training plans shared with Billing. HTTP tests cover hidden profiles and photos, published trainer cards on Home, administrator access, CSRF and invoicing a plan saved through Studio. React verifies a saved plan renders on the public Trainers page. |
+| Remaining public content and Website Studio | NOT TESTED | Pricing, shop and testimonials still need PHP editor and public read paths. The About page is static and has no existing editor. |
 | Existing media, documents, SMTP and notifications | NOT TESTED | Object migration and services pending. |
 | Backup, restore, legacy import and production reconciliation | NOT TESTED | Disposable rehearsal pending. |
 | Integrated Bikram Sambat behavior | NOT TESTED | Existing frontend utility tests pass. The PHP-connected workflow is pending. |
 | DirectAdmin/cPanel package and hosting | NOT TESTED | Full application package and host-specific checks pending. |
 
-The checkpoint is for development only. Next, migrate the Trainers editor and public Trainers service together, including trainer photos, spotlight content and the personal-training plans shared with Billing.
+The checkpoint is for development only. Next, migrate the Pricing editor and public Pricing service around the existing MariaDB pricing catalog. Verify that a plan published in Studio appears in both public Pricing and the Members plan picker.

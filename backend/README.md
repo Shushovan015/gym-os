@@ -76,7 +76,7 @@ Billing only sends issued invoices for a member with a saved email address. Staf
 
 ### Product and variant images
 
-Set `GYM_PRODUCT_MEDIA_DIR` to a writable directory outside the web root and separate from member storage. Enable PHP GD and Fileinfo. Allow `upload_max_filesize=5M` and a larger `post_max_size`. Inventory and Website Studio Facilities accept JPEG, PNG, and WebP, up to 5 MiB and 4096 pixels per side with an eight-megapixel ceiling. PHP decodes and re-encodes files before staging. Images become public when a published product, variant, or facility references them.
+Set `GYM_PRODUCT_MEDIA_DIR` to a writable directory outside the web root and separate from member storage. Enable PHP GD and Fileinfo. Allow `upload_max_filesize=5M` and a larger `post_max_size`. Inventory and the Studio Facilities and Trainers editors accept JPEG, PNG, and WebP, up to 5 MiB and 4096 pixels per side with an eight-megapixel ceiling. PHP decodes and re-encodes files before staging. Images become public when a published product, variant, facility, or trainer profile references them.
 
 Run `php backend/bin/product-media.php cleanup` periodically with CLI PHP environment configuration to remove unreferenced images older than a day. When migrating a Supabase product or variant image, export the object to a local file and run `php backend/bin/product-media.php import product ID OLD_URL LOCAL_FILE` (or use `variant`). The command only replaces the exact existing URL and does not fetch remote URLs. Reconcile references before disabling the old storage.
 
