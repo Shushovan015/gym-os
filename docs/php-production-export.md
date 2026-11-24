@@ -22,6 +22,32 @@ The inventory script selects every visible profile with a role. If the project u
 
 Copy the password-free service template to a protected local configuration directory outside the repository. Replace the role and CA path with the approved values. Use a CA bundle that validates the Session pooler's certificate and hostname with `sslmode=verify-full`. If verification fails, check the CA and host with the operator. Keep the password in a protected local libpq password file or enter it privately at the local prompt. For an explicitly chosen service file, set `$env:PGSERVICEFILE` to its absolute path in the authorized export shell. [PostgreSQL TLS verification](https://www.postgresql.org/docs/current/libpq-ssl.html)
 
+### First check the role with the project owner
+
+In the authenticated project Dashboard, open **SQL Editor → New query**. After approval for the read-only metadata check, the owner can substitute the name of a proposed existing role and run this query. An empty result means that named role is absent. A result is role metadata only. Review effective grants, memberships and ownership before approving the role.
+
+```sql
+BEGIN READ ONLY;
+SELECT rolname, rolcanlogin, rolsuper, rolcreaterole, rolcreatedb,
+       rolreplication, rolbypassrls
+FROM pg_catalog.pg_roles
+WHERE rolname = 'gym_export_reader';
+ROLLBACK;
+```
+
+If a suitable role is absent, the starting proposal below is for separate approval. It defines a permission group with no login. Review every table and any sensitive columns before attaching a dedicated login. The example grants access to four representative tables. Expand the list only against the approved inventory. Keep staff UUID scope and bucket scope enforced by reviewed source policies or restricted projections before granting access to sensitive metadata. Record RLS filtering as a blocker unless independently verified counts establish full approved coverage.
+
+```sql
+-- Proposal only. Stop for approval before executing any statement.
+CREATE ROLE gym_export_reader NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+GRANT CONNECT ON DATABASE postgres TO gym_export_reader;
+GRANT USAGE ON SCHEMA public TO gym_export_reader;
+GRANT SELECT ON public.members, public.attendance_records, public.invoices,
+                public.invoice_payments TO gym_export_reader;
+```
+
+For the Dashboard-confirmed `gym-media` bucket, use the complete object inventory with no prefix filter and compare the download against it, including root-level files. Review the effective policies for the proposed Storage identity. A profile name does not constrain access. Prefer an existing session-token identity whose RLS permissions are limited to the required reads. Project-level S3 access keys bypass RLS across buckets and require separate approval. Public object URLs allow retrieval by anyone with the URL. Broad list policies increase discoverability for the principals they cover. Keep member transformation photos and unclassified assets private in the export and target pending a publication review, and preserve GIF originals in the archive because the current image importer accepts JPEG, PNG and WebP. [Supabase bucket access](https://supabase.com/docs/guides/storage/buckets/fundamentals) · [Supabase S3 authentication](https://supabase.com/docs/guides/storage/s3/authentication)
+
 ## Source inventory and schema
 
 Run in PowerShell after approval. Replace both placeholders and use a directory that already exists and is empty.
