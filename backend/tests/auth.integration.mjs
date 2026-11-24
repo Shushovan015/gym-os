@@ -1,5 +1,5 @@
 ﻿import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
@@ -643,6 +643,18 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   assert.equal(existsSync(join(catalogMediaDirectory, keyOf(firstMedia))), false);
   assert.equal(existsSync(join(catalogMediaDirectory, keyOf(replacement))), true);
   assert.equal(existsSync(join(catalogMediaDirectory, keyOf(facilityImage))), true);
+  const facilityLegacyUrl = "https://fixtures.example.test/facilities/legacy.png";
+  const facilityFile = join(mediaDirectory, "facility-migration-fixture.png");
+  writeFileSync(facilityFile, catalogBytes);
+  await request(facilitiesSave, 200, { action: "item", id: savedFacility.id, item: { ...facility, image: facilityLegacyUrl } });
+  const facilityImport = ["import", "facility", String(savedFacility.id), facilityLegacyUrl, facilityFile];
+  assert.throws(() => php("backend/bin/product-media.php", [...facilityImport, "0".repeat(64)], undefined, mediaEnv), /checksum/i);
+  const facilityDigest = createHash("sha256").update(catalogBytes).digest("hex");
+  const migratedFacility = php("backend/bin/product-media.php", [...facilityImport, facilityDigest], undefined, mediaEnv).trim();
+  assert.equal((await publicFetch(migratedFacility)).status, 404);
+  assert.throws(() => php("backend/bin/product-media.php", [...facilityImport, facilityDigest], undefined, mediaEnv), /existing image changed/i);
+  await request(facilitiesSave, 200, { action: "item", id: savedFacility.id, item: { ...facility, image: migratedFacility, is_active: true } });
+  assert.equal((await publicFetch(migratedFacility)).headers.get("content-type"), "image/png");
   await request(facilitiesSave, 200, { action: "delete", id: savedFacility.id });
   assert.equal((await publicFetch(facilityImage)).status, 404);
   php("backend/bin/product-media.php", ["cleanup"], undefined, mediaEnv);

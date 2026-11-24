@@ -43,6 +43,14 @@ For an approved export, use the provider database backup when available or creat
 5. Map historical invoice email statuses conservatively. Review outcomes with missing or contradictory evidence before allowing an operator to retry delivery.
 6. Run `php backend/bin/reconcile.php compare EXPECTED_JSON` against the isolated target and inspect `php backend/bin/reconcile.php review`. Derive the expected counts and totals independently from the source export, with documented exclusions for unresolved rows. Reconcile names and identifiers by the private ID map and spot-check archived dates and media. Save the approved difference report with the recovery release.
 
+For each product, variant, facility, trainer, trainer thumbnail or testimonial image, use the exact old URL, the approved local file and its verified digest. Run the command with the rehearsal database settings and `GYM_PRODUCT_MEDIA_DIR` pointing to private storage.
+
+```sh
+php backend/bin/product-media.php import facility 123 OLD_URL /private/approved-image.png VERIFIED_SHA256
+```
+
+The command validates and rewrites the image using the same publication rules as Studio. Record the returned reference in the private manifest and verify that active images load and unpublished images remain private. Keep member portraits, homepage media and documents in the protected source inventory pending their migration. Record missing files and duplicate digests during manifest review.
+
 ## Fixture reconciliation
 
 The isolated PostgreSQL-to-MariaDB fixture preserved the distinct member identifiers, attendance, multi-month allocations, payment reversal and stock history. Expected versus imported amounts and fractional quantities matched. The next invoice number was 904. Every invoice received a cancellation hold, and historical mail evidence produced one sent record and uncertain records for incomplete or missing evidence. The fixture created no staff accounts.

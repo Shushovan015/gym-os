@@ -43,7 +43,7 @@ final class ProductMedia
         return [201, ['url' => $url]];
     }
 
-    public function stage(string $source): string
+    public function stage(string $source, ?string $digest = null): string
     {
         if (!extension_loaded('gd') || !extension_loaded('fileinfo')) {
             throw new RuntimeException('GD and Fileinfo are required for catalog images.');
@@ -52,16 +52,22 @@ final class ProductMedia
         if ($size === false || $size < 1 || $size > 5 * 1024 * 1024) {
             throw new DomainException('The image must be at most 5 MiB.');
         }
-        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($source);
+        $content = file_get_contents($source, false, null, 0, 5 * 1024 * 1024 + 1);
+        if ($content === false || strlen($content) > 5 * 1024 * 1024) {
+            throw new DomainException('The image must be readable and at most 5 MiB.');
+        }
+        if ($digest !== null && !hash_equals($digest, hash('sha256', $content))) {
+            throw new DomainException('The file does not match the supplied checksum.');
+        }
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($content);
         $extension = array_search($mime, self::MIME, true);
-        $dimensions = @getimagesize($source);
+        $dimensions = @getimagesizefromstring($content);
         if (!$extension || !$dimensions || $dimensions['mime'] !== $mime ||
             $dimensions[0] < 1 || $dimensions[1] < 1 || max($dimensions[0], $dimensions[1]) > 4096 ||
             $dimensions[0] * $dimensions[1] > 8000000) {
             throw new DomainException('Choose a JPEG, PNG or WebP image within the supported dimensions.');
         }
-        $content = file_get_contents($source, false, null, 0, 5 * 1024 * 1024 + 1);
-        $image = $content !== false && strlen($content) <= 5 * 1024 * 1024 ? @imagecreatefromstring($content) : false;
+        $image = @imagecreatefromstring($content);
         if (!$image) throw new DomainException('The image could not be decoded.');
         $key = bin2hex(random_bytes(24)) . '.' . $extension;
         $path = $this->directory() . DIRECTORY_SEPARATOR . $key;

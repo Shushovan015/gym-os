@@ -24,6 +24,8 @@ Himalayan Host advertises DirectAdmin hosting with PHP 8.2 and MariaDB/MySQL. Co
 
 ## Staging and rollback
 
+Record the provider account's PHP web and CLI versions, loaded extensions, database engine and version, database and disk quotas, and upload, request-body, memory and execution limits. Exercise a representative upload and restore within those limits. Confirm that Apache applies the rewrite rules, HTTPS redirects, and permissions on public and private paths. Verify that PHP errors go to a private log. Confirm whether cron is available, which CLI executable it uses, and how failed jobs are reported. Check SMTP egress with the configured TLS mode and a staging mailbox, and verify receipt before entering live sender settings.
+
 Rehearse on an isolated database and separate media directories. Verify anonymous pages, administrator sign-in, deep links, member and holiday changes, inventory images, checkout and reversals, reports, SMTP, the backup download, and a separate restore. Follow the encrypted backup procedure before migrating real data. [PHP backup and recovery instructions](../backend/README.md#encrypted-backup-and-restore)
 
 Keep the prior application release, a verified encrypted archive and its separate recovery password. At cutover, pause writes and reconcile the final source and target snapshots before switching traffic. If rollback is needed after new writes, preserve the new database and uploaded files and reconcile those writes before switching back. Recover into an empty database with the matching app release.
