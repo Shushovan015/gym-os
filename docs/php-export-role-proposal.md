@@ -15,6 +15,8 @@ Before provisioning, obtain a fresh, separately authorized owner-generated schem
 
 The owner can collect this metadata without reading customer rows. Request both outputs into the protected handoff after separate authorization.
 
+For the manual catalog handoff use [the SELECT-only SQL Editor script](../scripts/review-production-export-catalog.sql) in the Dashboard for the verified project. Share the complete tabular result through the protected handoff. Its November 22 comparison covers public table and column names and declared types. Current constraints and RLS policies are reported separately. Expressions and routine bodies are omitted because they may contain sensitive literals. The report cannot prove row coverage, classify every executable routine's side effects, or assess live ownership of views or roles that do not yet exist.
+
 ```sql
 BEGIN READ ONLY;
 SELECT current_setting('server_version_num') AS version_num, current_database() AS database_name;
