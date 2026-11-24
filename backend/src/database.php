@@ -1,12 +1,24 @@
 <?php
 declare(strict_types=1);
 
-function database(): PDO
+function database(?string $configPath = null): PDO
 {
     $dsn = getenv('GYM_DB_DSN');
     $user = getenv('GYM_DB_USER');
     $password = getenv('GYM_DB_PASSWORD');
-    if (!$dsn || !str_starts_with($dsn, 'mysql:') || !$user || $password === false) {
+    if ($configPath !== null) {
+        if (!is_file($configPath) || !is_readable($configPath)) {
+            throw new RuntimeException('The private CLI configuration is unreadable.');
+        }
+        $config = require $configPath;
+        if (!is_array($config)) {
+            throw new RuntimeException('The private CLI configuration is invalid.');
+        }
+        $dsn = $config['GYM_DB_DSN'] ?? null;
+        $user = $config['GYM_DB_USER'] ?? null;
+        $password = $config['GYM_DB_PASSWORD'] ?? null;
+    }
+    if (!is_string($dsn) || !str_starts_with($dsn, 'mysql:') || !is_string($user) || $user === '' || !is_string($password)) {
         throw new RuntimeException('Target database configuration is missing.');
     }
     $db = new PDO($dsn, $user, $password, [

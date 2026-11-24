@@ -27,7 +27,7 @@ if (strlen($password) < 15 || strlen($password) > 72 || str_contains($password, 
 }
 $hash = password_hash($password, PASSWORD_BCRYPT);
 unset($password);
-$db = database();
+$db = database(getenv('GYM_CONFIG_FILE') ?: null);
 $db->beginTransaction();
 try {
     if ($mode === 'create') {

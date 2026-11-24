@@ -9,22 +9,33 @@ if (PHP_SAPI !== 'cli') {
 }
 
 $mode = $argv[1] ?? '';
-if (!in_array($mode, ['apply', 'verify'], true)) {
-    fwrite(STDERR, "Usage: php backend/bin/migrate.php apply|verify\n");
+if (!in_array($mode, ['install', 'apply', 'verify'], true)) {
+    fwrite(STDERR, "Usage: php backend/bin/migrate.php install|apply|verify\n");
     exit(2);
 }
 
-$db = database();
-if ($mode === 'apply') {
+$db = database(getenv('GYM_CONFIG_FILE') ?: null);
+$lock = $db->query("SELECT GET_LOCK(CONCAT('gym-schema-', MD5(DATABASE())), 10)")->fetchColumn();
+if ((int) $lock !== 1) {
+    throw new RuntimeException('Could not lock the schema.');
+}
+if ($mode === 'install') {
+    $hasObjects = $db->query("SELECT (
+        EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE())
+        OR EXISTS (SELECT 1 FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE())
+        OR EXISTS (SELECT 1 FROM information_schema.EVENTS WHERE EVENT_SCHEMA = DATABASE())
+    )")->fetchColumn();
+    if ((int) $hasObjects !== 0) {
+        fwrite(STDERR, "Install requires a new empty database. Existing database objects were left unchanged.\n");
+        exit(1);
+    }
+}
+if ($mode !== 'verify') {
     $db->exec('CREATE TABLE IF NOT EXISTS schema_migrations (
         version VARCHAR(255) PRIMARY KEY,
         checksum CHAR(64) NOT NULL,
         applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
     ) ENGINE=InnoDB');
-}
-$lock = $db->query("SELECT GET_LOCK(CONCAT('gym-schema-', MD5(DATABASE())), 10)")->fetchColumn();
-if ((int) $lock !== 1) {
-    throw new RuntimeException('Could not lock the schema.');
 }
 
 $lookup = $db->prepare('SELECT checksum FROM schema_migrations WHERE version = ?');
