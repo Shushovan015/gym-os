@@ -24,6 +24,8 @@ Copy the password-free service template to a protected local configuration direc
 
 ### First check the role with the project owner
 
+For project `akhbjjggcftyzlunrxwk`, review the [full restricted export role proposal](php-export-role-proposal.md) before provisioning. It defines the separate Windows login and the exact application and metadata scopes. The base-table inventory below requires adaptation if the scoped views in that proposal are selected.
+
 In the authenticated project Dashboard, open **SQL Editor → New query**. After approval for the read-only metadata check, the owner can substitute the name of a proposed existing role and run this query. An empty result means that named role is absent. A result is role metadata only. Review effective grants, memberships and ownership before approving the role.
 
 ```sql
