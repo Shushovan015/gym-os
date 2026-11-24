@@ -487,7 +487,7 @@ roles AS (
   SELECT 'routine', format('%I.%I(%s)', p.nspname, p.proname, oidvectortypes(p.proargtypes)), p.proowner,
     coalesce(p.proacl, acldefault('f', p.proowner)) FROM routines p
 ), report(section, object_name, details) AS (
-  SELECT '00_context', current_database(), jsonb_build_object(
+  SELECT '00_context', current_database()::text, jsonb_build_object(
     'serverVersion', current_setting('server_version_num'), 'observer', current_user,
     'coverage', 'Catalog only. Row completeness and role behavior require separate verification.')
   UNION ALL
@@ -520,6 +520,7 @@ roles AS (
   FROM relations r WHERE r.relkind IN ('r','p')
   UNION ALL
   SELECT '06_policy', format('%I.%I.%I',r.schema_name,r.relname,p.polname), jsonb_build_object(
+    'schema',r.schema_name,'table',r.relname,'policyName',p.polname,
     'command',p.polcmd,'permissive',p.polpermissive,
     'principals',(SELECT jsonb_agg(CASE WHEN a = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a) END) FROM unnest(p.polroles) a),
     'appliesToExistingLogin', (SELECT bool_or(CASE WHEN a = 0 THEN true ELSE pg_has_role(x.oid,a,'USAGE') END)
@@ -537,6 +538,7 @@ roles AS (
   UNION ALL
   SELECT '08_routine', format('%I.%I(%s)', p.nspname,p.proname,oidvectortypes(p.proargtypes)),
     jsonb_build_object('securityDefiner',p.prosecdef,'owner',pg_get_userbyid(p.proowner),
+      'schema',p.nspname,'routineName',p.proname,'argumentTypes',oidvectortypes(p.proargtypes),'routineKind',p.prokind,
       'publicExecute', EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
                               WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
       'schemaUsageForExistingLogin',has_schema_privilege(x.oid,p.pronamespace,'USAGE'),

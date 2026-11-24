@@ -1,5 +1,7 @@
 # Restricted export role proposal
 
+The production catalog report surfaced PUBLIC routine access that blocks this proposal's live activation. See the [updated export-account plan](php-export-account-catalog-review.md) and the separate [urgent security correction](php-production-security-proposal.md).
+
 For review only. The scope is based on the November 22 local schema, the checked-in migrations, and the importer allowlist. Production catalog, ACLs and RLS remain unverified. All provisioning, password setup and cleanup below require separate authorization in project `akhbjjggcftyzlunrxwk`.
 
 The PostgreSQL role name is exactly `gym_export_login`. Use that name in SQL, `SET ROLE`, and `psql \password`. The Windows connection username is `gym_export_login.akhbjjggcftyzlunrxwk` because it uses the shared Session pooler. The suffix is shared-pooler routing syntax, including shared Transaction mode if used. Direct and dedicated-pooler connections use the unsuffixed role. This proposal uses Session mode only. [Supabase connection modes](https://supabase.com/docs/guides/database/connecting-to-postgres)
