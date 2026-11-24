@@ -21,6 +21,10 @@ COMMIT;
 
 ## A2. Close the exposed invoice recalculation routine
 
+Use the [SELECT-only A2 inspection](../scripts/review-invoice-recalculation.sql) in the verified project's SQL Editor before considering the revocation. Review the returned function definitions privately and redact any embedded secrets before sharing results. The projected EXECUTE column models removal of the three named ACL entries. It does not model dependent grants or replace an owner review. Catalog dependencies and stored-body matches can miss dynamic calls, external callers, and indirect paths. Confirm active application and operator callers separately.
+
+The checked-in internal callers are `finalize_invoice` and `record_invoice_payment`, including their later migration definitions. Confirm each live caller remains SECURITY DEFINER and its owner retains EXECUTE after the proposed revokes, or identify the effective invoking role for any SECURITY INVOKER path. Compare both current and projected privileges for the service role and confirm any direct service caller is authorized. A staging billing check is needed before approval because catalog results alone cannot verify the complete workflow.
+
 The CSV reports `PUBLIC`, `anon`, `authenticated`, and `service_role` EXECUTE on `public.recalculate_invoice_payment_state(bigint)`. The checked-in body updates invoice balances and status and contains no caller authorization check. This is a potential write path independent of the four table ACLs. The current routine body and PostgREST exposure require owner verification. Existing checked-in invoice RPCs invoke it internally as their definer. No direct frontend or Edge Function caller was found in the checked-in tree.
 
 After reviewing the live body, owner, grants and dependencies, and separately approving this substep, remove the three client-facing grants. Preserve owner and service-role execution subject to confirming their legitimate use. Validate that existing admin billing RPCs still work in staging. If inherited client EXECUTE persists, roll back the transaction and investigate its origin.
