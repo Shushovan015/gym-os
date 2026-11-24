@@ -41,6 +41,7 @@ test("encrypts a database and uploaded images and restores them into an isolated
   const original = JSON.parse(php(source, "tests/backup-fixture", ["seed"]));
   assert.equal(original.invoice.balance_minor, 800);
   assert.equal(original.payment.amount_minor, 400);
+  assert.equal(original.document.invoice_id, 201);
   assert.equal(original.stock.current_quantity, "1.125");
   const expectedSnapshotPath = join(sandbox, "expected-gym.json");
   const expectedSnapshot = JSON.parse(php(source, "bin/reconcile", ["snapshot"]));

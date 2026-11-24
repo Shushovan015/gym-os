@@ -110,7 +110,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
       assert.doesNotMatch(setCookie, /domain=/i);
       cookie = setCookie.split(";")[0];
     }
-    if (response.headers.get("content-type") === "image/png") {
+    if (["image/png", "application/pdf"].includes(response.headers.get("content-type"))) {
       return Buffer.from(await response.arrayBuffer());
     }
     const data = await response.json();
@@ -129,6 +129,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   }
 
   await request("admin", 401);
+  await request("admin", 401, undefined, true, { Authorization: "Bearer synthetic.supabase.session" });
   await request("studio/contact", 401);
   await request("studio/home", 401);
   await request("studio/facilities", 401);
@@ -680,6 +681,19 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   const migratedHero = php("backend/bin/product-media.php",
     ["import", "home-hero", "1", home.hero_image, legacyFile, facilityDigest], undefined, mediaEnv).trim();
   assert.equal((await publicFetch(migratedHero)).headers.get("content-type"), "image/png");
+  const historicalPdf = Buffer.from("%PDF-1.4\n% synthetic fixture\n%%EOF\n");
+  const historicalPath = join(mediaDirectory, "historical-fixture.pdf");
+  writeFileSync(historicalPath, historicalPdf);
+  const historicalImport = { id: member.id, path: historicalPath, sha256: createHash("sha256").update(historicalPdf).digest("hex") };
+  const storeDocument = (input) => php("backend/tests/billing-worker.php", ["historical-document"], JSON.stringify(input));
+  assert.throws(() => storeDocument({ ...historicalImport, sha256: "0".repeat(64) }), /checksum/i);
+  assert.throws(() => storeDocument({ ...historicalImport, path: legacyFile, sha256: facilityDigest }), /PDF/i);
+  const documentKey = storeDocument(historicalImport);
+  assert.equal(storeDocument(historicalImport), documentKey);
+  const documentPath = `admin/historical-document?key=${documentKey}`;
+  assert.equal((await publicFetch(`/api/${documentPath}`)).status, 401);
+  assert.deepEqual(await request(documentPath, 200), historicalPdf);
+  await request("admin/historical-document?key=..%2Findex.php", 404);
   await request("members/photo?key=..%2Findex.php", 404);
   const memberId = Number(php("backend/tests/attendance-fixture.php", []));
   const attendance = "attendance/change";
@@ -920,6 +934,7 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   await request("invoices/products/issue", 403, productInvoice, true, paymentKey());
   await request("members/save", 403, profile);
   await request(photoPath, 403);
+  await request(documentPath, 403);
   await request(catalogUpload, 403, catalogPhoto());
   await request(facilityUpload, 403, catalogPhoto());
   await request(facilitiesSave, 403, { action: "content", content: facilityContent });

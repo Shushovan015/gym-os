@@ -6,6 +6,7 @@ require __DIR__ . '/../src/Auth.php';
 require __DIR__ . '/../src/Attendance.php';
 require __DIR__ . '/../src/Members.php';
 require __DIR__ . '/../src/MemberPhotos.php';
+require __DIR__ . '/../src/HistoricalDocuments.php';
 require __DIR__ . '/../src/MembershipFees.php';
 require __DIR__ . '/../src/MembershipBilling.php';
 require __DIR__ . '/../src/Stock.php';
@@ -68,6 +69,7 @@ $routes = [
     '/api/admin/settings/save' => 'POST',
     '/api/admin/backups' => 'GET',
     '/api/admin/backups/download' => 'GET',
+    '/api/admin/historical-document' => 'GET',
     '/api/admin/legacy-import' => 'POST',
     '/api/admin/holidays' => 'GET',
     '/api/admin/holiday-templates' => 'GET',
@@ -213,6 +215,10 @@ try {
     if ($path === '/api/admin/backups/download') {
         (new BackupDownloads($db))->stream($_GET['file'] ?? null, $user['id']);
         respond(404, ['error' => 'Backup archive was not found.']);
+    }
+    if ($path === '/api/admin/historical-document') {
+        (new HistoricalDocuments($db))->download($_GET['key'] ?? null);
+        respond(404, ['error' => 'Historical document was not found.']);
     }
     if ($path === '/api/members/plans') {
         $plans = $db->query("SELECT id, title FROM pricing_items WHERE kind = 'plan' AND is_active = 1 ORDER BY sort_order, id")

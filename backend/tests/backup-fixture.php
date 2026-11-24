@@ -26,6 +26,9 @@ if ($action === 'seed') {
         (501, 'Backup product', 'Fixture', ?, 1)")->execute(['/api/media/product?key=' . $catalogImage]);
     $db->exec("INSERT IGNORE INTO inventory_product_variants (id, product_id, sku, current_quantity) VALUES (601, 501, 'BACKUP-FIXTURE', 1.125)");
     $db->exec('UPDATE invoice_number_sequences SET next_number = 508 WHERE id = 1');
+    $pdf = "%PDF-1.4\n% backup fixture\n%%EOF\n";
+    $db->prepare('INSERT IGNORE INTO historical_documents (document_key, invoice_id, source_sha256, payload_base64) VALUES (?, 201, ?, ?)')
+        ->execute([str_repeat('d', 48), hash('sha256', $pdf), base64_encode($pdf)]);
     $db->commit();
     foreach (['GYM_PRIVATE_MEDIA_DIR' => $photo, 'GYM_PRODUCT_MEDIA_DIR' => $catalogImage] as $directory => $key) {
         $image = imagecreatetruecolor(2, 2);
@@ -43,6 +46,7 @@ echo json_encode([
     'member' => $db->query("SELECT id, member_id, photo_url FROM members WHERE id = 101")->fetch(PDO::FETCH_ASSOC),
     'invoice' => $db->query("SELECT id, invoice_number, member_ref, total_minor, paid_minor, balance_minor FROM invoices WHERE id = 201")->fetch(PDO::FETCH_ASSOC),
     'payment' => $db->query("SELECT id, invoice_id, amount_minor FROM invoice_payments WHERE id = 301")->fetch(PDO::FETCH_ASSOC),
+    'document' => $db->query("SELECT invoice_id, source_sha256, payload_base64 FROM historical_documents WHERE invoice_id = 201")->fetch(PDO::FETCH_ASSOC),
     'stock' => $db->query("SELECT id, product_id, current_quantity FROM inventory_product_variants WHERE id = 601")->fetch(PDO::FETCH_ASSOC),
     'nextNumber' => $db->query("SELECT next_number FROM invoice_number_sequences WHERE id = 1")->fetchColumn(),
 ], JSON_THROW_ON_ERROR);

@@ -224,16 +224,26 @@ final class PostgresImport
         }
         $sent = $uncertain = 0;
         $insert = $this->db->prepare('INSERT INTO bill_email_attempts
-            (invoice_id, actor_id, recipient, message_token, status, reconciliation_note) VALUES (?, ?, ?, ?, ?, ?)');
+            (invoice_id, actor_id, recipient, message_token, status, reconciliation_note, created_at, finished_at)
+            VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP(6)), ?)');
         foreach ($this->db->query('SELECT id FROM invoices')->fetchAll(PDO::FETCH_COLUMN) as $id) {
             $item = $history[$id] ?? [];
             $recipient = $item['recipient_email'] ?? '';
             if (!is_string($recipient) || !filter_var($recipient, FILTER_VALIDATE_EMAIL) || strlen($recipient) > 254) $recipient = '';
-            $known = ($item['status'] ?? '') === 'sent' && $recipient !== '' && !empty($item['sent_at']);
+            $sentAt = null;
+            if (($item['status'] ?? '') === 'sent' && $recipient !== '' && is_string($item['sent_at'] ?? null)
+                && preg_match('/(?:Z|[+-]\d{2}:?\d{2})$/D', $item['sent_at'])) {
+                try {
+                    $sentAt = self::scalar($item['sent_at'], 'datetime(6)');
+                } catch (DomainException) {
+                    // Invalid timestamps are treated as uncertain evidence.
+                }
+            }
+            $known = $sentAt !== null;
             if ($known) $sent++;
             else $uncertain++;
             $insert->execute([$id, '00000000-0000-0000-0000-000000000000', $recipient, bin2hex(random_bytes(16)),
-                $known ? 'sent' : 'uncertain', 'Historical delivery imported from the protected PostgreSQL export.']);
+                $known ? 'sent' : 'uncertain', 'Historical delivery imported from the protected PostgreSQL export.', $sentAt, $sentAt]);
             unset($history[$id]);
         }
         if ($history !== []) throw new DomainException('Historical email references an invoice missing from the export.');

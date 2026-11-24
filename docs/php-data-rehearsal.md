@@ -2,6 +2,8 @@
 
 ## Prepare the offline source
 
+Use the [production export approval and operator commands](php-production-export.md) for a current authorized snapshot.
+
 Restore a verified Supabase PostgreSQL backup into a local database named `gym_supabase_migration`. Keep the source offline and keep its database and Storage export in protected storage. Preserve the original backup for comparison. The SQL exporter requires the local database name and runs inside a read-only snapshot.
 
 Run with the local PostgreSQL connection settings and save output in an access-restricted directory.
@@ -62,7 +64,27 @@ For each product, variant, facility, trainer, trainer thumbnail or testimonial i
 php backend/bin/product-media.php import facility 123 OLD_URL /private/approved-image.png VERIFIED_SHA256
 ```
 
-The command validates and rewrites images using the same publication rules as Studio. Use `member-portrait` with the member ID and `GYM_PRIVATE_MEDIA_DIR`. The replacement stays behind the authenticated member-photo route. Use `home-hero`, `home-gallery`, `contact-hero`, or `shop-hero` with ID `1` for approved public images. The gallery command replaces matching URLs and retains captions. Supply a digest for each new asset type. Record the returned reference and verify access for the relevant role. Keep documents and unsupported private objects in the verified protected archive until there is a reviewed application owner/reference mapping and access policy.
+The command validates and rewrites images using the same publication rules as Studio. Use `member-portrait` with the member ID and `GYM_PRIVATE_MEDIA_DIR`. The replacement stays behind the authenticated member-photo route. Use `home-hero`, `home-gallery`, `contact-hero`, or `shop-hero` with ID `1` for approved public images. The gallery command replaces matching URLs and retains captions. Supply a digest for each new asset type. Record the returned reference and verify access for the relevant role.
+
+### Historical documents
+
+The inspected legacy schema has no document owner table. A reviewer must establish the member or invoice ID from independent source evidence before importing each PDF. After approval to apply in rehearsal, run the command below on the loopback rehearsal database. Keep its returned reference and source disposition in the protected operator manifest.
+
+```sh
+php backend/bin/historical-document.php member 123 /private/reviewed-document.pdf VERIFIED_SHA256
+```
+
+Use `invoice` for an invoice-owned PDF. Imports are limited to 4 MiB per file and use a private database record included in encrypted backups. Only administrators can download the attachment. Confirm the staging database accepts a packet of at least 8 MiB. Keep unowned documents, non-PDF and oversized files, and website documents with unclear publication rights in the protected archive. Restore older PHP backup archives on the matching application release, then upgrade the restored database.
+
+### Staff recovery
+
+Have an authorized approver create a protected JSON array of approved records. Each has `id`, `email`, and explicit PHP `role` of `admin` or `viewer`. Check both file digests independently, then run the read-only verifier.
+
+```sh
+php backend/bin/staff-recovery-plan.php /private/staff-identities.csv STAFF_SHA256 /private/approved-staff.json ROSTER_SHA256
+```
+
+Resolve every blocked entry. The report contains role counts and blocked row numbers. The verifier requires matching evidence for existing, confirmed identities and an existing source administrator role for each PHP administrator. Following separate activation approval, enroll each approved identity with `account.php create` using a fresh secret through standard input. Verify administrator and viewer access and use `account.php reset` to rotate the credential and invalidate PHP sessions as needed. Existing Supabase tokens are outside the PHP login and session flow.
 
 ## Fixture reconciliation
 

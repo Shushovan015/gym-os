@@ -6,6 +6,7 @@ require __DIR__ . '/../src/MembershipBilling.php';
 require __DIR__ . '/../src/Stock.php';
 require __DIR__ . '/../src/ProductBilling.php';
 require __DIR__ . '/../src/BillingAttempts.php';
+require __DIR__ . '/../src/HistoricalDocuments.php';
 
 if (PHP_SAPI !== 'cli' || !preg_match('/^mysql:host=127\.0\.0\.1;port=\d+;dbname=gym_migration_test;charset=utf8mb4$/D', getenv('GYM_DB_DSN') ?: '')) {
     exit(2);
@@ -15,6 +16,14 @@ $mode = $argv[1] ?? '';
 $actor = '00000000-0000-0000-0000-000000000001';
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 switch ($mode) {
+    case 'historical-document':
+        try {
+            echo (new HistoricalDocuments($db))->import('member', $input['id'], $input['path'], $input['sha256']);
+        } catch (DomainException $error) {
+            fwrite(STDERR, $error->getMessage());
+            exit(1);
+        }
+        break;
     case 'media-fixture':
         $image = imagecreatetruecolor(2, 2);
         ob_start();

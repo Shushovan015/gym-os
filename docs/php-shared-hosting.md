@@ -18,6 +18,8 @@ Use the same MariaDB version, PHP CLI version and deployment files in staging an
 
 Use PDO MySQL, GD with JPEG/PNG/WebP, Fileinfo, OpenSSL, sessions and Zip with AES-256. Upload settings need room for a 5 MiB image and its multipart overhead. The legacy import reads a JSON body of up to 8 MiB. Keep PHP errors in protected server logs and verify private paths are permitted by `open_basedir`, if enabled.
 
+Historical PDFs use the private MariaDB database and encrypted backup archive. Check an 8 MiB or larger `max_allowed_packet`, available database disk quota, and backup and restore performance with representative documents.
+
 ## Provider checks
 
 Himalayan Host advertises DirectAdmin hosting with PHP 8.2 and MariaDB/MySQL. Confirm the actual database version and PHP extensions for the selected account, whether Apache honors the package directives, CLI PHP and SFTP availability, private storage access, SMTP egress, archive disk quota and time limits. Confirm independent off-server transfer and restore access before relying on the provider's backup service. [Himalayan Host DirectAdmin plan](https://www.himalayanhost.com/store/directadmin-hosting-nepal)
