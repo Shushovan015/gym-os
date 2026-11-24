@@ -4,6 +4,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') exit(2);
 require __DIR__ . '/../src/database.php';
 require __DIR__ . '/../src/GymSchema.php';
+require __DIR__ . '/../src/GymReconciliation.php';
 require __DIR__ . '/../src/PostgresImport.php';
 
 $mode = $argv[1] ?? '';

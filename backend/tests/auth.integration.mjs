@@ -671,6 +671,15 @@ test("authentication, members, private photos and attendance on MariaDB", async 
   const photoPath = upload.url.replace(/^\/api\//, "");
   assert.equal((await request(details, 200)).member.photo_url, upload.url);
   assert.deepEqual(await request(photoPath, 200), photo);
+  const portraitEnv = { ...mediaEnv, GYM_PRIVATE_MEDIA_DIR: mediaDirectory };
+  const migratedPortrait = php("backend/bin/product-media.php",
+    ["import", "member-portrait", String(member.id), upload.url, legacyFile, facilityDigest], undefined, portraitEnv).trim();
+  assert.equal((await publicFetch(migratedPortrait)).status, 401);
+  assert.equal((await request(details, 200)).member.photo_url, migratedPortrait);
+  assert.ok((await request(migratedPortrait.replace(/^\/api\//, ""), 200)).length > 0);
+  const migratedHero = php("backend/bin/product-media.php",
+    ["import", "home-hero", "1", home.hero_image, legacyFile, facilityDigest], undefined, mediaEnv).trim();
+  assert.equal((await publicFetch(migratedHero)).headers.get("content-type"), "image/png");
   await request("members/photo?key=..%2Findex.php", 404);
   const memberId = Number(php("backend/tests/attendance-fixture.php", []));
   const attendance = "attendance/change";

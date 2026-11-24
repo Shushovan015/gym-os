@@ -21,6 +21,43 @@ final class PostgresImport
     {
     }
 
+    public function schemaMapping(array $source): array
+    {
+        $columns = $this->db->query("SELECT table_name AS table_name, column_name AS name, column_type AS type,
+            is_nullable AS nullable FROM information_schema.columns WHERE table_schema = DATABASE()
+            ORDER BY table_name, ordinal_position")->fetchAll(PDO::FETCH_GROUP | PDO::FETCH_ASSOC);
+        $foreignKeys = $this->db->query("SELECT table_name AS table_name, column_name AS column_name,
+            referenced_table_name AS parent_table, referenced_column_name AS parent_column
+            FROM information_schema.key_column_usage WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL
+            ORDER BY table_name, column_name")->fetchAll(PDO::FETCH_ASSOC);
+        $expected = [...self::DIRECT, ...self::CONTENT, ...self::ARCHIVE, 'invoice_email_deliveries'];
+        $tables = [];
+        foreach ($source as $table => $fields) {
+            $kind = match (true) {
+                in_array($table, self::DIRECT, true) => 'direct',
+                in_array($table, self::CONTENT, true) => 'content',
+                in_array($table, self::ARCHIVE, true) => 'private-archive',
+                $table === 'invoice_email_deliveries' => 'historical-email',
+                default => 'unsupported',
+            };
+            $destination = array_column($columns[$table] ?? [], null, 'name');
+            foreach ($fields as $field => $type) {
+                $target = match ($kind) {
+                    'direct' => $table === 'invoice_number_sequences' && $field === 'last_number' ? 'next_number'
+                        : (isset($destination[$field]) ? $field : null),
+                    'content' => match ($field) { 'id' => 'id', 'created_at', 'updated_at' => null, default => 'content.' . $field },
+                    default => null,
+                };
+                $tables[$table][$field] = ['sourceType' => $type, 'disposition' => $kind,
+                    'targetColumn' => $target, 'targetType' => $destination[$target]['type'] ?? ($target && $kind === 'content' ? 'JSON' : null),
+                    'targetNullable' => $destination[$target]['nullable'] ?? null];
+            }
+        }
+        return ['version' => 1, 'tables' => $tables, 'missingSourceTables' => array_values(array_diff($expected, array_keys($source))),
+            'missingTargetTables' => array_values(array_diff([...self::DIRECT, ...self::CONTENT], array_keys($columns))),
+            'targetOnlyTables' => array_values(array_diff(array_keys($columns), array_keys($source))), 'targetForeignKeys' => $foreignKeys];
+    }
+
     public function run(string $path, string $digest, bool $apply): array
     {
         $file = fopen($path, 'rb');
@@ -65,6 +102,18 @@ final class PostgresImport
                             unset($row['id']);
                             self::checkContent($row);
                             $mapped = ['id' => 1, 'content' => json_encode((object) $row, JSON_THROW_ON_ERROR)];
+                        } elseif ($table === 'invoice_number_sequences' && array_key_exists('last_number', $row)) {
+                            $last = filter_var($row['last_number'], FILTER_VALIDATE_INT,
+                                ['options' => ['min_range' => 0, 'max_range' => 9007199254740990]]);
+                            $year = filter_var($row['sequence_year'] ?? null, FILTER_VALIDATE_INT);
+                            if ($last === false || $year === false) throw new DomainException('Invalid annual sequence.');
+                            $this->db->prepare('UPDATE invoice_number_sequences SET next_number = GREATEST(next_number, ?) WHERE id = 1')
+                                ->execute([$last + 1]);
+                            foreach (array_diff(array_keys($row), ['last_number']) as $field) {
+                                $fieldReview[$table][$field] = ($fieldReview[$table][$field] ?? 0) + 1;
+                            }
+                            $imported[$table] = ($imported[$table] ?? 0) + 1;
+                            continue;
                         } else {
                             foreach ($row as $field => $value) {
                                 if (!isset($types[$field])) {
@@ -99,6 +148,9 @@ final class PostgresImport
             $report = ['applied' => $apply, 'sha256' => $digest, 'imported' => $imported, 'archiveOnly' => $archived,
                 'missingTables' => $missing, 'unmappedFields' => $fieldReview, 'historicalEmail' => $emailReview,
                 'invoiceCancellationHolds' => count($rows['invoices'] ?? []), 'verifiedFinancialFields' => $verifiedFinancialFields];
+            $reconciliation = new GymReconciliation($this->db);
+            $report['projectedReconciliation'] = $reconciliation->snapshot();
+            $report['relationshipReviewCounts'] = array_map('count', $reconciliation->review());
             if ($apply) $this->db->commit();
             else $this->db->rollBack();
             return $report;

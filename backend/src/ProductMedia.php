@@ -5,6 +5,12 @@ final class ProductMedia
 {
     private const PREFIX = '/api/media/product?key=';
     private const MIME = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+    public const CONTENT_IMAGES = [
+        'home-hero' => ['home_content', 'hero_image'],
+        'home-gallery' => ['home_content', 'gallery_images'],
+        'contact-hero' => ['contact_content', 'hero_image'],
+        'shop-hero' => ['shop_page_content', 'hero_image'],
+    ];
 
     public function __construct(private PDO $db)
     {
@@ -176,7 +182,39 @@ final class ProductMedia
             OR EXISTS(SELECT 1 FROM trainers WHERE intro_video_thumb = ?$product)
             OR EXISTS(SELECT 1 FROM testimonials WHERE image = ?$product)");
         $query->execute([$url, $url, $url, $url, $url, $url]);
-        return (bool) $query->fetchColumn();
+        if ($query->fetchColumn()) return true;
+        foreach (self::CONTENT_IMAGES as [$table, $field]) {
+            $content = $this->db->query("SELECT content FROM $table WHERE id = 1")->fetchColumn();
+            if ($content === false) continue;
+            $value = json_decode($content, true)[$field] ?? null;
+            if ($value === $url) return true;
+            if ($field === 'gallery_images' && is_array($value)) {
+                foreach ($value as $entry) {
+                    if ((is_array($entry) ? ($entry['url'] ?? null) : $entry) === $url) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public function replaceContentImage(string $kind, string $old, string $url): void
+    {
+        [$table, $field] = self::CONTENT_IMAGES[$kind];
+        $raw = $this->db->query("SELECT content FROM $table WHERE id = 1 FOR UPDATE")->fetchColumn();
+        $content = $raw === false ? [] : json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
+        $value = $content[$field] ?? null;
+        $updated = $value;
+        if ($field === 'gallery_images' && is_array($value)) {
+            foreach ($value as $index => $entry) {
+                if (is_array($entry) && ($entry['url'] ?? null) === $old) $updated[$index]['url'] = $url;
+                elseif ($entry === $old) $updated[$index] = $url;
+            }
+        } elseif ($value === $old) {
+            $updated = $url;
+        }
+        if ($updated === $value) throw new DomainException('The existing image changed.');
+        $content[$field] = $updated;
+        $this->db->prepare("UPDATE $table SET content = ? WHERE id = 1")->execute([json_encode($content, JSON_THROW_ON_ERROR)]);
     }
 
     private static function validKey(mixed $key): bool

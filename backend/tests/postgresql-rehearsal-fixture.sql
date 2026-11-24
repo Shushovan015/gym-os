@@ -50,3 +50,5 @@ CREATE TABLE home_content (id bigint, hero_title text, gallery_images jsonb);
 INSERT INTO home_content VALUES (1,'Rehearsal homepage','[]');
 CREATE TABLE invoice_email_deliveries (invoice_id bigint, status text, recipient_email text, sent_at timestamptz);
 INSERT INTO invoice_email_deliveries VALUES (201,'sent','rehearsal@example.test','2025-02-10 12:00:00+05:45'), (203,'sending','rehearsal@example.test',NULL);
+CREATE TABLE public.invoice_number_sequences (sequence_year integer NOT NULL, last_number bigint NOT NULL);
+INSERT INTO public.invoice_number_sequences VALUES (2023, 910), (2024, 805);

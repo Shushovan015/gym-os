@@ -11,7 +11,7 @@ final class MemberPhotos
     {
         $configured = getenv('GYM_PRIVATE_MEDIA_DIR');
         $directory = $configured ? realpath($configured) : false;
-        $root = realpath($_SERVER['DOCUMENT_ROOT'] ?? '');
+        $root = realpath(($_SERVER['DOCUMENT_ROOT'] ?? '') ?: __DIR__ . '/../public');
         if ($directory === false || $root === false || !is_dir($directory)) {
             throw new RuntimeException('Private media directory is not configured.');
         }
@@ -25,6 +25,50 @@ final class MemberPhotos
             throw new RuntimeException('Private media directory is inside the document root.');
         }
         return $directory;
+    }
+
+    public function import(int $id, string $oldUrl, string $source, string $digest): string
+    {
+        if (!is_file($source) || is_link($source)) throw new DomainException('Missing local portrait.');
+        $bytes = @file_get_contents($source, false, null, 0, 5 * 1024 * 1024 + 1);
+        if (!$bytes || strlen($bytes) > 5 * 1024 * 1024 || !hash_equals($digest, hash('sha256', $bytes))) {
+            throw new DomainException('The portrait checksum or size is invalid.');
+        }
+        $dimensions = @getimagesizefromstring($bytes);
+        $extension = match ($dimensions[2] ?? null) {
+            IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp', default => null,
+        };
+        if ($extension === null || min($dimensions[0], $dimensions[1]) < 1
+            || max($dimensions[0], $dimensions[1]) > 4096 || $dimensions[0] * $dimensions[1] > 8000000
+            || !extension_loaded('gd') || !($image = @imagecreatefromstring($bytes))) {
+            throw new DomainException('The portrait must be a supported, decodable image.');
+        }
+        $key = bin2hex(random_bytes(24)) . '.' . $extension;
+        $path = $this->directory() . DIRECTORY_SEPARATOR . $key;
+        $url = '/api/members/photo?key=' . $key;
+        $this->db->beginTransaction();
+        try {
+            $update = $this->db->prepare('UPDATE members SET photo_url = ? WHERE id = ? AND deleted_at IS NULL AND BINARY photo_url = ?');
+            $update->execute([$url, $id, $oldUrl]);
+            if ($update->rowCount() !== 1) throw new DomainException('The existing portrait reference changed.');
+            if ($extension !== 'jpg') {
+                imagealphablending($image, false);
+                imagesavealpha($image, true);
+            }
+            $written = match ($extension) {
+                'jpg' => imagejpeg($image, $path, 90), 'png' => imagepng($image, $path), 'webp' => imagewebp($image, $path, 90),
+            };
+            if (!$written || !is_file($path) || filesize($path) < 1 || (PHP_OS_FAMILY !== 'Windows' && !chmod($path, 0600))) {
+                if (is_file($path)) unlink($path);
+                throw new RuntimeException('Could not store the portrait.');
+            }
+            audit($this->db, 'member.photo.import', null);
+            $this->db->commit();
+            return $url;
+        } catch (Throwable $error) {
+            if ($this->db->inTransaction()) $this->db->rollBack();
+            throw $error;
+        }
     }
 
     public function upload(mixed $memberId, mixed $file, string $actor): array

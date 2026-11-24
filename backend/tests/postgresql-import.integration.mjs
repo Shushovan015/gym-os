@@ -31,6 +31,9 @@ test("imports a protected PostgreSQL fixture through the actual exporter format 
   assert.equal(plan.archiveOnly.auth_identities, 1);
   assert.deepEqual(plan.historicalEmail, { sent: 1, uncertain: 2 });
   assert.ok(plan.verifiedFinancialFields > 20);
+  assert.equal(plan.imported.invoice_number_sequences, 2);
+  assert.equal(plan.projectedReconciliation.invoiceSequence, "911");
+  assert.equal(plan.relationshipReviewCounts.invoicePaymentDiscrepancies, 0);
   assert.equal(JSON.parse(command("reconcile", ["snapshot"])).counts.members, "0");
   const applied = JSON.parse(command("import-postgresql", ["apply", file, digest]));
   assert.deepEqual(applied, { ...plan, applied: true });
@@ -38,7 +41,7 @@ test("imports a protected PostgreSQL fixture through the actual exporter format 
   assert.equal(snapshot.counts.admin_accounts, "0");
   assert.equal(snapshot.counts.attendance_records, "1");
   assert.equal(snapshot.counts.bill_email_attempts, "3");
-  assert.equal(snapshot.invoiceSequence, "904");
+  assert.equal(snapshot.invoiceSequence, "911");
   assert.deepEqual(snapshot.stock, [{ sku: "FIXTURE-121", quantity: "2.125", is_active: 1 }]);
   assert.equal(snapshot.invoices.find((item) => item.invoice_status === "issued").total_minor, "1950");
   assert.equal(snapshot.invoices.find((item) => item.invoice_status === "issued").balance_minor, "500");

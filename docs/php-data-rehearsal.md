@@ -36,6 +36,19 @@ The plan exercises the same mappings and database constraints as apply and rolls
 
 For an approved export, use the provider database backup when available or create a PostgreSQL archive with an approved read-only connection and `pg_dump`. Restore into the isolated source with `pg_restore` for archive format or `psql` for plain SQL. Store credentials in protected connection configuration. Export Storage objects separately, preserve bucket and path metadata, and verify both the database and object manifest digests. [Supabase backups](https://supabase.com/docs/guides/platform/backups), [Supabase Storage downloads](https://supabase.com/docs/guides/storage/management/download-objects), [PostgreSQL dump](https://www.postgresql.org/docs/current/app-pgdump.html), [PostgreSQL restore](https://www.postgresql.org/docs/current/app-pgrestore.html).
 
+### Operator handoff
+
+1. On an authorized source connection, export the public schema using `pg_dump --schema-only --schema=public --quote-all-identifiers --no-owner --no-privileges --file=/private/public_schema.sql`. Keep the full database backup encrypted and restricted to recovery operators. Restore it only inside the isolated PostgreSQL rehearsal environment. Run the allowlisted SQL exporter there to create the transferable row data, restricted Auth identity projection and Storage inventory.
+2. Download approved objects from each Storage bucket into a private directory, preserving the bucket and object path. Keep private and public objects equally restricted during staging. Prepare a manifest with version 1 and a `files` array. Each entry has `path` relative to the media root, `bytes`, lowercase hex `sha256`, and approved `visibility` of `private` or `public`. Record the intended reference and asset owner in the private operator inventory. Match it to the database Storage inventory, including references from outside Supabase Storage.
+3. Produce SHA-256 digests for the schema, NDJSON and media manifest. Have the authorized operator record filenames, sizes, checksums, snapshot time and sign-off in a protected handoff. Store the handoff independently from the files. Verify media and review failures by manifest entry number before copying any files.
+
+```sh
+node scripts/verify-migration-media.mjs /private/objects /private/objects.json VERIFIED_MANIFEST_SHA256
+php backend/bin/postgresql-mapping.php /private/public_schema.sql > /private/mapping.json
+```
+
+The schema report reads quoted pg_dump public DDL as text and compares it with the initialized rehearsal target. It reports column types, available mappings and foreign-key metadata without reading row records. The import plan reports projected database totals and invoice relationship review counts. Compare those totals with independently calculated source totals. Verify object coverage using the separate manifest before requesting approval to apply.
+
 1. Derive a reviewed target dataset from the protected source export and retain a source-to-target ID map. Keep attendance dates as Gregorian dates with the original Bikram Sambat values where available. Convert timestamp instants to UTC.
 2. Have an authorized operator compare archived identities with the approved staff roster. Use `php backend/bin/account.php create UUID EMAIL admin|viewer` and provide a fresh password through stdin. Leave disabled staff unprovisioned. Verify sign-in for each intended role, administrator access and viewer denial, then verify session invalidation using the account reset command on the isolated target.
 3. Compare stored minor units and outstanding amounts by currency. Preserve invoice numbers and advance the sequence beyond the largest eligible numeric number. Hold discrepancies for review and preserve original evidence before adjusting any financial state.
@@ -49,10 +62,10 @@ For each product, variant, facility, trainer, trainer thumbnail or testimonial i
 php backend/bin/product-media.php import facility 123 OLD_URL /private/approved-image.png VERIFIED_SHA256
 ```
 
-The command validates and rewrites the image using the same publication rules as Studio. Record the returned reference in the private manifest and verify that active images load and unpublished images remain private. Keep member portraits, homepage media and documents in the protected source inventory pending their migration. Record missing files and duplicate digests during manifest review.
+The command validates and rewrites images using the same publication rules as Studio. Use `member-portrait` with the member ID and `GYM_PRIVATE_MEDIA_DIR`. The replacement stays behind the authenticated member-photo route. Use `home-hero`, `home-gallery`, `contact-hero`, or `shop-hero` with ID `1` for approved public images. The gallery command replaces matching URLs and retains captions. Supply a digest for each new asset type. Record the returned reference and verify access for the relevant role. Keep documents and unsupported private objects in the verified protected archive until there is a reviewed application owner/reference mapping and access policy.
 
 ## Fixture reconciliation
 
-The isolated PostgreSQL-to-MariaDB fixture preserved the distinct member identifiers, attendance, multi-month allocations, payment reversal and stock history. Expected versus imported amounts and fractional quantities matched. The next invoice number was 904. Every invoice received a cancellation hold, and historical mail evidence produced one sent record and uncertain records for incomplete or missing evidence. The fixture created no staff accounts.
+The isolated PostgreSQL-to-MariaDB fixture preserved the distinct member identifiers, attendance, multi-month allocations, payment reversal and stock history. Expected versus imported amounts and fractional quantities matched. The expanded fixture projected invoice number 911 from the highest annual source counter. Every invoice received a cancellation hold, and historical mail evidence produced one sent record and uncertain records for incomplete or missing evidence. The fixture created no staff accounts.
 
 Production reconciliation requires an approved source export and storage inventory, an identity and mapping review, and verification of the resulting files and financial totals before cutover.
