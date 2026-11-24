@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS pg_import_runs (
+    id TINYINT PRIMARY KEY CHECK (id = 1),
+    source_sha256 CHAR(64) NOT NULL,
+    applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS pg_import_invoice_holds (
+    invoice_id BIGINT PRIMARY KEY,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;

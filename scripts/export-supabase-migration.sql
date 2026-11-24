@@ -39,7 +39,9 @@ SELECT CASE WHEN to_regclass(format('public.%I', name)) IS NULL
     THEN format('SELECT jsonb_build_object(''kind'', ''missing'', ''table'', %L)', name)
     ELSE format(
         'SELECT jsonb_build_object(''kind'', ''count'', ''table'', %1$L, ''records'', COUNT(*)::text) FROM public.%2$I;
-         SELECT jsonb_build_object(''kind'', ''record'', ''table'', %1$L, ''row'', to_jsonb(record)) FROM public.%2$I AS record',
+         SELECT jsonb_build_object(''kind'', ''record'', ''table'', %1$L, ''row'', (
+           SELECT jsonb_object_agg(key, CASE WHEN jsonb_typeof(value) = ''number'' THEN to_jsonb(value #>> ''{}'') ELSE value END)
+           FROM jsonb_each(to_jsonb(record)))) FROM public.%2$I AS record',
         name, name
     )
 END

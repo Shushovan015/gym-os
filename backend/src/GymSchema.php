@@ -12,6 +12,6 @@ final class GymSchema
         'invoice_balance_payment_requests', 'personal_training_plans', 'pending_billing_attempts', 'bill_email_attempts', 'product_media_files',
         'contact_content', 'contact_faqs', 'footer_content', 'home_content', 'home_status_items', 'home_maximus_points',
         'facility_items', 'facilities_page_content', 'trainers', 'trainer_page_content', 'testimonials',
-        'pricing_page_content', 'shop_page_content', 'legacy_sql_evidence',
+        'pricing_page_content', 'shop_page_content', 'legacy_sql_evidence', 'pg_import_runs', 'pg_import_invoice_holds',
     ];
 }

@@ -71,6 +71,7 @@ $requiredKeys = [
     'member_status_history.member_id' => 'members.id',
     'invoices.member_ref' => 'members.id',
     'invoice_payments.invoice_id' => 'invoices.id',
+    'pg_import_invoice_holds.invoice_id' => 'invoices.id',
     'invoice_payments.reverses_payment_id' => 'invoice_payments.id',
     'membership_fees.member_id' => 'members.id',
     'membership_fees.invoice_id' => 'invoices.id',

@@ -229,6 +229,12 @@ final class ProductBilling
             $invoice = $this->db->prepare('SELECT invoice_status, legacy_source, paid_minor, member_ref FROM invoices WHERE id = ? FOR UPDATE');
             $invoice->execute([$id]);
             $bill = $invoice->fetch(PDO::FETCH_ASSOC);
+            $hold = $this->db->prepare('SELECT 1 FROM pg_import_invoice_holds WHERE invoice_id = ?');
+            $hold->execute([$id]);
+            if ($hold->fetchColumn()) return [409, ['error' => 'This imported invoice requires reconciliation before cancellation.']];
+            $hold = $this->db->prepare('SELECT 1 FROM pg_import_invoice_holds WHERE invoice_id = ?');
+            $hold->execute([$id]);
+            if ($hold->fetchColumn()) return [409, ['error' => 'This imported invoice requires reconciliation before cancellation.']];
             $registered = $this->db->prepare('SELECT invoice_id FROM product_invoice_requests WHERE invoice_id = ?');
             $registered->execute([$id]);
             $legacy = $registered->fetchColumn() === false;
