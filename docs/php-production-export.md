@@ -4,6 +4,24 @@ Approval is required before running any command that connects to the live projec
 
 The operator needs a preconfigured libpq service named `gym_export` with TLS certificate verification and separately stored credentials. The database role needs read access to the approved public tables and the projected columns of `auth.users`, `storage.buckets`, and `storage.objects`. It also needs to be able to see all approved rows. If row-level security filters the results, stop and have the project owner verify the scope. For Storage configure an AWS CLI profile named `gym-export` and use the dashboard S3 endpoint. Prefer credentials restricted to listing and reading the approved buckets. Supabase project S3 access keys can have broader access and bypass RLS. If those are the only option, explicitly approve their use and run the download-only command below. [Supabase S3 authentication](https://supabase.com/docs/guides/storage/s3/authentication)
 
+## Prepare the dedicated export service offline
+
+Use the Dashboard-confirmed Session pooler host and port. For a dedicated PostgreSQL role, the pooler login has the form `ROLE.PROJECT_REF`. Ask the project owner to confirm an existing, approved export role and its effective privileges, including inherited grants, role memberships, object ownership and privileges from `PUBLIC`. The Dashboard's `postgres.PROJECT_REF` login is an administrative login. A read-only transaction setting is an additional guard and leaves the account's grants intact. If no approved restricted role exists, pause for separate authorization before any role, grant or RLS policy change. [Supabase database connections](https://supabase.com/docs/guides/database/connecting-to-postgres)
+
+| Source | Minimum access needed |
+| --- | --- |
+| Database and schemas | `CONNECT` on the project database and `USAGE` on `public`, `auth`, and `storage`. |
+| Approved application tables | `SELECT` on each reviewed, whole-table export. If only certain columns are approved, use an explicit `SELECT` projection. Grant sequence read access only for specifically approved sequence metadata if the chosen dump requires it. |
+| Staff projection | Column-level `SELECT` on `public.profiles(id, role)` and `auth.users(id, email, email_confirmed_at, banned_until, deleted_at)`. Verify the eligible staff scope locally before handoff. |
+| Storage inventory | Column-level `SELECT` on `storage.buckets(id, public)` and `storage.objects(bucket_id, name, metadata, updated_at)`. |
+| Storage file download | Approved list/read access for the selected buckets, including object metadata and object contents. Keep these credentials separate from the database login. |
+
+The role should have no ownership, administrative role membership, global RLS bypass, application writes, DDL, or access to Auth password hashes, tokens or sessions. Have the owner verify exact coverage for approved tables, staff identities and Storage objects using independent counts. The default `pg_dump` fails if RLS would filter rows. If that happens, stop the whole-table dump. An approved table-specific read policy and explicit read-only projection can be reviewed separately with independently checked counts. [PostgreSQL pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html)
+
+The inventory script selects every visible profile with a role. If the project uses profiles for ordinary users as well as staff, use a separately reviewed staff-only projection based on approved UUIDs before running the inventory. If bucket metadata is visible beyond the approved scope, limit the Storage queries to the approved buckets before exporting them.
+
+Copy the password-free service template to a protected local configuration directory outside the repository. Replace the role and CA path with the approved values. Use a CA bundle that validates the Session pooler's certificate and hostname with `sslmode=verify-full`. If verification fails, check the CA and host with the operator. Keep the password in a protected local libpq password file or enter it privately at the local prompt. For an explicitly chosen service file, set `$env:PGSERVICEFILE` to its absolute path in the authorized export shell. [PostgreSQL TLS verification](https://www.postgresql.org/docs/current/libpq-ssl.html)
+
 ## Source inventory and schema
 
 Run in PowerShell after approval. Replace both placeholders and use a directory that already exists and is empty.
